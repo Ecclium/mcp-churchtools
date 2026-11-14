@@ -1405,12 +1405,16 @@ describe('the deadline and the stop of a pass', () => {
     expect(h.writeCalls).toEqual([]);
   });
 
-  it('never aborts a write that began, and begins no retry after the stop', async () => {
+  it('gives the write the signal of the run, and begins no retry after the stop', async () => {
     const controller = new AbortController();
     const h = setup({
-      write: (_id, count) => {
-        // The stop arrives while the write runs.
+      write: (_id, count, signal) => {
+        // The signal of the run reaches the write: the core ends the search
+        // of the page on it, and the write once the page is found never
+        // (ADR 0036). The stop arrives while the write runs.
+        expect(signal.aborted).toBe(false);
         controller.abort();
+        expect(signal.aborted).toBe(true);
         return Promise.resolve(
           count === 1
             ? { ok: false, code: 'conflict', sent: false, transient: true }
@@ -1423,9 +1427,9 @@ describe('the deadline and the stop of a pass', () => {
       h.ports,
       options({ signal: controller.signal }),
     );
-    // The write that began was not aborted; a second one after the
-    // conflict is a new write, and none begins after the stop (ADR 0034).
-    expect(h.writeCalls.map((write) => write.signal.aborted)).toEqual([false]);
+    // A second write after the conflict is a new one, and none begins
+    // after the stop (ADR 0034).
+    expect(h.writeCalls).toHaveLength(1);
     expect(pass.routines[0]).toMatchObject({
       severity: 'temporary',
       outcome: {

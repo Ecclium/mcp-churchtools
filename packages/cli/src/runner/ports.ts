@@ -208,7 +208,10 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
     });
     // A write that has begun is marked until the run closes, after the
     // end of its trigger, its audit line and its notice, so that no second
-    // signal cuts any of them (ADR 0033).
+    // signal cuts any of them (ADR 0033). The mark is set with the first
+    // call, so also during the search of the page; the first signal has
+    // already ended that search, so a second one waits only for that end
+    // (ADR 0036).
     let release: (() => void) | undefined;
     return Object.freeze({
       ok: true,

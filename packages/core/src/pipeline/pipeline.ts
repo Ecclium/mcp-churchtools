@@ -309,7 +309,10 @@ export interface RunWriteRequest {
   readonly assignment: TenantAssignment | undefined;
   /** Licensed features, empty in the free core. */
   readonly features: readonly FeatureKey[];
-  /** The signal of the run. */
+  /**
+   * The signal of the run. It ends the write only until the core has found
+   * its page; the write that begins then runs to its end (ADR 0036).
+   */
   readonly signal: AbortSignal;
   /** The run the write belongs to. */
   readonly run: RunTag;
@@ -774,7 +777,11 @@ export interface ToolPipeline {
    * the write tool plans the section with the marking of the run, and the
    * plan is committed with the proof of the policy or queued for the
    * operator. Its audit line names the run, the routine, the policy and
-   * the model.
+   * the model. The signal of the request ends the search of the page,
+   * which for a whole category reads up to `maxRunPageListPages` pages of
+   * its list; once the page is found, the write begins and no signal ends
+   * it, so that it keeps its snapshot, its read after it and its audit
+   * line (ADR 0036).
    *
    * @param request - What the composition root set for the write.
    * @returns The outcome. It never rejects.
@@ -1650,6 +1657,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (forWrite !== undefined) {
       const prepared = await prepareRunWrite(run, ctx, forWrite);
       if (!prepared.ok) return prepared.failure;
+      // The write of a run begins once its page is found (ADR 0036): a
+      // stop during the search ends it unsent, and a later try may run
+      // it. From here the signal of the request no longer reaches the
+      // call, so that a stop cannot cut the write between its snapshot,
+      // its send, its read after it and its audit line, and the grace of
+      // a stopping container covers what is left (`maxRunWriteRequests`).
+      if (isAborted(controller.signal)) return failed('network');
+      run.detach();
       given = prepared.input;
       runPlan = prepared.plan;
     }

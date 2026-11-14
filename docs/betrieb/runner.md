@@ -43,7 +43,7 @@ Kommt eine Zeile des Audits nicht in die Audit-Datei, etwa bei voller Platte, sc
 
 ## Signale
 
-SIGTERM, SIGINT und SIGHUP brechen Lesen und Modell sofort ab, weil beide ausserhalb nichts ändern. Ein Schreibvorgang oder Entwurf, der schon begonnen hat, endet noch, beim Wiki mit Snapshot und Lesen danach, und mit seiner Zeile im Audit, dem Ende seiner Auslösung und seiner Meldung. Danach beginnt keine Routine mehr. Bei einem Lauf, der noch nicht schrieb, bleibt die Auslösung offen, der Versuch zählt, und ein späterer Aufruf versucht es wieder. Der Prozess endet so:
+SIGTERM, SIGINT und SIGHUP brechen Lesen, Modell und die Suche der Seite sofort ab, weil sie ausserhalb nichts ändern. Ein Schreibvorgang oder Entwurf, der schon begonnen hat, endet noch, beim Wiki mit Snapshot und Lesen danach, und mit seiner Zeile im Audit, dem Ende seiner Auslösung und seiner Meldung. Danach beginnt keine Routine mehr. Bei einem Lauf, der noch nicht schrieb, bleibt die Auslösung offen, der Versuch zählt, und ein späterer Aufruf versucht es wieder. Der Prozess endet so:
 
 | Signal  | Exit-Code |
 | ------- | --------- |
@@ -53,9 +53,9 @@ SIGTERM, SIGINT und SIGHUP brechen Lesen und Modell sofort ab, weil beide ausser
 
 SIGHUP kommt etwa, wenn das Terminal des Prozesses geschlossen wird. Ein zweites Signal beendet den Prozess sofort, ausser während eines Schreibvorgangs: Dann endet er direkt danach. Andere Signale wie SIGKILL halten ihn hart an.
 
-Ein Schreibvorgang auf eine Seite, die die Richtlinie mit ihrer Kennung nennt (`wiki_page`), sendet bis zu sechs Anfragen an ChurchTools mit je höchstens 30 Sekunden und greift zweimal auf die Zähler im Zustandsordner zu, je höchstens 5 Sekunden. Geben Sie einem Container des Runners beim Stoppen deshalb mindestens 5 Minuten, bei Docker Compose mit `stop_grace_period: 5m`, bei `docker stop` mit `--time 300`, damit ein Schreibvorgang nicht von SIGKILL getroffen wird. Das lässt Platz für zwei Anfragen mehr. So viel Zeit lässt auch die Sperrdatei einer Routine einem abgebrochenen Lauf für sein Ende. Läuft kein Schreibvorgang, endet der Runner sofort; die Frist verlängert das Stoppen dann nicht.
+Ein Schreibvorgang ins Wiki beginnt, sobald der Runner die Seite gefunden hat. Nennt die Richtlinie die Seite mit ihrer Kennung (`wiki_page`), sendet er dann bis zu fünf Anfragen an ChurchTools. Erlaubt sie eine ganze Kategorie (`wiki_category`), liest er zusätzlich zweimal den Namen der Kategorie, also bis zu sieben Anfragen an ChurchTools mit je höchstens 30 Sekunden. Dazu greift er zweimal auf die Zähler im Zustandsordner zu, je höchstens 5 Sekunden. Geben Sie einem Container des Runners beim Stoppen deshalb mindestens 5 Minuten, bei Docker Compose mit `stop_grace_period: 5m`, bei `docker stop` mit `--time 300`, damit ein Schreibvorgang nicht von SIGKILL getroffen wird. Das lässt Platz für zwei Anfragen mehr. So viel Zeit lässt auch die Sperrdatei einer Routine einem abgebrochenen Lauf für sein Ende. Läuft kein Schreibvorgang, endet der Runner sofort; die Frist verlängert das Stoppen dann nicht.
 
-Erlaubt der Eintrag der Richtlinie einer Routine eine ganze Kategorie statt einer Seite, also `wiki_category` statt `wiki_page`, sucht der Runner die Seite über ihren Titel, und zwar erst, wenn der Schreibvorgang begonnen hat, in bis zu 40 Seiten der Liste der Kategorie. Ein Signal hält diese Suche nicht an. Antwortet ChurchTools wie gewohnt in einer Sekunde, ändert das wenig. Braucht aber jede Anfrage die volle Frist, reichen auch 5 Minuten nicht.
+Die Suche der Seite gehört nicht zum Schreibvorgang. Bei `wiki_page` liest der Runner die Seite über ihre Kennung, bei `wiki_category` sucht er sie über ihren Titel in bis zu 40 Seiten der Liste der Kategorie. Ein Signal bricht diese Suche sofort ab, und die Auslösung bleibt offen wie bei einem Lauf, der noch nicht schrieb.
 
 ## Frist der Daten
 
@@ -246,7 +246,7 @@ Einen Ordner `stop` im Zustandsordner liest nur ein Server über stdio ohne `ECC
 
 ### Grenzen
 
-Der Container läuft mit Grenzen für die Zahl der Prozesse, Threads eingeschlossen, und für den Speicher. Der Job `e2e` in CI startet den Runner mit diesen Grenzen und liest nach jedem Lauf von `ecclium run-once` die Höchstwerte aus der cgroup des Containers; ein Lauf, der eine Grenze erreicht, lässt den Job scheitern. Am 14.11.2026 brauchte ein solcher Lauf, der eine Liste von Seiten liest, ein Modell fragt und einen Abschnitt schreibt, lokal unter Ubuntu 24.04 auf arm64 höchstens 13 Prozesse und 79 MiB Speicher. Die Werte der Tabelle sind Ausgangswerte: das Doppelte davon, aufgerundet auf eine Zweierpotenz.
+Der Container läuft mit Grenzen für die Zahl der Prozesse, Threads eingeschlossen, und für den Speicher. Der Job `e2e` in CI startet den Runner mit diesen Grenzen und liest nach jedem Lauf von `ecclium run-once` die Höchstwerte aus der cgroup des Containers; ein Lauf, der eine Grenze erreicht, lässt den Job scheitern. Am 14.11.2026 brauchte ein solcher Lauf, der eine Liste von Seiten liest, ein Modell fragt und einen Abschnitt schreibt, lokal unter Ubuntu 24.04 auf arm64 höchstens 13 Prozesse und 79 MiB Speicher, in CI auf amd64 höchstens 13 Prozesse und 68,9 MiB. Die Werte der Tabelle sind Ausgangswerte: das Doppelte der lokalen Höchstwerte, aufgerundet auf eine Zweierpotenz.
 
 | Grenze   | Wert    | In Docker Compose |
 | -------- | ------- | ----------------- |

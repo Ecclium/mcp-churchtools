@@ -24,6 +24,7 @@ import { runnerSignals } from '../packages/cli/src/runner/host.ts';
 import { exitCodeOf } from '../packages/cli/src/runner/run-once.ts';
 import { stateFolders } from '../packages/core/src/config/state-dir.ts';
 import { transportLimits } from '../packages/core/src/http/transport.ts';
+import { maxRunWriteRequests } from '../packages/core/src/pipeline/run-write.ts';
 import { quotaTimeoutMs } from '../packages/core/src/quota/budget.ts';
 import { routineLockLimits } from '../packages/core/src/schedule/lock.ts';
 import { metricNames } from '../packages/runner/src/metrics.ts';
@@ -377,25 +378,26 @@ describe('the signals of the runner', () => {
     );
   });
 
-  // A write of a run to a page the policy names by its ID (wiki_page),
-  // counted in the code on 13.11.2026: the page by its ID, then the rights
-  // and the page for the plan, then the page, the update and the read
-  // after it for the commit, each within the total time of the transport,
-  // and a read and a raise of the counter of the day in the store of
-  // quotas. A signal never stops it, so the grace of the container must
-  // cover it, with room for two requests more. The search of a page by its
-  // title for a whole category is not covered (ADR 0036, residual risks).
+  // A write of a run once the core has found its page, as a test of the
+  // pipeline counts it (maxRunWriteRequests): the rights and the page for
+  // the plan, the page, the update and the read after it for the commit,
+  // and for an entry of a whole category its name at the plan and at the
+  // commit, each within the total time of the transport, and a read and a
+  // raise of the counter of the day in the store of quotas. A signal never
+  // stops it, so the grace of the container must cover it, with room for
+  // two requests more. The search of the page before it ends on the signal
+  // (ADR 0036).
   it('covers a write that has begun with the grace of the lock', () => {
-    const requestsOfAWrite = 6;
     const spareRequests = 2;
     const quotaCountsOfAWrite = 2;
     expect(routineLockLimits.graceMs).toBeGreaterThanOrEqual(
-      (requestsOfAWrite + spareRequests) * transportLimits.totalMs +
+      (maxRunWriteRequests + spareRequests) * transportLimits.totalMs +
         quotaCountsOfAWrite * quotaTimeoutMs,
     );
+    const counts = ['fünf', 'sechs', 'sieben', 'acht'];
     const text = signalSection.join('\n');
     expect(text).toContain(
-      `bis zu sechs Anfragen an ChurchTools mit je höchstens ${String(transportLimits.totalMs / 1000)} Sekunden`,
+      `bis zu ${String(counts[maxRunWriteRequests - 5])} Anfragen an ChurchTools mit je höchstens ${String(transportLimits.totalMs / 1000)} Sekunden`,
     );
     expect(text).toContain(
       `je höchstens ${String(quotaTimeoutMs / 1000)} Sekunden`,

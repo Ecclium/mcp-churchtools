@@ -27,6 +27,12 @@
  * again here, since the marking of the run keeps a later run from adding
  * it twice.
  *
+ * The signal of the run reaches the core with each call: it ends the
+ * search of the page, which for a whole category reads the list of its
+ * pages, and keeps the second try from beginning. A write whose page the
+ * core has found runs to its end, so that the grace of a stopping
+ * container covers it (ADR 0036).
+ *
  * @packageDocumentation
  */
 import type {
@@ -73,12 +79,6 @@ export interface RunWritePorts {
   readonly log: Logger;
   /** The clock of the core. */
   readonly clock: Clock;
-  /**
-   * Whether a second write after a conflict may begin; by default it may.
-   * The runner says no after the deadline of a run or its stop, while the
-   * write that began is never aborted.
-   */
-  readonly mayRetry?: () => boolean;
 }
 
 /** A section a run rendered. */
@@ -148,7 +148,9 @@ const pageOf = (
  * @param run - The section `executeRun` rendered, with an output in the
  *   wiki and the entry of the policy for its target.
  * @param ports - Write, logger and clock of the run.
- * @param signal - Aborts the write.
+ * @param signal - The signal of the run: it ends the search of the page
+ *   and keeps a second write after a conflict from beginning. A write
+ *   whose page the core has found runs to its end (ADR 0036).
  * @returns How the write ended. It never throws for a failure of
  *   ChurchTools, the policy or the checks of the core.
  * @throws {TypeError} When the run has no output in the wiki or no entry
@@ -193,8 +195,7 @@ export async function writeRun(
     outcome.code === 'conflict' &&
     outcome.page === undefined &&
     !outcome.sent &&
-    !signal.aborted &&
-    (ports.mayRetry?.() ?? true)
+    !signal.aborted
   ) {
     log.info('run_write_retried', { code: 'conflict' });
     attempts = 2;

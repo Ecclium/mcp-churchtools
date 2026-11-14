@@ -24,6 +24,12 @@
 //    folder of the kill switches others may write in stops the start; the
 //    peaks of memory and processes of each run stay below the limits.
 // 6. `ecclium doctor` from inside the network of the runner.
+// 7. The search of the page and the signal, with a policy that allows the
+//    whole category: without a stop the run writes once; `docker stop`
+//    while ChurchTools holds the list of pages of the search ends the run
+//    with 143 at once and without a PATCH; `docker stop` while it holds the
+//    PATCH waits for the write, its read after it and its notice. It runs
+//    before the rest of 5, so that 5 judges the peak of its run as well.
 //
 // Everything the containers get is made up here at run time: tokens, keys,
 // certificates, the page. The work folder lies outside the repository and
@@ -53,6 +59,8 @@ import {
   highestPeak,
   judgePeaks,
   judgeProbe,
+  judgeStopInSearch,
+  judgeStopInWrite,
   oneSectionPerPeriod,
   type Peak,
   peakOf,
@@ -286,8 +294,14 @@ notify:
   - channel: stdout
 `;
 
+// The page by its GUID, or the whole category, whose page a run finds by
+// its title (ADR 0036).
+const pageTarget = (guid: string): string =>
+  `{ kind: wiki_page, categoryId: ${String(category.id)}, guid: ${guid}, name: ${pageTitle} }`;
+const categoryTarget = `{ kind: wiki_category, id: ${String(category.id)}, name: ${category.name} }`;
+
 const policyYaml = (
-  guid: string,
+  target: string,
   maxPerDay: number,
 ): string => `schema: policy.v1
 interactive:
@@ -295,7 +309,7 @@ interactive:
 unattended:
   - routine: ${routineId}
     credential: berichte
-    target: { kind: wiki_page, categoryId: ${String(category.id)}, guid: ${guid}, name: ${pageTitle} }
+    target: ${target}
     tools: [ct_wiki_page_append_section]
     maxPerRun: 1
     maxPerDay: ${String(maxPerDay)}
@@ -388,12 +402,19 @@ const prepare = (work: string, image: string): void => {
   // The folder of the kill switches belongs to the operator, here the user
   // of the job, with 755 (ADR 0036).
   mkdirSync(join(config, 'stop'), { mode: 0o755 });
-  writeFileSync(join(config, 'policy.yaml'), policyYaml(guid, 5), {
+  writeFileSync(join(config, 'policy.yaml'), policyYaml(pageTarget(guid), 5), {
     mode: 0o644,
   });
-  writeFileSync(join(config, 'policy-limit.yaml'), policyYaml(guid, 1), {
-    mode: 0o644,
-  });
+  writeFileSync(
+    join(config, 'policy-limit.yaml'),
+    policyYaml(pageTarget(guid), 1),
+    { mode: 0o644 },
+  );
+  writeFileSync(
+    join(config, 'policy-category.yaml'),
+    policyYaml(categoryTarget, 5),
+    { mode: 0o644 },
+  );
   writeFileSync(join(config, 'providers.yaml'), providersYaml, { mode: 0o644 });
   writeFileSync(join(config, 'routines', `${routineId}.yaml`), routineYaml, {
     mode: 0o644,
@@ -708,6 +729,74 @@ const hardeningOf = (
 const patches = (service: string): number =>
   countCalls(reportOf(service)?.calls ?? [], 'PATCH', '/api/wiki/');
 
+// How long ChurchTools holds the list of the search and the PATCH of the
+// write, below the 15 seconds Ecclium waits for the head of an answer, so
+// that a search that does not stop gets its answer and goes on to write.
+const searchHoldMs = 12_000;
+const writeHoldMs = 8_000;
+
+// Has ChurchTools hold the nth request of a method below a path.
+const holdAt = (method: string, path: string, nth: number, ms: number) => {
+  const query = new URLSearchParams({
+    method,
+    path,
+    nth: String(nth),
+    ms: String(ms),
+  });
+  const set = reportOf('churchtools', 'POST', `/hold?${query.toString()}`);
+  if (set?.hold?.method !== method || set.hold.path !== path)
+    throw new Error('ChurchTools nahm das Halten nicht an.');
+};
+
+// Starts run-once in a container of its own, waits until ChurchTools has
+// the request it holds, stops the container as a supervisor does and
+// tells how the run ended.
+const stopWhileHeld = async (
+  work: string,
+  label: string,
+  environment: Record<string, string>,
+  held: (report: MockReport) => boolean,
+) => {
+  const name = `ecclium-e2e-${runMark}-${label}`;
+  const options = ['run', '-d', '--no-deps', '--name', name];
+  for (const [key, value] of Object.entries(environment)) {
+    options.push('-e', `${key}=${value}`);
+  }
+  must(
+    compose([...options, 'runner', 'run-once', routineId]),
+    `Der Start von ${label}`,
+  );
+  try {
+    await waitFor(`Die gehaltene Anfrage (${label})`, () => {
+      const seen = reportOf('churchtools');
+      return seen !== undefined && held(seen);
+    });
+    const modelCalls = reportOf('model')?.calls.length ?? 0;
+    const callsBefore = reportOf('churchtools')?.calls ?? [];
+    const before = Date.now();
+    docker(['stop', '--time', '300', name]);
+    const tookMs = Date.now() - before;
+    const code = Number(
+      docker(['inspect', '-f', '{{.State.ExitCode}}', name]).stdout.trim(),
+    );
+    say(
+      `       docker stop (${label}): ${(tookMs / 1000).toFixed(1)} s, Exit ${String(code)}`,
+    );
+    const logs = docker(['logs', name]);
+    out(work, `stop-${label}`, logs);
+    return {
+      code,
+      tookMs,
+      log: `${logs.stdout}${logs.stderr}`,
+      callsBefore,
+      calls: reportOf('churchtools')?.calls ?? [],
+      modelCalls,
+    };
+  } finally {
+    docker(['rm', '-f', name]);
+  }
+};
+
 const pageText = (): string => reportOf('churchtools')?.page?.text ?? '';
 
 // The text of a built file, or undefined without a build. Read once, so
@@ -1002,6 +1091,59 @@ const main = async (): Promise<number> => {
           failures.push(
             `Mit leerem /data ${String(again - written)} PATCH statt einem; die Grenze hinge dann nicht an /data/quota.`,
           );
+      },
+    );
+
+    // 7. The search of the page and the signal, before the rest of 5.
+    freshVolumes('search', nodeImage, true);
+    await resetStandIns();
+    await proof(
+      'Suche der Seite: ein Signal bricht sie ab, einen Schreibvorgang nicht',
+      async (failures) => {
+        const whole = { ECCLIUM_POLICY_FILE: '/config/policy-category.yaml' };
+        // Without a stop, the run finds its page by its title and writes.
+        expectCode(
+          failures,
+          'run-once mit der ganzen Kategorie',
+          runner(work, ['run-once', routineId], {
+            measure: true,
+            environment: whole,
+          }),
+          0,
+        );
+        const written = patches('churchtools');
+        if (written !== 1)
+          failures.push(
+            `Mit der ganzen Kategorie ${String(written)} PATCH statt einem.`,
+          );
+        failures.push(...oneSectionPerPeriod(pageText(), routineId));
+        // The second list of pages comes after the model: the search.
+        await resetStandIns();
+        holdAt('GET', '/api/wiki/pages', 2, searchHoldMs);
+        failures.push(
+          ...judgeStopInSearch(
+            await stopWhileHeld(
+              work,
+              'search',
+              whole,
+              (seen) => countCalls(seen.arrived, 'GET', '/api/wiki/pages') >= 2,
+            ),
+            searchHoldMs,
+          ),
+        );
+        await resetStandIns();
+        holdAt('PATCH', '/api/wiki/categories/', 1, writeHoldMs);
+        failures.push(
+          ...judgeStopInWrite(
+            await stopWhileHeld(
+              work,
+              'write',
+              whole,
+              (seen) =>
+                countCalls(seen.arrived, 'PATCH', '/api/wiki/categories/') >= 1,
+            ),
+          ),
+        );
       },
     );
 

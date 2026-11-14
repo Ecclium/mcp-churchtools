@@ -6,9 +6,10 @@
  * Why a signal never cuts a write: a write that has begun in ChurchTools
  * belongs with its snapshot, the read after it, its audit line, the end of
  * its trigger and its notice. The first SIGTERM, SIGINT or SIGHUP aborts
- * reading and the model at once, since both change nothing outside, and no
- * further routine begins; a write that runs still ends (decided on
- * 10.11.2026). A second signal ends the process at once, as with the
+ * reading, the model and the search of the page to write to at once, since
+ * they change nothing outside, and no further routine begins; a write that
+ * runs still ends (decided on 10.11.2026, the search since 14.11.2026,
+ * ADR 0036). A second signal ends the process at once, as with the
  * server over stdio, but never while a write runs: then the process ends
  * right after it, with the pass (decided on 11.11.2026). SIGHUP is heeded
  * too, so that a terminal that closes, such as a lost SSH session, cuts no
@@ -145,7 +146,10 @@ export const processRunnerHost = (): RunnerHost =>
 
 /** The signals the runner heeds, while it runs. */
 export interface SignalWatch {
-  /** Aborted by the first signal: reading and the model, never a write. */
+  /**
+   * Aborted by the first signal: reading, the model and the search of the
+   * page, never a write.
+   */
   readonly signal: AbortSignal;
   /**
    * The exit code of the first signal, 143 or 130, or undefined while
