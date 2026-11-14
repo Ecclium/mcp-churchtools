@@ -222,6 +222,17 @@ describe('the runner container of the E2E job', () => {
     expect(e2eRunner).toMatch(/^ {6}- keys:\/keys$/m);
     expect(e2eRunner).toMatch(/^ {4}user: '65532:65532'$/m);
     expect(e2eRunner).toMatch(/^ {4}init: true$/m);
+    // The hardening comes through the anchor; without the merge the runner
+    // would write anywhere and keep its capabilities.
+    expect(e2eRunner).toMatch(/^ {4}<<: \*locked$/m);
+    const locked =
+      /^x-locked: &locked\n((?: {2}.*\n)*)/m.exec(e2eCompose)?.[1] ?? '';
+    expect(locked.split('\n').filter(Boolean)).toEqual([
+      '  read_only: true',
+      '  tmpfs: [/tmp]',
+      '  cap_drop: [ALL]',
+      '  security_opt: [no-new-privileges:true]',
+    ]);
     expect(e2eRunner).toMatch(/^ {4}networks: \[runner-int\]$/m);
     expect(e2eRunner).not.toMatch(/ports:/);
   });

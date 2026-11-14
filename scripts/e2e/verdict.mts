@@ -149,6 +149,8 @@ export interface ProbeResult {
   readonly connect: Readonly<Record<string, number | undefined>>;
   /** The handshake of TLS through each tunnel the proxy opened. */
   readonly tls: Readonly<Record<string, ProbeOutcome | undefined>>;
+  /** The status of a plain GET through the proxy, without CONNECT. */
+  readonly plainGet: number | undefined;
 }
 
 /**
@@ -196,6 +198,11 @@ export function judgeProbe(
       );
     }
   }
+  if (probe.plainGet !== 403) {
+    failures.push(
+      `Ein GET ohne CONNECT durch den Proxy gab ${String(probe.plainGet)} statt 403.`,
+    );
+  }
   return failures;
 }
 
@@ -241,20 +248,34 @@ export function peakOf(output: string): Peak | undefined {
  * 137, one beyond the processes cannot start a thread. This verdict only
  * makes sure that the measure worked and that no run touched a limit.
  *
- * @param peaks - The peaks of every measured run.
+ * @param peaks - The peaks of every measured run, undefined for one that
+ *   gave no line with them.
  * @param limits - The limits of the container.
  * @param limits.memory - Bytes.
  * @param limits.pids - Processes.
  * @returns A sentence for each failure, none when it holds.
  */
 export function judgePeaks(
-  peaks: readonly Peak[],
+  peaks: readonly (Peak | undefined)[],
   limits: { readonly memory: number; readonly pids: number },
 ): string[] {
-  const memory = Math.max(0, ...peaks.map((peak) => peak.memory ?? 0));
-  const pids = Math.max(0, ...peaks.map((peak) => peak.pids ?? 0));
   const failures: string[] = [];
-  if (memory === 0) failures.push('Kein Lauf nennt seinen höchsten Speicher.');
+  if (peaks.length === 0) failures.push('Kein Lauf wurde gemessen.');
+  if (peaks.some((peak) => peak === undefined)) {
+    failures.push('Ein gemessener Lauf nannte keine Höchstwerte.');
+  }
+  const given = peaks.filter((peak): peak is Peak => peak !== undefined);
+  if (given.some((peak) => peak.memory === undefined)) {
+    failures.push('Ein gemessener Lauf nannte seinen höchsten Speicher nicht.');
+  }
+  // Older kernels have no pids.peak; then no run gives it, and the limit
+  // alone holds. Some with and some without it would be a broken measure.
+  const withPids = given.filter((peak) => peak.pids !== undefined).length;
+  if (withPids !== 0 && withPids !== given.length) {
+    failures.push('Nur ein Teil der Läufe nannte die Zahl der Prozesse.');
+  }
+  const memory = Math.max(0, ...given.map((peak) => peak.memory ?? 0));
+  const pids = Math.max(0, ...given.map((peak) => peak.pids ?? 0));
   if (memory >= limits.memory) {
     failures.push('Ein Lauf hat die Grenze für den Speicher erreicht.');
   }
@@ -271,13 +292,13 @@ export function judgePeaks(
  * @returns The highest memory in bytes and the most processes, 0 when no
  *   run gave one.
  */
-export function highestPeak(peaks: readonly Peak[]): {
+export function highestPeak(peaks: readonly (Peak | undefined)[]): {
   readonly memory: number;
   readonly pids: number;
 } {
   return {
-    memory: Math.max(0, ...peaks.map((peak) => peak.memory ?? 0)),
-    pids: Math.max(0, ...peaks.map((peak) => peak.pids ?? 0)),
+    memory: Math.max(0, ...peaks.map((peak) => peak?.memory ?? 0)),
+    pids: Math.max(0, ...peaks.map((peak) => peak?.pids ?? 0)),
   };
 }
 

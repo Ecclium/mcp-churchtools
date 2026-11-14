@@ -60,6 +60,7 @@ import {
   peakPrefix,
   type ProbeResult,
   routineId,
+  sectionsOf,
   waitBeforeProof,
   withFault,
 } from './verdict.mts';
@@ -72,13 +73,20 @@ const builtSections = join(repo, 'packages/core/dist/marker/sections.js');
 const timeZone = 'Europe/Zurich';
 const runnerUid = '65532';
 const standInUid = '1000';
-// The longest a proof may take, so that no change of day falls into it.
-const proofWindowMs = 10 * 60_000;
+// How long a proof may take, so that no change of day falls into it. A
+// proof takes seconds; the window keeps the wait before it short, so that
+// the job stays within its time near midnight.
+const proofWindowMs = 3 * 60_000;
+// A mark of this run in the names of volumes and containers, so that what
+// an aborted run left behind is never taken for new.
+const runMark = randomBytes(3).toString('hex');
 
 const category = { id: 7, name: 'Berichte' } as const;
 const pageTitle = 'Wochenbericht';
 const allowed = ['churchtools.e2e.test:443', 'model.e2e.test:443'];
-const refused = ['decoy.e2e.test:443'];
+// Outside the list: the decoy, and a target of the list on another port.
+// The address of the decoy joins them at run time.
+const refused = ['decoy.e2e.test:443', 'churchtools.e2e.test:8443'];
 
 /** One proof and what failed in it. */
 interface Proof {
@@ -88,7 +96,8 @@ interface Proof {
 }
 
 const proofs: Proof[] = [];
-const peaks: Peak[] = [];
+// One entry per measured run, undefined for one that gave no peaks.
+const peaks: (Peak | undefined)[] = [];
 
 const say = (line: string): void => {
   process.stdout.write(`${line}\n`);
@@ -176,10 +185,7 @@ const runner = (
   callNumber += 1;
   const label = (args[0] ?? 'run').replaceAll(/[^a-z0-9-]+/gu, '-');
   out(work, `${String(callNumber).padStart(2, '0')}-${label}`, result);
-  if (call.measure) {
-    const peak = peakOf(result.stdout);
-    if (peak !== undefined) peaks.push(peak);
-  }
+  if (call.measure) peaks.push(peakOf(result.stdout));
   return result;
 };
 
@@ -465,8 +471,8 @@ const freshVolumes = (
   image: string,
   handOver: boolean,
 ): void => {
-  const data = `ecclium-e2e-data-${label}`;
-  const keys = `ecclium-e2e-keys-${label}`;
+  const data = `ecclium-e2e-${runMark}-data-${label}`;
+  const keys = `ecclium-e2e-${runMark}-keys-${label}`;
   for (const volume of [data, keys]) {
     must(docker(['volume', 'create', volume]), `Das Volume ${volume}`);
     volumes.push(volume);
@@ -563,11 +569,16 @@ const resetStandIns = async (): Promise<void> => {
 
 // --- Proofs ---------------------------------------------------------------
 
+// Runs a proof after waiting, if need be, until no change of day falls
+// into its window. A proof that goes on the state of the one before passes
+// 0 and lets the one before wait for both.
 const proof = async (
   name: string,
   body: (failures: string[]) => Promise<void> | void,
+  windowMs = proofWindowMs,
 ): Promise<void> => {
-  const wait = waitBeforeProof(Date.now(), proofWindowMs, timeZone);
+  const wait =
+    windowMs === 0 ? 0 : waitBeforeProof(Date.now(), windowMs, timeZone);
   if (wait > 0) {
     say(
       `Warte ${String(Math.ceil(wait / 1000))} s, bis der Wechsel des Tages vorbei ist.`,
@@ -622,6 +633,79 @@ const warningsOf = (log: string): string => {
   return found.length === 0 ? '' : ` (${found.slice(-4).join(', ')})`;
 };
 
+// What the contract asks of the container, as Docker set it up and as the
+// process inside sees it: a read-only file system, no capability, no new
+// privileges, the user, the init and the limits (ADR 0036).
+const hardeningOf = (
+  name: string,
+  limits: { readonly memory: number; readonly pids: number },
+): string[] => {
+  const failures: string[] = [];
+  let host: {
+    ReadonlyRootfs?: boolean;
+    CapDrop?: string[] | null;
+    CapAdd?: string[] | null;
+    SecurityOpt?: string[] | null;
+    PidsLimit?: number | null;
+    Memory?: number;
+    Init?: boolean | null;
+    Privileged?: boolean;
+    Tmpfs?: Record<string, string> | null;
+  } = {};
+  try {
+    host = JSON.parse(
+      docker(['inspect', '-f', '{{json .HostConfig}}', name]).stdout,
+    ) as typeof host;
+  } catch {
+    return ['docker inspect gab keine Einstellungen des Containers.'];
+  }
+  const user = docker([
+    'inspect',
+    '-f',
+    '{{.Config.User}}',
+    name,
+  ]).stdout.trim();
+  if (host.ReadonlyRootfs !== true)
+    failures.push('Das Dateisystem ist nicht nur lesbar.');
+  if (!(host.CapDrop ?? []).includes('ALL'))
+    failures.push('Nicht alle Capabilities sind entzogen.');
+  if ((host.CapAdd ?? []).length > 0)
+    failures.push('Der Container bekommt Capabilities.');
+  if (host.Privileged === true)
+    failures.push('Der Container ist privilegiert.');
+  if (!(host.SecurityOpt ?? []).includes('no-new-privileges:true')) {
+    failures.push('no-new-privileges fehlt.');
+  }
+  if (host.Init !== true) failures.push('Der Container startet ohne init.');
+  if (host.PidsLimit !== limits.pids)
+    failures.push('Die Grenze für Prozesse fehlt oder weicht ab.');
+  if (host.Memory !== limits.memory)
+    failures.push('Die Grenze für den Speicher fehlt oder weicht ab.');
+  if (!Object.keys(host.Tmpfs ?? {}).includes('/tmp'))
+    failures.push('/tmp ist kein tmpfs.');
+  if (user !== `${runnerUid}:${runnerUid}`)
+    failures.push(`Der Container läuft als ${user}.`);
+  // From inside: no effective capability, no new privileges, and neither
+  // the root of the file system nor the build can be written.
+  const inside = docker([
+    'exec',
+    name,
+    'sh',
+    '-c',
+    'grep -E "^(CapEff|NoNewPrivs):" /proc/1/status; touch /e2e-probe 2>&1; touch /app/e2e-probe 2>&1; true',
+  ]).stdout;
+  if (!/^CapEff:\s+0+$/mu.test(inside))
+    failures.push('Der Prozess hat Capabilities.');
+  if (!/^NoNewPrivs:\s+1$/mu.test(inside))
+    failures.push('Der Prozess darf neue Rechte bekommen.');
+  if ((inside.match(/Read-only file system/gu) ?? []).length !== 2) {
+    failures.push(
+      'Der Container kann ausserhalb von /data, /keys und /tmp schreiben.',
+    );
+  }
+  return failures;
+};
+
 const patches = (service: string): number =>
   countCalls(reportOf(service)?.calls ?? [], 'PATCH', '/api/wiki/');
 
@@ -633,7 +717,7 @@ const main = async (): Promise<number> => {
     ['Der gebaute Write-Guard', builtSections],
   ] as const) {
     if (!existsSync(path)) {
-      say(`${name} fehlt. Zuerst pnpm run build.`);
+      say(`${name} fehlt. Führen Sie zuerst «pnpm run build» aus.`);
       return 1;
     }
   }
@@ -646,6 +730,11 @@ const main = async (): Promise<number> => {
   );
   composeEnvironment['E2E_WORK'] = work;
   composeEnvironment['E2E_SQUID_IMAGE'] = squidImage;
+  // Volumes of no run yet, so that Compose can read the file to take down
+  // what an aborted run left of the project.
+  composeEnvironment['E2E_DATA'] = `ecclium-e2e-${runMark}-none`;
+  composeEnvironment['E2E_KEYS'] = `ecclium-e2e-${runMark}-none`;
+  compose(['down', '--remove-orphans', '--timeout', '5']);
   say(
     `Docker ${docker(['version', '--format', '{{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}']).stdout.trim()}, Compose ${docker(['compose', 'version', '--short']).stdout.trim()}`,
   );
@@ -666,7 +755,7 @@ const main = async (): Promise<number> => {
     // the handed-over one does not.
     freshVolumes('start', nodeImage, false);
     await proof(
-      'Vertrag: frisches Volume von root hält den Start an, übergeben nicht',
+      'Vertrag: ein frisches Volume von root hält den Start an, ein übergebenes nicht',
       (failures) => {
         expectCode(
           failures,
@@ -718,9 +807,11 @@ const main = async (): Promise<number> => {
           '{{(index .NetworkSettings.Networks "ecclium-e2e_egress-ext").IPAddress}}',
           decoy,
         ]).stdout.trim();
+        // The decoy by its address joins the targets outside the list.
+        const outsideList = [...refused, `${address}:443`];
         const probe = runner(
           work,
-          ['/app/scripts/e2e/probe.mts', address, ...allowed, ...refused],
+          ['/app/scripts/e2e/probe.mts', address, ...allowed, ...outsideList],
           { entrypoint: 'node' },
         );
         let result: ProbeResult | undefined;
@@ -732,7 +823,7 @@ const main = async (): Promise<number> => {
           );
         }
         if (result !== undefined)
-          failures.push(...judgeProbe(result, allowed, refused));
+          failures.push(...judgeProbe(result, allowed, outsideList));
         const outside = runner(work, ['run-once', routineId], {
           measure: true,
           environment: {
@@ -792,6 +883,9 @@ const main = async (): Promise<number> => {
           );
         failures.push(...oneSectionPerPeriod(pageText(), routineId));
       },
+      // The next proof goes on this /data and page, so the window covers
+      // both.
+      2 * proofWindowMs,
     );
 
     await proof(
@@ -803,7 +897,25 @@ const main = async (): Promise<number> => {
           runner(work, ['run-once', routineId], { measure: true }),
           0,
         );
-        failures.push(...oneSectionPerPeriod(pageText(), routineId));
+        // The model answers each call with another text, so the second run
+        // must write and replace the section, not skip it as a repeat.
+        const replaced = patches('churchtools');
+        if (replaced !== 2) {
+          failures.push(
+            `Nach dem zweiten Lauf ${String(replaced)} PATCH statt zweien; er hat den Abschnitt nicht ersetzt.`,
+          );
+        }
+        const replacedText = pageText();
+        failures.push(...oneSectionPerPeriod(replacedText, routineId));
+        // The first run wrote «Eintrag 1», the second «Eintrag 2».
+        if (
+          !replacedText.includes('Eintrag 2') ||
+          replacedText.includes('Eintrag 1')
+        ) {
+          failures.push(
+            'Nach dem zweiten Lauf steht nicht genau der neue Text auf der Seite.',
+          );
+        }
         const faulty = withFault(readFileSync(builtSections, 'utf8'));
         if (!faulty.ok) {
           failures.push(
@@ -818,19 +930,26 @@ const main = async (): Promise<number> => {
           mounts: [`${fault}:/app/packages/core/dist/marker/sections.js:ro`],
         });
         expectCode(failures, 'Lauf mit dem eingebauten Fehler', run, 0);
-        if (oneSectionPerPeriod(pageText(), routineId).length === 0) {
+        // Only a second section of a period counts as found, not an empty
+        // page from a report that failed.
+        const faultyText = pageText();
+        const twice = [...sectionsOf(faultyText, routineId).values()].some(
+          (count) => count >= 2,
+        );
+        if (!twice || oneSectionPerPeriod(faultyText, routineId).length === 0) {
           failures.push(
-            'Mit dem eingebauten Fehler steht weiter genau ein Abschnitt je Periode; die Prüfung wäre blind.',
+            'Mit dem eingebauten Fehler steht keine Periode zweimal auf der Seite; die Prüfung wäre blind.',
           );
         }
       },
+      0,
     );
 
     // 4. The limit per day.
     freshVolumes('limit', nodeImage, true);
     await resetStandIns();
     await proof(
-      'Tagesgrenze über zwei Container, und ein leeres /data schreibt wieder',
+      'Tagesgrenze über zwei Container, und ein Container mit leerem /data schreibt wieder',
       (failures) => {
         const limit = { ECCLIUM_POLICY_FILE: '/config/policy-limit.yaml' };
         expectCode(
@@ -884,7 +1003,7 @@ const main = async (): Promise<number> => {
     // 5b. The rest of the contract.
     freshVolumes('contract', nodeImage, true);
     await proof(
-      'Vertrag: Ordner der Kill-Switches, Signal und Grenzen',
+      'Vertrag: Ordner der Kill-Switches, Härtung des Containers, Signal und Grenzen',
       async (failures) => {
         chmodSync(stop, 0o775);
         expectCode(
@@ -894,7 +1013,7 @@ const main = async (): Promise<number> => {
           78,
         );
         chmodSync(stop, 0o755);
-        const name = 'ecclium-e2e-daemon';
+        const name = `ecclium-e2e-${runMark}-daemon`;
         must(
           compose([
             'run',
@@ -920,6 +1039,7 @@ const main = async (): Promise<number> => {
           ]).stdout.trim();
           if (pid1 !== 'docker-init')
             failures.push(`PID 1 im Container ist ${pid1}, nicht das init.`);
+          failures.push(...hardeningOf(name, limits));
           docker(['stop', name]);
           const code = docker([
             'inspect',
@@ -981,9 +1101,13 @@ const report = (
 ): void => {
   const highest = highestPeak(peaks);
   const mib = (bytes: number): string => (bytes / 1024 / 1024).toFixed(1);
-  say(
-    `Höchstwerte der Läufe: Speicher ${mib(highest.memory)} MiB von ${mib(limits.memory)} MiB, Prozesse ${String(highest.pids)} von ${String(limits.pids)}.`,
-  );
+  // A kernel without pids.peak gives no count; the limit still holds.
+  const processes =
+    highest.pids === 0
+      ? `Prozesse vom Kernel nicht gemessen, Grenze ${String(limits.pids)}`
+      : `Prozesse ${String(highest.pids)} von ${String(limits.pids)}`;
+  const line = `Höchstwerte aus ${String(peaks.length)} gemessenen Läufen: Speicher ${mib(highest.memory)} MiB von ${mib(limits.memory)} MiB, ${processes}.`;
+  say(line);
   const summary = process.env['GITHUB_STEP_SUMMARY'];
   if (summary === undefined || summary === '') return;
   const lines = [
@@ -996,7 +1120,7 @@ const report = (
         `| ${done.name} | ${done.failures.length === 0 ? 'bestanden' : done.failures.join(' ')} | ${String(Math.round(done.ms / 1000))} s |`,
     ),
     '',
-    `Höchstwerte: Speicher ${mib(highest.memory)} MiB von ${mib(limits.memory)} MiB, Prozesse ${String(highest.pids)} von ${String(limits.pids)}.`,
+    line,
     '',
     `Images: \`${nodeImage}\`, \`${squidImage}\`.`,
     '',

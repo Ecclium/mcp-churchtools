@@ -6,9 +6,12 @@
 //
 // It tries the decoy directly, by name and by its address in the outer
 // network, the proxy directly, and each target as `name:port` with CONNECT
-// through the proxy, without TLS and without a request in the tunnel. It
-// prints one line of JSON in the form of ProbeResult (verdict.mts), with
-// outcomes and codes only, never an address it resolved.
+// through the proxy, and a plain GET through the proxy, which the template
+// refuses for every target. Where the proxy opens the tunnel, it makes the
+// handshake of TLS in it with the certificates the container trusts, and
+// sends no request. It prints one line of JSON in the form of ProbeResult
+// (verdict.mts), with outcomes and codes only, never an address it
+// resolved.
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import process from 'node:process';
@@ -129,6 +132,34 @@ const tunnel = (
     });
   });
 
+// The status of a plain GET through the proxy, which the template refuses
+// for every target, or undefined without an answer in time.
+const plainGet = (target: string): Promise<number | undefined> =>
+  new Promise((done) => {
+    const socket = net.connect(proxy);
+    let answer = '';
+    const finish = (status: number | undefined): void => {
+      socket.destroy();
+      done(status);
+    };
+    socket.setTimeout(timeoutMs, () => {
+      finish(undefined);
+    });
+    socket.once('connect', () => {
+      socket.write(
+        `GET http://${target}/ HTTP/1.1\r\nHost: ${target}\r\nConnection: close\r\n\r\n`,
+      );
+    });
+    socket.on('data', (chunk: Buffer) => {
+      answer += chunk.toString('latin1');
+      const status = /^HTTP\/1\.[01] (\d{3})/u.exec(answer)?.[1];
+      if (status !== undefined) finish(Number(status));
+    });
+    socket.once('error', () => {
+      finish(undefined);
+    });
+  });
+
 const main = async (): Promise<void> => {
   const [address, ...targets] = process.argv.slice(2);
   if (address === undefined || net.isIP(address) === 0) {
@@ -150,6 +181,7 @@ const main = async (): Promise<void> => {
     proxy: await connect(proxy.host, proxy.port),
     connect: connects,
     tls: handshakes,
+    plainGet: await plainGet('churchtools.e2e.test'),
   };
   process.stdout.write(`${JSON.stringify(result)}\n`);
 };

@@ -163,6 +163,7 @@ describe('the verdict on the probe of the network', () => {
       'churchtools.e2e.test:443': { result: 'ok' },
       'model.e2e.test:443': { result: 'ok' },
     },
+    plainGet: 403,
   };
 
   it('passes a network with the proxy as the one way out', () => {
@@ -200,6 +201,7 @@ describe('the verdict on the probe of the network', () => {
         },
       },
     ],
+    ['a plain GET through the proxy', { ...good, plainGet: 200 }],
   ] as const)('fails %s', (_name, probe) => {
     expect(judgeProbe(probe as ProbeResult, allowed, refused)).toHaveLength(1);
   });
@@ -217,13 +219,36 @@ describe('the peaks of a run', () => {
 
   it('judges the peaks against the limits', () => {
     const limits = { memory: 256 * 1024 * 1024, pids: 32 };
-    const peaks = [{ memory: 80_000_000, pids: 13 }, { memory: 50_000_000 }];
+    const peaks = [
+      { memory: 80_000_000, pids: 13 },
+      { memory: 50_000_000, pids: 12 },
+    ];
     expect(judgePeaks(peaks, limits)).toEqual([]);
     expect(highestPeak(peaks)).toEqual({ memory: 80_000_000, pids: 13 });
-    expect(judgePeaks([], limits)).toHaveLength(1);
     expect(
       judgePeaks([{ memory: limits.memory, pids: 32 }], limits),
     ).toHaveLength(2);
+  });
+
+  it('passes a kernel that gives no count of processes for any run', () => {
+    const limits = { memory: 256 * 1024 * 1024, pids: 32 };
+    expect(
+      judgePeaks([{ memory: 80_000_000 }, { memory: 50_000_000 }], limits),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['no measured run', []],
+    ['a run without a line of peaks', [{ memory: 1, pids: 1 }, undefined]],
+    ['a run without its memory', [{ memory: 1, pids: 1 }, { pids: 1 }]],
+    [
+      'a count of processes for only some runs',
+      [{ memory: 1, pids: 1 }, { memory: 1 }],
+    ],
+  ] as const)('fails %s', (_name, peaks) => {
+    expect(
+      judgePeaks(peaks, { memory: 256 * 1024 * 1024, pids: 32 }),
+    ).not.toEqual([]);
   });
 });
 

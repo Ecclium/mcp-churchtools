@@ -55,6 +55,17 @@ describe('the job e2e', () => {
     expect(e2eViolations(ci)).toEqual([]);
   });
 
+  // The job runs `pnpm run e2e`; what that runs stands in package.json, so
+  // that a changed script could not make the job pass without its proofs.
+  it('runs exactly the driver behind pnpm run e2e', () => {
+    const scripts = (
+      JSON.parse(
+        readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+      ) as { scripts: Record<string, string> }
+    ).scripts;
+    expect(scripts['e2e']).toBe('node scripts/e2e/run.mts');
+  });
+
   const job = e2eOf(ci);
   it.each([
     ['no job', ci.replace(job, '')],
