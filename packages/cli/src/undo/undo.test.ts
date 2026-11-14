@@ -198,6 +198,8 @@ const run = async (
     /** Added to the environment of the test. */
     readonly extra?: Readonly<Record<string, string>>;
     readonly answer?: (double: MockedHttpTransport) => void;
+    /** Whether the command runs with --runner. */
+    readonly runner?: boolean;
   } = {},
 ): Promise<Run> => {
   const stdout: string[] = [];
@@ -239,12 +241,71 @@ const run = async (
     execArgv: [],
     eventId: options.eventId ?? written,
     overwrite: options.overwrite ?? false,
+    runner: options.runner === true,
     output,
     writeSync: (_fd, _buffer, _offset, length) => length,
     createTransport,
   });
   return { code, stdout, stderr, transports };
 };
+
+describe('ecclium undo --runner', () => {
+  // The configuration of the runner, as its container holds it (ADR 0036),
+  // with its own account, whose token takes the place of the token of the
+  // server in the pipeline of the command.
+  const runnerCanary = makeCanaries().token;
+  const runnerEnvironment = (): Record<string, string> => {
+    const tokensDir = join(configDir, 'tokens');
+    mkdirSync(tokensDir, { mode: 0o700 });
+    writeFileSync(
+      join(tokensDir, 'ct_token_runner'),
+      `${runnerCanary.value}\n`,
+      { mode: 0o600 },
+    );
+    return {
+      ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+      ECCLIUM_STATE_DIR: stateDir,
+      ECCLIUM_KEYS_DIR: keysDir,
+      ECCLIUM_KILL_SWITCH_DIR: join(stateDir, 'stop'),
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_MARKER_KEY_FILE: join(configDir, 'marker-key'),
+      ECCLIUM_POLICY_FILE: join(configDir, 'policy.yaml'),
+      ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
+      ECCLIUM_ROUTINES_DIR: join(configDir, 'routines'),
+      ECCLIUM_TIME_ZONE: 'Europe/Zurich',
+      ECCLIUM_EGRESS: 'off',
+    };
+  };
+
+  it('takes back no write of the server, never with the own account of the runner', async () => {
+    // A write of the server with its snapshot, which over stdio goes back.
+    await keep();
+    const result = await run({
+      environment: runnerEnvironment(),
+      runner: true,
+      answer: answer(
+        [
+          [4, after],
+          [4, after],
+          [5, before],
+        ],
+        true,
+      ),
+    });
+    expect(result.code).toBe(undoProblems.write_of_no_run.code);
+    expect(result.stderr).toEqual([undoProblems.write_of_no_run.text]);
+    expect(result.transports).toBe(0);
+  });
+
+  it('names --runner for the undo of an undo only with the runner', () => {
+    expect(doneLines('page', 5, written)[1]).toBe(
+      `Auch diese Rücknahme lässt sich zurücknehmen, mit ‹ecclium undo ${written}›.`,
+    );
+    expect(doneLines('page', 5, written, true)[1]).toBe(
+      `Auch diese Rücknahme lässt sich zurücknehmen, mit ‹ecclium undo --runner ${written}›.`,
+    );
+  });
+});
 
 describe('ecclium undo', () => {
   it('takes a write back and shows the change, safe for the terminal', async () => {

@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -43,6 +44,7 @@ import { type Output, terminalLines, usageLine } from '../output/index.js';
 import { type QueueAction, reportApprove, runQueue } from './queue.js';
 import {
   approvedDiffHeading,
+  approvedLines,
   approvedUnrecorded,
   approveFailedEnding,
   decidedEnding,
@@ -55,7 +57,7 @@ import {
   queueProblems,
   reasonTexts,
   rejectedEnding,
-  showFooter,
+  showFooterOf,
   timeOf,
   usedEnding,
   usedWords,
@@ -217,6 +219,8 @@ const run = async (
     readonly extra?: Readonly<Record<string, string>>;
     readonly cut?: boolean;
     readonly answer?: (double: MockedHttpTransport) => void;
+    /** Whether the command runs with --runner. */
+    readonly runner?: boolean;
   } = {},
 ): Promise<Run> => {
   const stdout: string[] = [];
@@ -267,6 +271,7 @@ const run = async (
     execArgv: [],
     action,
     ...(options.queueId === undefined ? {} : { queueId: options.queueId }),
+    runner: options.runner === true,
     output,
     writeSync: (_fd, _buffer, _offset, length) => length,
     createTransport,
@@ -533,6 +538,122 @@ describe('ecclium queue reject', () => {
   });
 });
 
+describe('ecclium queue --runner', () => {
+  // The configuration of the runner, as its container holds it (ADR 0036):
+  // without the token of the server and toolsets, with the folder of its
+  // token files, which holds its own account, the folder of the kill
+  // switches, a zone, the routines and a way out.
+  const runnerCanary = makeCanaries().token;
+  const runnerEnvironment = (): Record<string, string> => {
+    const tokensDir = join(configDir, 'tokens');
+    mkdirSync(tokensDir, { mode: 0o700 });
+    writeFileSync(
+      join(tokensDir, 'ct_token_runner'),
+      `${runnerCanary.value}\n`,
+      { mode: 0o600 },
+    );
+    return {
+      ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+      ECCLIUM_STATE_DIR: stateDir,
+      ECCLIUM_KEYS_DIR: keysDir,
+      ECCLIUM_KILL_SWITCH_DIR: join(stateDir, 'stop'),
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_MARKER_KEY_FILE: join(configDir, 'marker-key'),
+      ECCLIUM_POLICY_FILE: join(configDir, 'policy.yaml'),
+      ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
+      ECCLIUM_ROUTINES_DIR: join(configDir, 'routines'),
+      ECCLIUM_TIME_ZONE: 'Europe/Zurich',
+      ECCLIUM_EGRESS: 'off',
+    };
+  };
+
+  it('lists, shows and rejects with the configuration of the runner, and asks ChurchTools nothing', async () => {
+    await keep();
+    const environment = runnerEnvironment();
+    const listed = await run('list', { environment, runner: true });
+    expect(listed.code).toBe(exitCodes.ok);
+    expect(listed.stdout[1]).toContain('wartet auf Ihre Freigabe');
+    const shown = await run('show', { queueId: id, environment, runner: true });
+    expect(shown.code).toBe(exitCodes.ok);
+    // The entry of the test comes from no run.
+    expect(shown.stdout.at(-1)).toBe(showFooterOf(false));
+    const rejected = await run('reject', {
+      queueId: id,
+      environment,
+      runner: true,
+    });
+    expect(rejected.code).toBe(exitCodes.ok);
+    expect(listed.requests + shown.requests + rejected.requests).toBe(0);
+  });
+
+  it('approves no entry of no run, before anything is sent, and the entry waits', async () => {
+    await keep(id, approvable);
+    const environment = runnerEnvironment();
+    const refused = await run('approve', {
+      queueId: id,
+      environment,
+      runner: true,
+    });
+    expect(refused.code).toBe(exitCodes.usage);
+    expect(refused.stderr).toEqual([queueProblems.entry_of_no_run.text]);
+    expect(refused.requests).toBe(0);
+    const listed = await run('list', { environment, runner: true });
+    expect(listed.stdout[1]).toContain('wartet auf Ihre Freigabe');
+  });
+
+  it('says of an entry it cannot approve what the approval says, without the pipeline', async () => {
+    await keep();
+    const environment = runnerEnvironment();
+    const missing = await run('approve', {
+      queueId: other,
+      environment,
+      runner: true,
+    });
+    expect(missing.code).toBe(exitCodes.noInput);
+    expect(missing.stderr).toEqual([queueMissing.missing.text]);
+    expect(
+      (await run('reject', { queueId: id, environment, runner: true })).code,
+    ).toBe(exitCodes.ok);
+    const decided = await run('approve', {
+      queueId: id,
+      environment,
+      runner: true,
+    });
+    expect(decided.code).toBe(exitCodes.dataError);
+    expect(decided.stderr).toEqual([
+      decidedEnding('rejected', undefined, false).text,
+    ]);
+    expect(missing.requests + decided.requests).toBe(0);
+    // The two approvals ended before the pipeline, whose transport holds
+    // the own account of the runner: only the rejection has a line.
+    const decisions = readdirSync(join(stateDir, 'audit'))
+      .filter((name) => name.endsWith('.jsonl'))
+      .flatMap((name) =>
+        readFileSync(join(stateDir, 'audit', name), 'utf8')
+          .split('\n')
+          .filter((line) => line !== ''),
+      )
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line['type'] === 'approval');
+    expect(decisions.map((line) => line['decision'])).toEqual(['rejected']);
+  });
+
+  it('refuses the token of the server, as the runner does', async () => {
+    await keep();
+    const result = await run('list', {
+      environment: {
+        ...runnerEnvironment(),
+        ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value,
+      },
+      runner: true,
+    });
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stdout).toEqual([]);
+    expect(all(result)).toContain('ECCLIUM_CHURCHTOOLS_TOKEN');
+    expect(all(result)).not.toContain(canary.token.value);
+  });
+});
+
 describe('ecclium queue approve', () => {
   const pagePath = `/api/wiki/categories/12/pages/${guid}`;
   const reply = (version: number, text: string): string =>
@@ -786,7 +907,21 @@ describe('ecclium queue approve', () => {
 
   it('lists the commands of an entry in the footers', () => {
     expect(listFooter).toContain('‹ecclium queue approve <Kennung>›');
-    expect(showFooter).toContain('‹ecclium queue approve›');
+    expect(listFooter).toContain('‹--runner›');
+    expect(showFooterOf(false)).toContain('‹ecclium queue approve›');
+    expect(showFooterOf(false)).not.toContain('--runner');
+    // An entry of a run is decided with the configuration of the runner.
+    expect(showFooterOf(true)).toContain('‹ecclium queue approve --runner›');
+    expect(showFooterOf(true)).toContain('‹ecclium queue reject --runner›');
+  });
+
+  it('names --runner for the undo of an approval only with the runner', () => {
+    expect(approvedLines(4, id).at(-1)).toBe(
+      `Zurücknehmen lässt sich der Schreibvorgang mit ‹ecclium undo ${id}›.`,
+    );
+    expect(approvedLines(4, id, true).at(-1)).toBe(
+      `Zurücknehmen lässt sich der Schreibvorgang mit ‹ecclium undo --runner ${id}›.`,
+    );
   });
 });
 

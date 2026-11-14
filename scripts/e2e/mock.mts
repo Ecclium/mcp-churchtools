@@ -79,6 +79,8 @@ export interface MockCall {
   readonly method: string;
   readonly path: string;
   readonly status: number;
+  /** The ID of the account of ChurchTools the token named, if any. */
+  readonly account?: number;
 }
 
 /** One request as it arrived, before a hold. */
@@ -130,6 +132,11 @@ interface MockRequest {
 interface MockAnswer {
   readonly status: number;
   readonly body: unknown;
+  /**
+   * The ID of the account the token named, for the report only, so that a
+   * proof can tell which account wrote.
+   */
+  readonly account?: number;
 }
 
 // The longest body a stand-in reads; a run sends far less.
@@ -161,9 +168,10 @@ export function createChurchTools(config: MockConfig['churchtools']): {
       (account) => authorization === `Login ${account.token}`,
     );
   const ok = (data: unknown): MockAnswer => ({ status: 200, body: { data } });
-  const respond = (request: MockRequest): MockAnswer => {
-    const account = accountOf(request.authorization);
-    if (account === undefined) return { status: 401, body: {} };
+  const answerFor = (
+    request: MockRequest,
+    account: MockAccount,
+  ): MockAnswer => {
     const { method, url } = request;
     if (method === 'GET' && url.pathname === '/api/whoami') {
       return ok({
@@ -241,6 +249,11 @@ export function createChurchTools(config: MockConfig['churchtools']): {
       }
     }
     return { status: 404, body: {} };
+  };
+  const respond = (request: MockRequest): MockAnswer => {
+    const account = accountOf(request.authorization);
+    if (account === undefined) return { status: 401, body: {} };
+    return { ...answerFor(request, account), account: account.id };
   };
   return {
     respond,
@@ -429,6 +442,7 @@ const main = (): void => {
           method: request.method ?? 'GET',
           path: url.pathname,
           status: answer.status,
+          ...(answer.account === undefined ? {} : { account: answer.account }),
         });
         send(response, answer);
       });

@@ -115,7 +115,7 @@ export const adoptAccountEnding = (code: RunPipelineCode): AdoptEnding =>
   );
 
 const queueWay =
-  'Der Weg bleibt die Freigabe-Warteschlange: ‹ecclium queue approve› hängt den Abschnitt des wartenden Laufs neu an, ‹ecclium queue reject› verwirft ihn.';
+  'Der Weg bleibt die Freigabe-Warteschlange: ‹ecclium queue approve --runner› hängt den Abschnitt des wartenden Laufs neu an, ‹ecclium queue reject --runner› verwirft ihn.';
 
 /** The endings of an adoption that signs nothing, by what it found. */
 export const adoptEndings = Object.freeze({
@@ -343,11 +343,11 @@ export function adoptDoneLines(done: {
     ...(done.undoId === undefined
       ? []
       : [
-          `Zurücknehmen lässt sich die Übernahme mit ‹ecclium undo ${done.undoId}›.`,
+          `Zurücknehmen lässt sich die Übernahme mit ‹ecclium undo --runner ${done.undoId}›.`,
         ]),
     ...done.undecided.map(
       (queueId) =>
-        `Ein Lauf dieser Periode hat den Eintrag ‹${queueId}› in die Freigabe-Warteschlange gestellt, und das Audit hält keinen Entscheid fest. Weisen Sie ihn mit ‹ecclium queue reject ${queueId}› ab: Eine Freigabe hängte den Abschnitt ein zweites Mal an.`,
+        `Ein Lauf dieser Periode hat den Eintrag ‹${queueId}› in die Freigabe-Warteschlange gestellt, und das Audit hält keinen Entscheid fest. Weisen Sie ihn mit ‹ecclium queue reject --runner ${queueId}› ab: Eine Freigabe hängte den Abschnitt ein zweites Mal an.`,
     ),
     `Der nächste Lauf dieser Periode ersetzt den Abschnitt jetzt wie jeden eigenen, von Hand mit ‹ecclium run-once ${done.routineId}›, solange die Periode läuft.`,
   ]);

@@ -301,6 +301,14 @@ describe('the command line', () => {
     [['queue', 'approve', 'x', '--overwrite'], 'option'],
     [['queue', 'accept', 'x'], 'command'],
     [['queue', 'reject', 'x', '--overwrite'], 'option'],
+    // A run and a routine take the configuration of the runner anyway.
+    [['undo', '--run', 'x', '--runner'], 'option'],
+    [['marker', 'adopt', '--run', 'x', '--runner'], 'option'],
+    [
+      ['policy', 'init', '--routine', 'a', '--credential', 'b', '--runner'],
+      'option',
+    ],
+    [['queue', 'list', '--runner', '--runner'], 'repeated'],
   ])('refuses %j as %s with a fixed text on stderr', (args, problem) => {
     const result = capture(args, validEnvironment());
     expect(result.code).toBe(exitCodes.usage);
@@ -766,6 +774,24 @@ describe('ecclium undo in the command line', () => {
     expect(result.stderr).not.toContain(id);
   });
 
+  it.each([
+    [['undo', '11111111-2222-4333-8444-555555555555'], 'stdio'],
+    [['undo', '11111111-2222-4333-8444-555555555555', '--runner'], 'runner'],
+    [['undo', '--runner', '11111111-2222-4333-8444-555555555555'], 'runner'],
+    [['undo', '--run', '11111111-2222-4333-8444-555555555555'], 'runner'],
+  ])('loads for %j the configuration of the kind %s', async (args, kind) => {
+    const kinds: string[] = [];
+    await runUndo(args, {
+      undo: {
+        load: (sources) => {
+          kinds.push(sources.transport);
+          throw new Error(plain());
+        },
+      },
+    });
+    expect(kinds).toEqual([kind]);
+  });
+
   it('turns a failure of the command into the internal error', async () => {
     const result = await runUndo(
       ['undo', '11111111-2222-4333-8444-555555555555'],
@@ -860,6 +886,31 @@ describe('ecclium queue in the command line', () => {
       expect(result.stderr).not.toContain(id);
     },
   );
+
+  it.each([
+    [['queue', 'list'], 'stdio'],
+    [['queue', 'list', '--runner'], 'runner'],
+    [['queue', 'show', '11111111-2222-4333-8444-555555555555'], 'stdio'],
+    [
+      ['queue', 'approve', '--runner', '11111111-2222-4333-8444-555555555555'],
+      'runner',
+    ],
+    [
+      ['queue', 'reject', '11111111-2222-4333-8444-555555555555', '--runner'],
+      'runner',
+    ],
+  ])('loads for %j the configuration of the kind %s', async (args, kind) => {
+    const kinds: string[] = [];
+    await runQueue(args, {
+      queue: {
+        load: (sources) => {
+          kinds.push(sources.transport);
+          throw new Error(plain());
+        },
+      },
+    });
+    expect(kinds).toEqual([kind]);
+  });
 
   it.each([
     [['queue', 'list']],

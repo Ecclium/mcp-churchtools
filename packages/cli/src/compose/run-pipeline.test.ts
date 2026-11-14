@@ -251,7 +251,7 @@ const setup = (options: SetupOptions = {}) => {
     extra: {
       readonly readToken?: typeof readRunnerToken;
       readonly checkTokensDir?: typeof checkRunnerTokensDir;
-      readonly requireAccount?: boolean;
+      readonly ownAccount?: boolean;
       readonly runner?: boolean;
     } = {},
   ): RunPipelineResult => {
@@ -355,7 +355,10 @@ describe('the token of the pipeline of a run', () => {
   it('reads with the own account of the runner for a routine without an entry', async () => {
     const { runnerToken, accepted, doubles, build, read } = setup();
     accepted.token = runnerToken;
-    const outcome = await read(build(unlisted, { runner: true }), unlisted);
+    const outcome = await read(
+      build(unlisted, { runner: true, ownAccount: true }),
+      unlisted,
+    );
     expect(outcome).toMatchObject({
       ok: true,
       data: { categories: [{ id: 7 }] },
@@ -370,7 +373,7 @@ describe('the token of the pipeline of a run', () => {
     const { serverCanary, accepted, doubles, build, read } = setup();
     accepted.token = serverCanary;
     await expect(
-      read(build(unlisted, { runner: true }), unlisted),
+      read(build(unlisted, { runner: true, ownAccount: true }), unlisted),
     ).resolves.toMatchObject({ ok: false, code: 'auth' });
     expect(doubles[0]?.calls()[0]?.headers['authorization']).not.toBe(
       `Login ${serverCanary.value}`,
@@ -379,7 +382,7 @@ describe('the token of the pipeline of a run', () => {
 
   it('builds a run without an entry only in the runner', () => {
     const { doubles, build } = setup();
-    expect(() => build(unlisted)).toThrow(TypeError);
+    expect(() => build(unlisted, { ownAccount: true })).toThrow(TypeError);
     expect(doubles).toHaveLength(0);
   });
 
@@ -397,7 +400,7 @@ describe('the token of the pipeline of a run', () => {
     // The double takes only the token of the account, so the own account
     // of the runner cannot read in its place.
     await expect(
-      read(build(unlisted, { runner: true }), unlisted),
+      read(build(unlisted, { runner: true, ownAccount: true }), unlisted),
     ).resolves.toMatchObject({ ok: false, code: 'auth' });
   });
 
@@ -433,7 +436,7 @@ describe('a pipeline of a run without a token file the checks accept', () => {
     expect(asked).toEqual([]);
     // Also for a routine without an entry: never the token of the
     // configuration.
-    expect(build(unlisted, { runner: true })).toEqual({
+    expect(build(unlisted, { runner: true, ownAccount: true })).toEqual({
       ok: false,
       code: 'runner_tokens_dir_unset',
     });
@@ -456,7 +459,7 @@ describe('a pipeline of a run without a token file the checks accept', () => {
       ok: false,
       code: 'runner_tokens_dir_mode',
     });
-    expect(build(unlisted, { runner: true })).toEqual({
+    expect(build(unlisted, { runner: true, ownAccount: true })).toEqual({
       ok: false,
       code: 'runner_tokens_dir_mode',
     });
@@ -481,12 +484,16 @@ describe('a pipeline of a run without a token file the checks accept', () => {
     expect(doubles).toHaveLength(0);
   });
 
-  it('is not built for a routine without an account when one is required', () => {
+  it('is not built for a routine without an account unless the runner asks for its own', () => {
     const { doubles, build } = setup();
-    expect(build(unlisted, { requireAccount: true })).toEqual({
-      ok: false,
-      code: 'run_credential_missing',
-    });
+    // Without ownAccount, also with the configuration of the runner, which
+    // holds the own account of the runner (ADR 0036).
+    for (const runner of [false, true]) {
+      expect(build(unlisted, { runner })).toEqual({
+        ok: false,
+        code: 'run_credential_missing',
+      });
+    }
     expect(doubles).toHaveLength(0);
   });
 

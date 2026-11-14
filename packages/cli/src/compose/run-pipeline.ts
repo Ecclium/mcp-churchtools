@@ -19,8 +19,9 @@
  * without an entry, which writes no page, reads with the own account of
  * the runner, the file `ct_token_runner` in the same folder (ADR 0023,
  * ADR 0033), read anew for each run like any other. Only the runner builds
- * such a run; any other caller must require an account, so that nothing
- * but the runner reads in the name of a routine without an entry. Without
+ * such a run, with `ownAccount`; for any other caller a routine without an
+ * entry builds nothing, so that nothing but the runner reads in the name
+ * of a routine without an entry (ADR 0036). Without
  * the variable, with a folder or a file the checks refuse, the run does
  * not start, and the token of the configuration is never taken: the
  * folder is checked again for each run, since its rights can change while
@@ -59,11 +60,15 @@ export interface RunPipelineOptions extends ComposeOptions {
   /** The halt of writes of the process, the same for every run. */
   readonly writeHalt: WriteHalt;
   /**
-   * Whether the routine must have an account in the policy, as for the
-   * approval of an entry a run queued: then a routine without an entry
-   * builds nothing instead of reading with the token of the server.
+   * Whether a routine without an entry in the policy reads with the own
+   * account of the runner. Only the runner passes it, for its runs. Every
+   * other caller, such as the commands for the operator that take back,
+   * approve or adopt the write of a run, leaves it out: a routine without
+   * an account then builds nothing, so that no command writes with the own
+   * account of the runner, which the configuration of the runner holds in
+   * place of the token of the server (ADR 0036).
    */
-  readonly requireAccount?: boolean;
+  readonly ownAccount?: boolean;
   /** Only for tests: reads the token file of an alias. */
   readonly readToken?: typeof readRunnerToken;
   /** Only for tests: checks the folder of the token files. */
@@ -149,8 +154,8 @@ const withAccount = (
  * @returns The pipeline with a function that closes its transport, or why
  *   no token was read. Nothing is open when it was not built.
  * @throws {TypeError} When a factory of core refuses its options, as
- *   `composeToolPipeline` does, or when a caller other than the runner
- *   asks for a routine without an entry and requires no account.
+ *   `composeToolPipeline` does, or when `ownAccount` is given with a
+ *   configuration that is not the one of the runner.
  * @example
  * ```ts
  * const built = composeRunPipeline({ config, catalog, writer, clock, auditFile, routineId, writeHalt });
@@ -170,7 +175,10 @@ export function composeRunPipeline(
   }
   let { credential } = settled;
   if (credential === undefined) {
-    if (options.requireAccount === true) {
+    // Without the switch, a routine without an entry builds nothing: the
+    // safe default, so that a caller who forgets it never reads or writes
+    // with the own account of the runner (ADR 0036).
+    if (options.ownAccount !== true) {
       return Object.freeze({ ok: false, code: 'run_credential_missing' });
     }
     // A routine without an entry reads with the own account of the runner,

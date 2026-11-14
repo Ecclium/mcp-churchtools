@@ -429,13 +429,16 @@ const setup = (options: SetupOptions = {}) => {
   const keysDir = privateDir(join(base, 'keys'));
   const tokensDir = privateDir(join(base, 'tokens'));
   const configDir = privateDir(join(base, 'config'));
-  // The token of the account of the alias, and the one of the server.
+  // The token of the account of the alias, the own account of the runner
+  // and the token of the server.
   const accountCanary = makeCanary('token');
+  const runnerCanary = makeCanary('token');
   const serverCanary = makeCanary('token');
   const accountFile = privateFile(
     join(tokensDir, 'ct_token_berichte'),
     `${accountCanary.value}\n`,
   );
+  privateFile(join(tokensDir, 'ct_token_runner'), `${runnerCanary.value}\n`);
   // Keys made from seeds instead of written out, so that no secret scanner
   // reads them as leaked ones.
   const keyFile = privateFile(
@@ -469,6 +472,20 @@ const setup = (options: SetupOptions = {}) => {
     ECCLIUM_KILL_SWITCH_DIR: stopDir,
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_TIME_ZONE: 'Europe/Zurich',
+  };
+  // The commands about a run take the configuration of the runner, as a
+  // container of the runner holds it (ADR 0036): without the token of the
+  // server and without toolsets, which the runner does not read, so that
+  // only the catalog of the runner names the tool of a write.
+  const runnerEnvironment: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(environment).filter(
+        ([name]) =>
+          name !== 'ECCLIUM_CHURCHTOOLS_TOKEN' && name !== 'ECCLIUM_TOOLSETS',
+      ),
+    ),
+    ECCLIUM_ROUTINES_DIR: privateDir(join(configDir, 'routines')),
+    ECCLIUM_EGRESS: 'off',
   };
   const loaded = loadConfig({ environment, transport: 'stdio' });
   if (!loaded.ok) throw new Error('the configuration of the test is invalid');
@@ -630,9 +647,25 @@ const setup = (options: SetupOptions = {}) => {
     return { bound, rendered, written, signal };
   };
 
-  // `ecclium queue approve` as the operator calls it, with the same
-  // configuration and the double of the test.
-  const approveCommand = async (queueId: string) => {
+  // A command about a run never sends with the own account of the runner,
+  // which holds the place of the token of the server in the configuration
+  // of the runner, nor with the token of the server (ADR 0033, ADR 0036).
+  const expectNoForeignToken = (calls: readonly MockedCall[]): void => {
+    const foreign = new Set([
+      `Login ${runnerCanary.value}`,
+      `Login ${serverCanary.value}`,
+    ]);
+    expect(
+      calls.filter((call) =>
+        foreign.has(String(call.headers['authorization'])),
+      ),
+    ).toEqual([]);
+  };
+
+  // `ecclium queue approve` as the operator calls it, with the
+  // configuration of the runner and --runner, or over stdio, and the
+  // double of the test.
+  const approveCommand = async (queueId: string, stdio = false) => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     // The calls of the transports of the command, kept before it closes
@@ -653,10 +686,11 @@ const setup = (options: SetupOptions = {}) => {
     // and the process of the test, so the writer of the runs closes first.
     audit.writer.close();
     const code = await runQueue({
-      environment,
+      environment: stdio ? environment : runnerEnvironment,
       execArgv: [],
       action: 'approve',
       queueId,
+      runner: !stdio,
       output: {
         stdout: (line) => stdout.push(line) > 0,
         stderr: (line) => stderr.push(line) > 0,
@@ -665,19 +699,25 @@ const setup = (options: SetupOptions = {}) => {
       createTransport: recording,
       clock,
     });
+    expectNoForeignToken(calls);
     return {
       code,
       stdout,
       stderr,
+      calls,
       patches: calls.filter((call) => call.method === 'PATCH'),
     };
   };
 
   // `ecclium undo` as the operator calls it, for one write or with --run,
-  // with the same configuration and the double of the test.
+  // with the configuration of the runner, for one write with --runner, or
+  // for one write over stdio, and the double of the test. An environment
+  // given replaces the one of the call, such as with a variable more.
   const undoCommand = async (
     target: { readonly eventId: string } | { readonly runId: string },
     overwrite = false,
+    stdio = false,
+    given?: Record<string, string>,
   ) => {
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -696,10 +736,11 @@ const setup = (options: SetupOptions = {}) => {
     // As for the approval: the command opens the audit file of the day.
     audit.writer.close();
     const code = await undoWrite({
-      environment,
+      environment: given ?? (stdio ? environment : runnerEnvironment),
       execArgv: [],
       ...target,
       overwrite,
+      runner: 'eventId' in target && !stdio,
       output: {
         stdout: (line) => stdout.push(line) > 0,
         stderr: (line) => stderr.push(line) > 0,
@@ -708,6 +749,7 @@ const setup = (options: SetupOptions = {}) => {
       createTransport: recording,
       clock,
     });
+    expectNoForeignToken(calls);
     return {
       code,
       stdout,
@@ -749,7 +791,7 @@ const setup = (options: SetupOptions = {}) => {
     // As for the approval: the command opens the audit file of the day.
     audit.writer.close();
     const code = await adoptMarker({
-      environment,
+      environment: runnerEnvironment,
       execArgv: [],
       runId,
       confirm,
@@ -761,6 +803,7 @@ const setup = (options: SetupOptions = {}) => {
       createTransport: recording,
       clock,
     });
+    expectNoForeignToken(calls);
     return {
       code,
       stdout,
@@ -866,6 +909,7 @@ const setup = (options: SetupOptions = {}) => {
     accountCanary,
     serverCanary,
     accountFile,
+    runnerEnvironment,
     stateDir,
     rewritePolicy,
     verifyAudit,
@@ -1251,7 +1295,7 @@ describe('the approval of a section a run queued', () => {
     expect(periodsOn(text())).toEqual(['2026-W46', '2026-W46']);
   });
 
-  it('writes nothing without the token file of the account, also not with the token of the server', async () => {
+  it('writes nothing without the token file of the account, which the configuration of the runner refuses as the runner does', async () => {
     const setupOf = setup();
     const { patches, approveCommand, accountFile } = setupOf;
     const queueId = await queueOne(setupOf);
@@ -1259,10 +1303,25 @@ describe('the approval of a section a run queued', () => {
     const refused = await approveCommand(queueId);
     expect(refused.code).toBe(exitCodes.invalidConfig);
     expect(refused.stderr.join('\n')).toContain(
-      'Mit dem Token des Servers schreibt Ecclium den Abschnitt nicht.',
+      'Die Token-Datei des Kontos, das die Richtlinie im Feld ‹unattended[0].credential› nennt',
     );
-    expect(refused.patches).toEqual([]);
+    expect(refused.calls).toEqual([]);
     expect(patches()).toHaveLength(1);
+  });
+
+  it('approves the entry of a run only with --runner, never over stdio', async () => {
+    const setupOf = setup();
+    const { patches, approveCommand } = setupOf;
+    const queueId = await queueOne(setupOf);
+    const refused = await approveCommand(queueId, true);
+    expect(refused.code).toBe(exitCodes.usage);
+    expect(refused.stderr.join('\n')).toContain(
+      'Der Eintrag stammt aus einem Lauf einer Routine. Ecclium gibt ihn nur mit der Konfiguration des Runners frei',
+    );
+    expect(refused.calls).toEqual([]);
+    expect(patches()).toHaveLength(1);
+    // The entry still waits and goes out with --runner.
+    expect((await approveCommand(queueId)).code).toBe(exitCodes.ok);
   });
 
   it('writes nothing for a routine the policy no longer names, also not with the token of the server', async () => {
@@ -1424,7 +1483,7 @@ describe('ecclium undo --run', () => {
     const refused = await undoCommand({ runId: bound.runId });
     expect(refused.code).toBe(exitCodes.noInput);
     expect(refused.stdout).toEqual([
-      `Der Lauf hat den Eintrag ‹${written.queueId}› in die Freigabe-Warteschlange gestellt, und das Audit hält keinen Entscheid fest. Wartet er noch, weisen Sie ihn mit ‹ecclium queue reject ${written.queueId}› ab, damit ihn niemand später freigibt.`,
+      `Der Lauf hat den Eintrag ‹${written.queueId}› in die Freigabe-Warteschlange gestellt, und das Audit hält keinen Entscheid fest. Wartet er noch, weisen Sie ihn mit ‹ecclium queue reject --runner ${written.queueId}› ab, damit ihn niemand später freigibt.`,
     ]);
     expect(refused.stderr.join('\n')).toContain(
       'Der Lauf hat in ChurchTools nichts geschrieben',
@@ -1511,7 +1570,7 @@ describe('ecclium undo --run', () => {
     expect((await undoCommand({ runId: bound.runId })).code).toBe(exitCodes.ok);
   });
 
-  it('writes nothing without the token file of the account, also not with the token of the server', async () => {
+  it('writes nothing without the token file of the account, which the configuration of the runner refuses as the runner does', async () => {
     const setupOf = setup();
     const { runOnce, undoCommand, accountFile } = setupOf;
     const { bound } = await runOnce();
@@ -1519,7 +1578,7 @@ describe('ecclium undo --run', () => {
     const refused = await undoCommand({ runId: bound.runId });
     expect(refused.code).toBe(exitCodes.invalidConfig);
     expect(refused.stderr.join('\n')).toContain(
-      'Mit dem Token des Servers nimmt Ecclium nichts zurück.',
+      'Die Token-Datei des Kontos, das die Richtlinie im Feld ‹unattended[0].credential› nennt',
     );
     expect(refused.calls).toEqual([]);
   });
@@ -1579,6 +1638,71 @@ describe('ecclium undo --run', () => {
     const refused = await undoCommand({ runId: bound.runId });
     expect(refused.code).toBe(exitCodes.ioError);
     expect(refused.calls).toEqual([]);
+    expect(setupOf.text()).toContain('Mesmer');
+  });
+
+  it('writes nothing for a routine the policy no longer names, never with the own account of the runner', async () => {
+    const setupOf = setup();
+    const {
+      runOnce,
+      undoCommand,
+      adoptCommand,
+      auditFileLines,
+      rewritePolicy,
+    } = setupOf;
+    const { bound } = await runOnce();
+    const [write] = writtenLines(auditFileLines(), bound.runId);
+    // The entries of the routine are gone; another routine keeps the alias.
+    rewritePolicy([entryOf({ routine: 'kalender-test' })]);
+    for (const refused of [
+      await undoCommand({ runId: bound.runId }),
+      await undoCommand({ eventId: String(write?.['eventId']) }),
+    ]) {
+      expect(refused.code).toBe(exitCodes.invalidConfig);
+      expect(refused.stderr.join('\n')).toContain(
+        'Die Richtlinie nennt für die Routine keinen Eintrag und damit kein Konto mehr.',
+      );
+      expect(refused.calls).toEqual([]);
+    }
+    // An adoption needs the page of the entry and ends before the account.
+    const adopted = await adoptCommand(bound.runId);
+    expect(adopted.code).toBe(exitCodes.noInput);
+    expect(adopted.patches).toEqual([]);
+    expect(setupOf.text()).toContain('Mesmer');
+  });
+
+  it('refuses the token of the server and requires the folder of the kill switches, as the runner does', async () => {
+    const setupOf = setup();
+    const { runOnce, undoCommand, runnerEnvironment, accountFile } = setupOf;
+    const { bound } = await runOnce();
+    // A container with both tokens lies outside the contract (ADR 0036).
+    const withServer = await undoCommand({ runId: bound.runId }, false, false, {
+      ...runnerEnvironment,
+      ECCLIUM_CHURCHTOOLS_TOKEN_FILE: accountFile,
+    });
+    expect(withServer.code).toBe(exitCodes.invalidConfig);
+    expect(withServer.stderr.join('\n')).toMatch(
+      /Für den Runner ist ‹?ECCLIUM_CHURCHTOOLS_TOKEN_FILE›? gesetzt\./u,
+    );
+    expect(withServer.calls).toEqual([]);
+    // Without the variable the command never looks into the folder stop of
+    // the folder of state, which the test made as a decoy.
+    const withoutStop = Object.fromEntries(
+      Object.entries(runnerEnvironment).filter(
+        ([name]) => name !== 'ECCLIUM_KILL_SWITCH_DIR',
+      ),
+    );
+    const noStop = await undoCommand(
+      { runId: bound.runId },
+      false,
+      false,
+      withoutStop,
+    );
+    expect(noStop.code).toBe(exitCodes.invalidConfig);
+    expect(noStop.stderr.join('\n')).toMatch(
+      /ECCLIUM_KILL_SWITCH_DIR›? ist für den Runner nicht gesetzt\./u,
+    );
+    expect(noStop.calls).toEqual([]);
     expect(setupOf.text()).toContain('Mesmer');
   });
 
@@ -1652,7 +1776,7 @@ describe('ecclium undo <Kennung> of a write of a run', () => {
     expect(refused.calls).toEqual([]);
   });
 
-  it('takes a write of no run back as before, also beside a line that does not fit the format', async () => {
+  it('takes a write of no run back only over stdio, also beside a line that does not fit the format', async () => {
     const setupOf = setup();
     const { runOnce, undoCommand, auditFileLines, stateDir } = setupOf;
     const { bound } = await runOnce();
@@ -1669,14 +1793,40 @@ describe('ecclium undo <Kennung> of a write of a run', () => {
         confirmation: 'elicitation',
       }),
     ]);
-    // The line proves that the write belongs to no run: the undo goes on
-    // as before and finds no snapshot, instead of refusing for the
+    // With --runner a write of no run never goes back: the configuration of
+    // the runner holds the own account of the runner (ADR 0036).
+    const refused = await undoCommand({ eventId: interactive });
+    expect(refused.code).toBe(exitCodes.noInput);
+    expect(refused.stderr.join('\n')).toContain(
+      'verbinden diesen Schreibvorgang mit keinem Lauf einer Routine',
+    );
+    expect(refused.calls).toEqual([]);
+    // Over stdio the line proves that the write belongs to no run: the undo
+    // goes on as before and finds no snapshot, instead of refusing for the
     // damaged line.
-    const missing = await undoCommand({ eventId: interactive });
+    const missing = await undoCommand({ eventId: interactive }, false, true);
     expect(missing.code).toBe(exitCodes.noInput);
     expect(missing.stderr.join('\n')).toContain(
       'Unter dieser Kennung findet Ecclium keinen Snapshot',
     );
+  });
+
+  it('takes a write of a run back only with --runner, never over stdio', async () => {
+    const setupOf = setup();
+    const { runOnce, undoCommand, auditFileLines } = setupOf;
+    const { bound } = await runOnce();
+    const [write] = writtenLines(auditFileLines(), bound.runId);
+    const refused = await undoCommand(
+      { eventId: String(write?.['eventId']) },
+      false,
+      true,
+    );
+    expect(refused.code).toBe(exitCodes.usage);
+    expect(refused.stderr.join('\n')).toContain(
+      'Rufen Sie den Befehl mit ‹--runner› und derselben Konfiguration auf wie den Runner',
+    );
+    expect(refused.calls).toEqual([]);
+    expect(setupOf.text()).toContain('Mesmer');
   });
 
   it('takes nothing back for an approval whose entry no line of the range queued', async () => {
@@ -1843,8 +1993,8 @@ describe('ecclium marker adopt', () => {
     const adoptionId = String(lines[1]?.['eventId']);
     expect(done.stdout).toEqual(
       expect.arrayContaining([
-        `Zurücknehmen lässt sich die Übernahme mit ‹ecclium undo ${adoptionId}›.`,
-        expect.stringContaining('ecclium queue reject') as unknown,
+        `Zurücknehmen lässt sich die Übernahme mit ‹ecclium undo --runner ${adoptionId}›.`,
+        expect.stringContaining('ecclium queue reject --runner') as unknown,
         expect.stringContaining(`‹ecclium run-once ${routineId}›`) as unknown,
       ]),
     );

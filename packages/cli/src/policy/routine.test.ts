@@ -200,7 +200,11 @@ const setup = (options: SetupOptions = {}) => {
   privateDir(join(routinesDir, 'templates'));
   const serverCanary = makeCanary('token');
   const accountToken = makeCanary('token');
+  const runnerToken = makeCanary('token');
   privateFile(join(tokensDir, 'ct_token_berichte'), `${accountToken.value}\n`);
+  // The own account of the runner, which the configuration of the runner
+  // requires and the command never reads with.
+  privateFile(join(tokensDir, 'ct_token_runner'), `${runnerToken.value}\n`);
   for (const [id, value] of Object.entries(
     options.routines ?? { [routineId]: routineValueOf(routineId) },
   )) {
@@ -214,21 +218,24 @@ const setup = (options: SetupOptions = {}) => {
         : template,
     );
   }
+  // The configuration of the runner, as its container holds it (ADR 0036):
+  // without the token of the server, with the folder of the kill switches
+  // and a way out, and with a file of the policy, by default one without
+  // any entry, as before the first entry of a routine.
   const environment: Record<string, string> = {
     ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
-    ECCLIUM_CHURCHTOOLS_TOKEN: serverCanary.value,
     ECCLIUM_STATE_DIR: stateDir,
+    ECCLIUM_KILL_SWITCH_DIR: privateDir(join(base, 'stop')),
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_ROUTINES_DIR: routinesDir,
     ECCLIUM_TIME_ZONE: 'Europe/Zurich',
+    ECCLIUM_EGRESS: 'off',
     ECCLIUM_LOG_LEVEL: 'debug',
-  };
-  if (options.policy !== undefined) {
-    environment['ECCLIUM_POLICY_FILE'] = privateFile(
+    ECCLIUM_POLICY_FILE: privateFile(
       join(configDir, 'policy.json'),
-      JSON.stringify(options.policy),
-    );
-  }
+      JSON.stringify(options.policy ?? { schema: 'policy.v1' }),
+    ),
+  };
   for (const [name, value] of Object.entries(options.extra ?? {})) {
     if (value === undefined) Reflect.deleteProperty(environment, name);
     else environment[name] = value;
@@ -386,6 +393,7 @@ const setup = (options: SetupOptions = {}) => {
     environment,
     serverCanary,
     accountToken,
+    runnerToken,
     wiki,
     doubles,
     run,
@@ -408,7 +416,8 @@ const comments = (lines: readonly string[]): readonly string[] =>
 
 describe('ecclium policy init --routine', () => {
   it('proposes the entry of the page with the account of the alias', async () => {
-    const { run, authorizations, accountToken, serverCanary } = setup();
+    const { run, authorizations, accountToken, serverCanary, runnerToken } =
+      setup();
     const result = await run();
     expect(result.code).toBe(0);
     expect(result.stderr).toEqual([]);
@@ -423,9 +432,29 @@ describe('ecclium policy init --routine', () => {
     ).toBe(true);
     assertNoCanary(
       [result.stdout, result.stderr, result.logs],
-      [accountToken, serverCanary],
+      [accountToken, serverCanary, runnerToken],
       'the output',
     );
+  });
+
+  it('loads the configuration of the runner, which refuses the token of the server', async () => {
+    const server = makeCanary('token');
+    const { run, doubles } = setup({
+      extra: { ECCLIUM_CHURCHTOOLS_TOKEN: server.value },
+    });
+    const result = await run();
+    expect(result.code).toBe(78);
+    expect(result.stdout).toEqual([]);
+    expect(result.stderr.join('\n')).toMatch(/ECCLIUM_CHURCHTOOLS_TOKEN/u);
+    expect(doubles).toHaveLength(0);
+    // And it requires the folder of the kill switches, as the runner does.
+    const noStop = setup({ extra: { ECCLIUM_KILL_SWITCH_DIR: undefined } });
+    const refused = await noStop.run();
+    expect(refused.code).toBe(78);
+    expect(refused.stderr.join('\n')).toMatch(
+      /ECCLIUM_KILL_SWITCH_DIR›? ist für den Runner nicht gesetzt\./u,
+    );
+    expect(noStop.doubles).toHaveLength(0);
   });
 
   it('gives an entry that the runner then takes for the routine', async () => {
@@ -445,7 +474,7 @@ describe('ecclium policy init --routine', () => {
     );
     const loaded = loadConfig({
       environment: { ...environment, ECCLIUM_POLICY_FILE: policyFile },
-      transport: 'stdio',
+      transport: 'runner',
     });
     if (!loaded.ok) throw new Error('the policy with the entry is invalid');
     const { policy } = loaded.config;
@@ -646,7 +675,7 @@ describe('ecclium policy init --routine', () => {
   });
 
   it('notes the entries of the policy in force, a wish for standard and checks', async () => {
-    const { run } = setup({
+    const { run, tokensDir } = setup({
       routines: {
         [routineId]: routineValueOf(routineId, { redaction: 'standard' }),
         'pruefung-test': checksValueOf('pruefung-test'),
@@ -665,6 +694,12 @@ describe('ecclium policy init --routine', () => {
         ],
       },
     });
+    // The configuration of the runner checks the file of every alias of
+    // the policy, as the runner does before its first run.
+    privateFile(
+      join(tokensDir, 'ct_token_andere'),
+      `${makeCanary('token').value}\n`,
+    );
     const result = await run();
     expect(result.code).toBe(0);
     const notes = comments(result.stdout).slice(4);
@@ -678,14 +713,10 @@ describe('ecclium policy init --routine', () => {
     expect(comments(checks.stdout).at(-1)).toContain('feste Prüfungen');
   });
 
-  it('proposes nothing for a draft, before it reads a token or asks ChurchTools', async () => {
+  it('proposes nothing for a draft and asks ChurchTools nothing', async () => {
     const { run, doubles } = setup({
       routines: {
         [routineId]: routineValueOf(routineId, { target: 'draft' }),
-      },
-      extra: {
-        ECCLIUM_RUNNER_TOKENS_DIR: undefined,
-        ECCLIUM_TIME_ZONE: undefined,
       },
     });
     const result = await run();
@@ -710,19 +741,19 @@ describe('ecclium policy init --routine', () => {
       expect(doubles).toHaveLength(0);
     });
 
-    it('with 78 without ECCLIUM_ROUTINES_DIR, a zone or a folder of state', async () => {
-      for (const [name, problem] of [
-        ['ECCLIUM_ROUTINES_DIR', 'routines_dir_unset'],
-        ['ECCLIUM_TIME_ZONE', 'time_zone_missing'],
-        ['ECCLIUM_STATE_DIR', 'state_dir_missing'],
+    it('with 78 without ECCLIUM_ROUTINES_DIR, a zone or a folder of state, which the configuration of the runner requires', async () => {
+      for (const name of [
+        'ECCLIUM_ROUTINES_DIR',
+        'ECCLIUM_TIME_ZONE',
+        'ECCLIUM_STATE_DIR',
       ] as const) {
         const { run, doubles } = setup({ extra: { [name]: undefined } });
         const result = await run();
-        expect(result).toMatchObject({
-          code: 78,
-          stdout: [],
-          stderr: [routineProposalTexts[problem]],
-        });
+        expect(result.code).toBe(78);
+        expect(result.stdout).toEqual([]);
+        expect(result.stderr.join('\n')).toMatch(
+          new RegExp(`${name}›? ist für den Runner nicht gesetzt\\.`, 'u'),
+        );
         expect(doubles).toHaveLength(0);
       }
     });
@@ -751,13 +782,14 @@ describe('ecclium policy init --routine', () => {
         stderr: [accountText('token_file_missing')],
       });
       expect(without.doubles).toHaveLength(0);
+      // Without the folder the configuration of the runner refuses first.
       const unset = setup({
         extra: { ECCLIUM_RUNNER_TOKENS_DIR: undefined },
       });
-      expect(await unset.run()).toMatchObject({
-        code: 78,
-        stderr: [accountText('runner_tokens_dir_unset')],
-      });
+      const refused = await unset.run();
+      expect(refused.code).toBe(78);
+      expect(refused.stderr.join('\n')).toContain('ECCLIUM_RUNNER_TOKENS_DIR');
+      expect(unset.doubles).toHaveLength(0);
     });
 
     it('with 69 when ChurchTools gives no list of pages', async () => {

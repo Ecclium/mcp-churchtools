@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium doctor [--show-values] | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium doctor [--show-values] | ecclium undo <Kennung> [--overwrite] [--runner] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list [--runner] | ecclium queue show <Kennung> [--runner] | ecclium queue approve <Kennung> [--runner] | ecclium queue reject <Kennung> [--runner] | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -27,19 +27,21 @@ export const helpLines: readonly string[] = Object.freeze([
   '  policy init           schlägt einen Teil der Richtlinie als YAML auf stdout vor und fragt ChurchTools nach den Namen',
   '    --interactive       den interaktiven Teil aus den Audit-Dateien',
   '    --routine <Routine> den Eintrag einer Routine für ihre Seite im Wiki, zum Einfügen unter ‹unattended›',
-  '    --credential <Alias> mit ‹--routine›: das Konto, das später schreibt und jetzt die Namen liest',
+  '    --credential <Alias> mit ‹--routine›: das Konto, das später schreibt und jetzt die Namen liest, mit der Konfiguration des Runners',
   '  init egress           schreibt die Liste der Ziele für die Vorlage für Squid auf stdout, aus der Konfiguration des Runners',
   '  doctor                prüft den Runner: den Weg nach aussen über den Proxy, die Anbieter, die Richtlinie, die Routinen und die Rechte seiner Konten',
   '    --show-values       nennt bei ‹doctor› auch Name und Port jedes Ziels und den Host jedes Anbieters',
   '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
-  '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst',
-  '  marker adopt --run <Lauf> zeigt den Abschnitt der Periode eines Laufs, den ein Snapshot belegt, zum neuen Signieren nach einem verlorenen Schlüssel',
+  '    --runner            nimmt den Schreibvorgang eines Laufs zurück, mit der Konfiguration des Runners',
+  '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst, mit der Konfiguration des Runners',
+  '  marker adopt --run <Lauf> zeigt den Abschnitt der Periode eines Laufs, den ein Snapshot belegt, zum neuen Signieren nach einem verlorenen Schlüssel, mit der Konfiguration des Runners',
   '    --confirm <Prüfwert> signiert ihn mit dem Prüfwert der Vorschau neu, wenn die Seite noch so steht',
   '  queue list            zeigt, was in der Freigabe-Warteschlange auf Ihre Freigabe wartet',
   '  queue show <Kennung>  zeigt den ganzen Unterschied eines Eintrags',
   '  queue approve <Kennung> gibt einen Eintrag frei und schreibt ihn sofort, auf dem Stand des Ziels von jetzt',
   '  queue reject <Kennung> weist einen Eintrag ab und vernichtet seinen Inhalt',
+  '    --runner            mit ‹queue›: die Warteschlange des Runners, mit seiner Konfiguration; ‹approve› dann nur für einen Eintrag aus einem Lauf',
   '  run-once --due        führt jede Routine aus, die fällig ist, eine nach der anderen, und endet dann',
   '  run-once <Routine>    führt eine Routine von Hand aus, mit der Periode ihrer letzten Auslösung',
   '    --preview           zeigt den Abschnitt nur auf stdout und schreibt nichts, auch ohne Eintrag in der Richtlinie',

@@ -30,6 +30,11 @@
 //    with 143 at once and without a PATCH; `docker stop` while it holds the
 //    PATCH waits for the write, its read after it and its notice. It runs
 //    before the rest of 5, so that 5 judges the peak of its run as well.
+// 8. A command for operators about a run: `ecclium undo --run` in a
+//    container of the runner, with its environment and without the token
+//    of the server, takes the section of a run back with one PATCH; with
+//    the token file of the server set it ends with 78 and asks ChurchTools
+//    nothing. It too runs before the rest of 5.
 //
 // Everything the containers get is made up here at run time: tokens, keys,
 // certificates, the page. The work folder lies outside the repository and
@@ -67,6 +72,7 @@ import {
   peakPrefix,
   type ProbeResult,
   routineId,
+  runIdOf,
   sectionsOf,
   waitBeforeProof,
   withFault,
@@ -90,6 +96,10 @@ const runMark = randomBytes(3).toString('hex');
 
 const category = { id: 7, name: 'Berichte' } as const;
 const pageTitle = 'Wochenbericht';
+// The accounts of ChurchTools: the own one of the runner, which reads
+// nothing here, and the one of the routine, which writes.
+const runnerAccountId = 101;
+const reportsAccountId = 102;
 const allowed = ['churchtools.e2e.test:443', 'model.e2e.test:443'];
 // Outside the list: the decoy, and a target of the list on another port.
 // The address of the decoy joins them at run time.
@@ -372,11 +382,11 @@ const prepare = (work: string, image: string): void => {
     churchtools: {
       accounts: [
         // The account of the runner itself reads nothing here.
-        { token: runnerToken, id: 101, rights: {} },
+        { token: runnerToken, id: runnerAccountId, rights: {} },
         // The account of the routine: exactly what its tools need.
         {
           token: reportsToken,
-          id: 102,
+          id: reportsAccountId,
           rights: {
             churchwiki: {
               view: true,
@@ -1144,6 +1154,86 @@ const main = async (): Promise<number> => {
             ),
           ),
         );
+      },
+    );
+
+    // 8. A command for operators about a run, before the rest of 5.
+    freshVolumes('undo', nodeImage, true);
+    await resetStandIns();
+    await proof(
+      'Befehl für Betreiber: ecclium undo --run nimmt einen Lauf im Container des Runners zurück, ohne Token des Servers',
+      (failures) => {
+        const before = pageText();
+        const ran = runner(work, ['run-once', routineId], { measure: true });
+        expectCode(failures, 'run-once vor der Rücknahme', ran, 0);
+        if (patches('churchtools') !== 1) {
+          failures.push(
+            `Der Lauf schrieb ${String(patches('churchtools'))} PATCH statt einem.`,
+          );
+        }
+        const runId = runIdOf(ran.stdout, routineId);
+        if (runId === undefined) {
+          failures.push('Die Meldung des Laufs nennt keine Kennung des Laufs.');
+          return;
+        }
+        // The token file of the server in the container lies outside the
+        // contract: the command ends before it asks ChurchTools.
+        const asked = reportOf('churchtools')?.calls.length ?? -1;
+        const withServer = runner(work, ['undo', '--run', runId], {
+          environment: {
+            ECCLIUM_CHURCHTOOLS_TOKEN_FILE: '/run/secrets/ct_token_runner',
+          },
+        });
+        expectCode(
+          failures,
+          'undo --run mit der Token-Datei des Servers',
+          withServer,
+          78,
+        );
+        // For that reason, not for another problem of the configuration.
+        if (!withServer.stderr.includes('ECCLIUM_CHURCHTOOLS_TOKEN_FILE')) {
+          failures.push(
+            'Die Abweisung nennt die Token-Datei des Servers nicht als Grund.',
+          );
+        }
+        if ((reportOf('churchtools')?.calls.length ?? -1) !== asked) {
+          failures.push(
+            'Mit der Token-Datei des Servers fragte der Befehl ChurchTools an.',
+          );
+        }
+        expectCode(
+          failures,
+          'undo --run',
+          runner(work, ['undo', '--run', runId], { measure: true }),
+          0,
+        );
+        const undone = patches('churchtools');
+        if (undone !== 2) {
+          failures.push(
+            `Die Rücknahme schrieb ${String(undone - 1)} PATCH statt einem.`,
+          );
+        }
+        // Both writes with the account of the routine, never with the own
+        // account of the runner that the configuration holds.
+        const writers = (reportOf('churchtools')?.calls ?? [])
+          .filter(
+            (call) =>
+              call.method === 'PATCH' && call.path.startsWith('/api/wiki/'),
+          )
+          .map((call) => call.account);
+        if (writers.some((account) => account !== reportsAccountId)) {
+          failures.push(
+            `Ein PATCH kam nicht vom Konto der Routine, sondern von ${writers.map(String).join(', ')}.`,
+          );
+        }
+        if (
+          pageText() !== before ||
+          sectionsOf(pageText(), routineId).size > 0
+        ) {
+          failures.push(
+            'Nach der Rücknahme steht die Seite nicht so da wie vor dem Lauf.',
+          );
+        }
       },
     );
 
