@@ -335,6 +335,8 @@ export interface Stopped {
   readonly tookMs: number;
   /** The log of the container, stdout and stderr. */
   readonly log: string;
+  /** What ChurchTools had answered right before `docker stop`. */
+  readonly callsBefore: readonly Call[];
   /** What ChurchTools answered until the judgement. */
   readonly calls: readonly Call[];
   /** How many calls the model answered before the stop. */
@@ -370,6 +372,15 @@ export function judgeStopInSearch(stopped: Stopped, holdMs: number): string[] {
       `docker stop in der Suche dauerte ${String(Math.round(stopped.tookMs / 1000))} s; die Suche lief bis zur Antwort weiter.`,
     );
   }
+  // The held list is answered only after its hold, so a search that the
+  // signal ended leaves it unanswered when the container is gone, however
+  // slowly the driver stopped it.
+  const lists = countCalls(stopped.calls, 'GET', '/api/wiki/pages');
+  if (lists !== 1) {
+    failures.push(
+      `ChurchTools hatte ${String(lists)} Listen der Seiten beantwortet statt einer; die Suche lief bis zur Antwort weiter.`,
+    );
+  }
   const written = countCalls(stopped.calls, 'PATCH', pagePrefix);
   if (written !== 0) {
     failures.push(
@@ -397,6 +408,17 @@ export function judgeStopInWrite(stopped: Stopped): string[] {
   if (stopped.code !== 143) {
     failures.push(
       `docker stop im Schreibvorgang endete mit ${String(stopped.code)} statt 143.`,
+    );
+  }
+  // The stop must land while ChurchTools still holds the PATCH.
+  if (countCalls(stopped.callsBefore, 'PATCH', pagePrefix) !== 0) {
+    failures.push(
+      'Der PATCH war vor dem Stopp schon beantwortet; der Stopp traf den Schreibvorgang nicht.',
+    );
+  }
+  if (!stopped.log.includes('"event":"process_sigterm"')) {
+    failures.push(
+      'Das Log nach dem Stopp im Schreibvorgang nennt process_sigterm nicht.',
     );
   }
   const patch = stopped.calls.findIndex(

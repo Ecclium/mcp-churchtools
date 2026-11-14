@@ -110,6 +110,8 @@ export interface MockReport {
   readonly calls: readonly MockCall[];
   /** Every request as it arrived, also one that is held or never answered. */
   readonly arrived: readonly MockArrival[];
+  /** The hold the driver set since the last reset, if it was valid. */
+  readonly hold?: MockHold;
   /** Connections over TCP, also those that never sent a request. */
   readonly connections: number;
   /** The page of ChurchTools, for its role only. */
@@ -446,6 +448,7 @@ const main = (): void => {
       role,
       calls,
       arrived,
+      ...(hold === undefined ? {} : { hold }),
       connections,
       ...(churchtools === undefined ? {} : { page: churchtools.page() }),
     };

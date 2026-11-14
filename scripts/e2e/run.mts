@@ -743,9 +743,8 @@ const holdAt = (method: string, path: string, nth: number, ms: number) => {
     nth: String(nth),
     ms: String(ms),
   });
-  if (
-    reportOf('churchtools', 'POST', `/hold?${query.toString()}`) === undefined
-  )
+  const set = reportOf('churchtools', 'POST', `/hold?${query.toString()}`);
+  if (set?.hold?.method !== method || set.hold.path !== path)
     throw new Error('ChurchTools nahm das Halten nicht an.');
 };
 
@@ -773,6 +772,7 @@ const stopWhileHeld = async (
       return seen !== undefined && held(seen);
     });
     const modelCalls = reportOf('model')?.calls.length ?? 0;
+    const callsBefore = reportOf('churchtools')?.calls ?? [];
     const before = Date.now();
     docker(['stop', '--time', '300', name]);
     const tookMs = Date.now() - before;
@@ -788,6 +788,7 @@ const stopWhileHeld = async (
       code,
       tookMs,
       log: `${logs.stdout}${logs.stderr}`,
+      callsBefore,
       calls: reportOf('churchtools')?.calls ?? [],
       modelCalls,
     };

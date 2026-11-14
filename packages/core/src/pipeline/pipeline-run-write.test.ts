@@ -78,6 +78,7 @@ const gaps = vi.hoisted(() => ({
   dropText: false,
   pageThrows: false,
   afterSearch: undefined as (() => void) | undefined,
+  plans: 0,
 }));
 vi.mock('../write/guard.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../write/guard.js')>();
@@ -90,6 +91,7 @@ vi.mock('../write/guard.js', async (importOriginal) => {
       return Object.freeze({
         ...guard,
         plan: async (...args: Parameters<typeof guard.plan>) => {
+          gaps.plans += 1;
           const result = await guard.plan(...args);
           return gaps.dropText
             ? { outcome: result.outcome, target: result.target }
@@ -498,6 +500,7 @@ beforeEach(() => {
   gaps.dropText = false;
   gaps.pageThrows = false;
   gaps.afterSearch = undefined;
+  gaps.plans = 0;
   readText.value = defaultReadText;
 });
 
@@ -952,6 +955,8 @@ describe('the signal of a write of a run', () => {
       ),
     ).toEqual(refused('network', true));
     expect(pathsOf(double)).toEqual(['GET /api/wiki/pages']);
+    // The write guard never plans, so no step of the write runs.
+    expect(gaps.plans).toBe(0);
   });
 
   it('ends the read of a page by its GUID before the write the same way', async () => {

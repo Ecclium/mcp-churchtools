@@ -453,11 +453,15 @@ describe('the verdicts on a stop', () => {
     status: 200,
   };
   const readBack = { ...patch, method: 'GET' };
+  // The list the run read as its input; the held list of the search is
+  // answered only after its hold.
+  const input = { method: 'GET', path: '/api/wiki/pages', status: 200 };
   const inSearch = {
     code: 143,
     tookMs: 1500,
     log: sigterm,
-    calls: [],
+    callsBefore: [input],
+    calls: [input],
     modelCalls: 1,
   };
 
@@ -469,7 +473,8 @@ describe('the verdicts on a stop', () => {
     ['a stop before the model', { modelCalls: 0 }],
     ['another exit code', { code: 0 }],
     ['a search that ran until its answer', { tookMs: 19_000 }],
-    ['a write after the stop', { calls: [patch] }],
+    ['a held list answered before the end', { calls: [input, input] }],
+    ['a write after the stop', { calls: [input, patch] }],
     ['a log without the signal', { log: '' }],
   ])('fails a stop in the search with %s', (_name, change) => {
     expect(judgeStopInSearch({ ...inSearch, ...change }, 20_000)).not.toEqual(
@@ -481,7 +486,8 @@ describe('the verdicts on a stop', () => {
     code: 143,
     tookMs: 7000,
     log: `${sigterm}\n{"result":"written"}`,
-    calls: [patch, readBack],
+    callsBefore: [input],
+    calls: [input, patch, readBack],
     modelCalls: 1,
   };
 
@@ -495,6 +501,8 @@ describe('the verdicts on a stop', () => {
     ['a PATCH that failed', { calls: [{ ...patch, status: 500 }, readBack] }],
     ['no read after the PATCH', { calls: [readBack, patch] }],
     ['no notice of the write', { log: sigterm }],
+    ['a stop after the PATCH was answered', { callsBefore: [input, patch] }],
+    ['a log without the signal', { log: '{"result":"written"}' }],
   ])('fails a stop in the write with %s', (_name, change) => {
     expect(judgeStopInWrite({ ...inWrite, ...change })).not.toEqual([]);
   });
