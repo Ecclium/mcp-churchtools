@@ -30,8 +30,9 @@
  * 7. A kill switch that hits the routine ends the run before its first
  *    read, so that a stopped routine sends no data to its model (decided
  *    on 10.11.2026), and closes the trigger as at the write.
- * 8. The run, with a deadline for reading and the model. A write that has
- *    begun is never aborted, and after the deadline none begins.
+ * 8. The run, with a deadline for reading, the model and the search of
+ *    the page to write to. A write whose page the core has found is never
+ *    aborted, and after the deadline none begins (ADR 0036).
  * 9. The trigger closed after a final outcome, the audit line, the notice,
  *    and the lock released, also after a fault.
  *
@@ -319,9 +320,6 @@ const periodOf = (run: PreparedRun, trigger: Trigger): string =>
 const durationSince = (clock: Clock, start: number): number =>
   Math.min(Math.max(Math.round(clock.now() - start), 0), maxDurationMs);
 
-// A signal that never aborts: a write that has begun always ends.
-const unstoppable = (): AbortSignal => new AbortController().signal;
-
 // One of the steps after a run, which must not keep the others from
 // happening: a run that wrote still gets its audit line and its notice
 // when closing the trigger fails. A port that throws counts as one that
@@ -385,17 +383,13 @@ const perform = async (
       return { outcome: failed('write', 'network', false) };
     }
     if (routine.output.target === 'wiki') {
+      // The signal ends the search of the page and keeps a second write
+      // after a conflict from beginning, which is a new one (ADR 0034); a
+      // write whose page the core has found always ends (ADR 0036).
       const written = await writeRun(
         rendered,
-        {
-          write: opened.write,
-          log: opened.log,
-          clock: ports.clock,
-          // A second write after a conflict is a new one: it begins only
-          // before the deadline and the stop (ADR 0034).
-          mayRetry: () => !signal.aborted,
-        },
-        unstoppable(),
+        { write: opened.write, log: opened.log, clock: ports.clock },
+        signal,
       );
       switch (written.kind) {
         case 'written':

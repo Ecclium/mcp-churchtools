@@ -10,7 +10,8 @@
  * through a read tool would come masked and in the envelope of foreign
  * data, so it could not be compared. A page that is missing, or that two
  * pages of the category share by title, ends the write; a run never
- * creates a page.
+ * creates a page. The search ends on the signal of the run, the write
+ * after it does not (ADR 0036).
  *
  * The rights an account of a run may have are those the tools of the
  * routines with this account require, and the categories of the entries
@@ -38,6 +39,16 @@ import {
 
 /** The most pages of the list of a category a run reads to find its page. */
 export const maxRunPageListPages = 40;
+
+/**
+ * The most requests to ChurchTools a write of a run sends once its page is
+ * found (ADR 0036): the rights and the page for the plan, then the page,
+ * the update and the read after it for the commit, and for an entry of a
+ * whole category its name at the plan and at the commit. No signal ends
+ * them, so the grace of a stopping container must cover them; the search
+ * before them ends on the signal of the run.
+ */
+export const maxRunWriteRequests = 7;
 
 /** The page of a write of a run, as the engine names it. */
 export type RunPageRef =

@@ -60,6 +60,7 @@ import {
   type RunWriteRequest,
   type ToolRequest,
 } from './pipeline.js';
+import { maxRunWriteRequests } from './run-write.js';
 
 // A write of a run of a routine through the whole pipeline (ADR 0032, ADR
 // 0033, ADR 0034): the core finds the page, the write tool plans the
@@ -72,7 +73,12 @@ import {
 // Two answers the contracts allow but no real part gives: a plan of the
 // write guard without its text, and a search of the page that fails with
 // an error the client does not describe. Off unless a test turns them on.
-const gaps = vi.hoisted(() => ({ dropText: false, pageThrows: false }));
+// Besides, a step a test runs right after the search has found its page.
+const gaps = vi.hoisted(() => ({
+  dropText: false,
+  pageThrows: false,
+  afterSearch: undefined as (() => void) | undefined,
+}));
 vi.mock('../write/guard.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../write/guard.js')>();
   return {
@@ -97,10 +103,14 @@ vi.mock('./run-write.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./run-write.js')>();
   return {
     ...original,
-    resolveRunPage: (...args: Parameters<typeof original.resolveRunPage>) =>
-      gaps.pageThrows
-        ? Promise.reject(new TypeError('not described'))
-        : original.resolveRunPage(...args),
+    resolveRunPage: async (
+      ...args: Parameters<typeof original.resolveRunPage>
+    ) => {
+      if (gaps.pageThrows) throw new TypeError('not described');
+      const found = await original.resolveRunPage(...args);
+      gaps.afterSearch?.();
+      return found;
+    },
   };
 });
 
@@ -351,6 +361,10 @@ interface FakeChurchTools {
   patch?: 'write' | 'fail' | 'other';
   /** Runs at each read of the categories, which the policy reads. */
   onCategories?: () => void;
+  /** Runs at each read of the list of pages of a category. */
+  onList?: () => void;
+  /** Runs at each read of a page by its GUID, with its number. */
+  onPageRead?: (count: number) => void;
 }
 
 const pagePath = /^\/api\/wiki\/categories\/(\d+)\/pages\/([0-9a-f-]{36})$/;
@@ -393,6 +407,7 @@ const serve = (double: MockedHttpTransport, fake: FakeChurchTools): void => {
       method: 'GET',
     })
     .reply((opts) => {
+      fake.onList?.();
       const category = Number(
         new URL(opts.path, doubleOrigin).searchParams.get(
           'wiki_category_ids[]',
@@ -424,9 +439,12 @@ const serve = (double: MockedHttpTransport, fake: FakeChurchTools): void => {
       };
     })
     .persist();
+  let pageReads = 0;
   double
     .intercept({ path: (path: string) => pagePath.test(path), method: 'GET' })
     .reply((opts) => {
+      pageReads += 1;
+      fake.onPageRead?.(pageReads);
       const found = pageOf(opts.path);
       if (fake.pageStatus !== undefined || found === undefined) {
         return {
@@ -479,6 +497,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'ecclium-pipeline-run-write-'));
   gaps.dropText = false;
   gaps.pageThrows = false;
+  gaps.afterSearch = undefined;
   readText.value = defaultReadText;
 });
 
@@ -881,6 +900,128 @@ describe('the page of a write of a run', () => {
     expect(outcome).toEqual({ ...refused('conflict'), page: 'ambiguous' });
     assertOnlyReads(double);
     expect(logs()).toContain('run_page_ambiguous');
+  });
+});
+
+describe('the signal of a write of a run', () => {
+  // The paths of the requests the double saw, without their query.
+  const pathsOf = (double: MockedHttpTransport): readonly string[] =>
+    double
+      .calls()
+      .map((call) => `${call.method} ${call.path.split('?')[0] ?? ''}`);
+
+  it('ends the search of a page by its title, unsent and for a later try', async () => {
+    const { double, fake, pipeline, events, text } = setup();
+    const controller = new AbortController();
+    // The stop arrives while the core reads the list of the category.
+    fake.onList = () => {
+      controller.abort();
+    };
+    const outcome = await pipeline.writeForRun(
+      writeRequest({
+        signal: controller.signal,
+        page: { categoryId: 12, title: 'Dienstplan' },
+      }),
+    );
+    expect(outcome).toEqual(refused('network', true));
+    // Nothing of the write began: no rights, no read of the page.
+    expect(pathsOf(double)).toEqual(['GET /api/wiki/pages']);
+    expect(events()).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tool: toolName,
+      errorCode: 'network',
+      runId,
+    });
+    expect(text()).toBe('# Dienstplan');
+  });
+
+  it('begins no write when the stop comes right after the search', async () => {
+    const { double, pipeline } = setup();
+    const controller = new AbortController();
+    // Every request of the search has its answer; the stop comes before
+    // the core plans.
+    gaps.afterSearch = () => {
+      controller.abort();
+    };
+    expect(
+      await pipeline.writeForRun(
+        writeRequest({
+          signal: controller.signal,
+          page: { categoryId: 12, title: 'Dienstplan' },
+        }),
+      ),
+    ).toEqual(refused('network', true));
+    expect(pathsOf(double)).toEqual(['GET /api/wiki/pages']);
+  });
+
+  it('ends the read of a page by its GUID before the write the same way', async () => {
+    const { double, fake, pipeline } = setup();
+    const controller = new AbortController();
+    fake.onPageRead = (count) => {
+      if (count === 1) controller.abort();
+    };
+    expect(
+      await pipeline.writeForRun(writeRequest({ signal: controller.signal })),
+    ).toEqual(refused('network', true));
+    expect(pathsOf(double)).toEqual([
+      `GET /api/wiki/categories/12/pages/${guid}`,
+    ]);
+  });
+
+  it('writes to its end once the page is found, whatever the signal', async () => {
+    const { fake, pipeline, events, patches, text } = setup();
+    const controller = new AbortController();
+    // The stop arrives at the plan, when the policy reads the name of the
+    // category, after the search.
+    fake.onCategories = () => {
+      controller.abort();
+    };
+    expect(
+      await pipeline.writeForRun(
+        writeRequest({
+          signal: controller.signal,
+          page: { categoryId: 12, title: 'Dienstplan' },
+        }),
+      ),
+    ).toEqual(verified(4));
+    expect(controller.signal.aborted).toBe(true);
+    expect(patches()).toBe(1);
+    expect(periodsOn(text())).toEqual(['2026-W46']);
+    expect(events()[0]).toMatchObject({
+      outcome: 'ok',
+      writeState: 'verified',
+    });
+  });
+
+  it('sends at most the requests a stopping container waits for once the page is found', async () => {
+    // A whole category: its list, then the rights and the page for the
+    // plan, the page, the update and the read after it for the commit,
+    // and the name of the category at the plan and at the commit.
+    const inCategory = setup();
+    expect(
+      await inCategory.pipeline.writeForRun(
+        writeRequest({ page: { categoryId: 12, title: 'Dienstplan' } }),
+      ),
+    ).toEqual(verified(4));
+    const [search, ...category] = pathsOf(inCategory.double);
+    expect(search).toBe('GET /api/wiki/pages');
+    expect(category).toHaveLength(7);
+    expect(
+      category.filter((path) => path === 'GET /api/wiki/categories'),
+    ).toHaveLength(2);
+    // A page by its GUID: its read, then the same without the names.
+    const onPage = setup({
+      policy: policyOf({
+        target: { kind: 'wiki_page', categoryId: 12, guid, name: 'Dienstplan' },
+      }),
+    });
+    expect(await onPage.pipeline.writeForRun(writeRequest())).toEqual(
+      verified(4),
+    );
+    const [read, ...page] = pathsOf(onPage.double);
+    expect(read).toBe(`GET /api/wiki/categories/12/pages/${guid}`);
+    expect(page).toHaveLength(5);
+    expect(Math.max(category.length, page.length)).toBe(maxRunWriteRequests);
   });
 });
 
