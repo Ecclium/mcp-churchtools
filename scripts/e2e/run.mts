@@ -34,7 +34,6 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import {
   appendFileSync,
   chmodSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -711,15 +710,21 @@ const patches = (service: string): number =>
 
 const pageText = (): string => reportOf('churchtools')?.page?.text ?? '';
 
+// The text of a built file, or undefined without a build. Read once, so
+// that no check stands apart from the read.
+const builtText = (path: string): string | undefined => {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+};
+
 const main = async (): Promise<number> => {
-  for (const [name, path] of [
-    ['Der gebaute Stand', builtCli],
-    ['Der gebaute Write-Guard', builtSections],
-  ] as const) {
-    if (!existsSync(path)) {
-      say(`${name} fehlt. Führen Sie zuerst «pnpm run build» aus.`);
-      return 1;
-    }
+  const sectionsSource = builtText(builtSections);
+  if (builtText(builtCli) === undefined || sectionsSource === undefined) {
+    say('Der gebaute Stand fehlt. Führen Sie zuerst «pnpm run build» aus.');
+    return 1;
   }
   const composeText = readFileSync(composeFile, 'utf8');
   const nodeImage = nodeImageOf(composeText);
@@ -916,7 +921,7 @@ const main = async (): Promise<number> => {
             'Nach dem zweiten Lauf steht nicht genau der neue Text auf der Seite.',
           );
         }
-        const faulty = withFault(readFileSync(builtSections, 'utf8'));
+        const faulty = withFault(sectionsSource);
         if (!faulty.ok) {
           failures.push(
             `Der Anker des Fehlers steht ${String(faulty.found)}-mal im gebauten Stand statt einmal; die Gegenprobe ist nachzuführen.`,

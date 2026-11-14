@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -108,15 +108,22 @@ describe('the fault that writes twice', () => {
     ).toBe(1);
   });
 
-  // The job builds first; without a build there is nothing to compare.
-  const built = new URL(
-    '../../packages/core/dist/marker/sections.js',
-    import.meta.url,
-  );
-  it.runIf(existsSync(built))(
+  // The job builds first; without a build there is nothing to compare. The
+  // file is read once, not checked and then read.
+  const built = ((): string | undefined => {
+    try {
+      return readFileSync(
+        new URL('../../packages/core/dist/marker/sections.js', import.meta.url),
+        'utf8',
+      );
+    } catch {
+      return undefined;
+    }
+  })();
+  it.runIf(built !== undefined)(
     'finds its anchor once in the built write guard',
     () => {
-      expect(withFault(readFileSync(built, 'utf8')).ok).toBe(true);
+      expect(withFault(built ?? '').ok).toBe(true);
     },
   );
 });
