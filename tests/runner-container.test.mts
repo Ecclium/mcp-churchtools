@@ -16,10 +16,18 @@ import {
   variableNames,
   variables,
 } from '@ecclium/mcp-churchtools-core';
-import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
+import type { HttpTransportOptions } from '@ecclium/mcp-churchtools-core/http';
+import {
+  createChurchToolsDouble,
+  makeCanary,
+} from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { exitCodes } from '../packages/cli/src/exit-codes.ts';
+import { adoptMarker } from '../packages/cli/src/marker/adopt.ts';
+import { proposeRoutineEntry } from '../packages/cli/src/policy/routine.ts';
+import { runQueue } from '../packages/cli/src/queue/queue.ts';
+import { undoWrite } from '../packages/cli/src/undo/undo.ts';
 import { runnerSignals } from '../packages/cli/src/runner/host.ts';
 import { exitCodeOf } from '../packages/cli/src/runner/run-once.ts';
 import { stateFolders } from '../packages/core/src/config/state-dir.ts';
@@ -345,6 +353,93 @@ describe('the environment of the runner container', () => {
       expect(result.ok).toBe(true);
     },
   );
+
+  // The commands about a run run with the same environment as the runner
+  // (ADR 0036). Each gets as far as its configuration lets it, without a
+  // request to ChurchTools: an unknown run or routine, an empty queue. With
+  // the token file of the server they all end with 78.
+  const commands = (environment: Record<string, string>) => {
+    const lines: string[] = [];
+    const output = {
+      stdout: (line: string) => lines.push(line) > 0,
+      stderr: (line: string) => lines.push(line) > 0,
+    };
+    const runId = '00000000-0000-4000-8000-00000000c0de';
+    const requests: unknown[] = [];
+    const createTransport = (given: HttpTransportOptions) => {
+      const double = createChurchToolsDouble({
+        token: given.token,
+        origin: given.origin,
+      });
+      return Object.freeze({
+        ...double.transport,
+        close: async () => {
+          requests.push(...double.calls());
+          await double.close();
+        },
+      });
+    };
+    const common = {
+      environment,
+      execArgv: [],
+      output,
+      writeSync: (_fd: number, _b: Uint8Array, _o: number, length: number) =>
+        length,
+    };
+    return {
+      lines,
+      requests,
+      run: async () => [
+        await undoWrite({ ...common, runId, overwrite: false }),
+        await runQueue({
+          ...common,
+          action: 'list',
+          runner: true,
+          createTransport,
+        }),
+        await adoptMarker({ ...common, runId }),
+        await proposeRoutineEntry({
+          ...common,
+          routine: 'unbekannt-test',
+          credential: 'berichte',
+          createTransport,
+        }),
+      ],
+    };
+  };
+
+  it('takes the commands about a run as far as their configuration lets them', async () => {
+    const called = commands({ ...build(), ECCLIUM_READ_ONLY: 'false' });
+    // 66 for a run no line names, 0 for an empty queue, 64 for a routine
+    // the folder does not hold; 78 would be a configuration refused.
+    expect(await called.run()).toEqual([
+      exitCodes.noInput,
+      exitCodes.ok,
+      exitCodes.noInput,
+      exitCodes.usage,
+    ]);
+    expect(called.requests).toEqual([]);
+  });
+
+  it('ends every command about a run with 78 while the token file of the server is set', async () => {
+    const environment = build();
+    const tokenFile = `${environment.ECCLIUM_RUNNER_TOKENS_DIR ?? ''}/ct_token_server`;
+    writeFileSync(tokenFile, `${makeCanary('token').value}\n`, {
+      mode: 0o600,
+    });
+    const called = commands({
+      ...environment,
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenFile,
+    });
+    expect(await called.run()).toEqual([
+      exitCodes.invalidConfig,
+      exitCodes.invalidConfig,
+      exitCodes.invalidConfig,
+      exitCodes.invalidConfig,
+    ]);
+    expect(called.requests).toEqual([]);
+  });
 
   // Why /keys and /run/secrets stand outside /data: the loader refuses
   // both inside the folder of state, so that a backup of it holds no keys
