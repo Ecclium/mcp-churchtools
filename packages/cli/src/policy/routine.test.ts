@@ -37,6 +37,7 @@ import {
   accountText,
   draftNeedsNoEntryText,
   outputCutText,
+  policyInitCallTexts,
   routineProposalTexts,
   routinesLoadText,
 } from './texts.js';
@@ -790,6 +791,17 @@ describe('ecclium policy init --routine', () => {
       expect(refused.code).toBe(78);
       expect(refused.stderr.join('\n')).toContain('ECCLIUM_RUNNER_TOKENS_DIR');
       expect(unset.doubles).toHaveLength(0);
+    });
+
+    it('with 64 for the own account of the runner, before it reads anything', async () => {
+      const own = setup();
+      const refused = await own.run({ credential: 'runner' });
+      expect(refused).toMatchObject({
+        code: 64,
+        stdout: [],
+        stderr: [policyInitCallTexts.credential_runner_invalid],
+      });
+      expect(own.doubles).toHaveLength(0);
     });
 
     it('with 69 when ChurchTools gives no list of pages', async () => {

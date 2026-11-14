@@ -6,6 +6,7 @@
  *
  * @packageDocumentation
  */
+import { runnerOwnAlias } from '@ecclium/mcp-churchtools-core';
 
 /** What is wrong with the form of a call of `ecclium policy init`. */
 export type PolicyInitCallProblem =
@@ -14,7 +15,8 @@ export type PolicyInitCallProblem =
   | 'credential_missing'
   | 'credential_interactive'
   | 'routine_invalid'
-  | 'credential_invalid';
+  | 'credential_invalid'
+  | 'credential_runner_invalid';
 
 /** The options of a call of `ecclium policy init`. */
 export interface PolicyInitCall {
@@ -49,5 +51,10 @@ export function policyInitCallProblem(
   if (routine === undefined) return 'mode_missing';
   if (credential === undefined) return 'credential_missing';
   if (!idPattern.test(routine)) return 'routine_invalid';
-  return idPattern.test(credential) ? undefined : 'credential_invalid';
+  if (!idPattern.test(credential)) return 'credential_invalid';
+  // The policy refuses the own account of the runner for every entry, so
+  // a proposal with it would only be refused at the start (ADR 0032).
+  return credential === runnerOwnAlias
+    ? 'credential_runner_invalid'
+    : undefined;
 }
