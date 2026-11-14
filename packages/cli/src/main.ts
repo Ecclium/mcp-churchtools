@@ -119,15 +119,19 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['init', 'egress'], options: [] },
     // The checks of the runner, its outbound path and its accounts.
     { words: ['doctor'], options: ['show-values'] },
-    { words: ['undo'], options: ['overwrite'], argument: true },
-    // Without the ID of a write only with --run, for every write of a run.
+    // With --runner the configuration of the runner, for a write of a run
+    // (ADR 0036).
+    { words: ['undo'], options: ['overwrite', 'runner'], argument: true },
+    // Without the ID of a write only with --run, for every write of a run;
+    // a run always takes the configuration of the runner.
     { words: ['undo'], options: ['run', 'overwrite'] },
     // Only with --run, and with --confirm to write what a preview showed.
     { words: ['marker', 'adopt'], options: ['run', 'confirm'] },
-    { words: ['queue', 'list'], options: [] },
-    { words: ['queue', 'show'], options: [], argument: true },
-    { words: ['queue', 'approve'], options: [], argument: true },
-    { words: ['queue', 'reject'], options: [], argument: true },
+    // With --runner the configuration of the runner, for an entry of a run.
+    { words: ['queue', 'list'], options: ['runner'] },
+    { words: ['queue', 'show'], options: ['runner'], argument: true },
+    { words: ['queue', 'approve'], options: ['runner'], argument: true },
+    { words: ['queue', 'reject'], options: ['runner'], argument: true },
     // Without a routine only with --due, with one by hand or as a preview.
     { words: ['run-once'], options: ['due'] },
     { words: ['run-once'], options: ['preview'], argument: true },
@@ -191,6 +195,8 @@ type Call =
       readonly target:
         { readonly eventId: string } | { readonly runId: string };
       readonly overwrite: boolean;
+      /** Whether `--runner` was given with the ID of one write. */
+      readonly runner: boolean;
     }
   | {
       readonly kind: 'adopt';
@@ -201,6 +207,8 @@ type Call =
       readonly kind: 'queue';
       readonly action: 'list' | 'show' | 'approve' | 'reject';
       readonly queueId: string | undefined;
+      /** Whether `--runner` was given. */
+      readonly runner: boolean;
     }
   | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] }
   | { readonly kind: 'daemon' }
@@ -301,6 +309,7 @@ const readCall = (args: readonly string[]): Call => {
           kind: 'undo',
           target: { eventId },
           overwrite: values.overwrite === true,
+          runner: values.runner === true,
         };
       }
       // Without the ID of a write, a run must be named.
@@ -310,6 +319,7 @@ const readCall = (args: readonly string[]): Call => {
             kind: 'undo',
             target: { runId: values.run },
             overwrite: values.overwrite === true,
+            runner: false,
           };
     }
     case 'marker adopt':
@@ -318,13 +328,33 @@ const readCall = (args: readonly string[]): Call => {
         ? { kind: 'wrong', problem: 'command' }
         : { kind: 'adopt', runId: values.run, confirm: values.confirm };
     case 'queue list':
-      return { kind: 'queue', action: 'list', queueId: undefined };
+      return {
+        kind: 'queue',
+        action: 'list',
+        queueId: undefined,
+        runner: values.runner === true,
+      };
     case 'queue show':
-      return { kind: 'queue', action: 'show', queueId: positionals[2] };
+      return {
+        kind: 'queue',
+        action: 'show',
+        queueId: positionals[2],
+        runner: values.runner === true,
+      };
     case 'queue approve':
-      return { kind: 'queue', action: 'approve', queueId: positionals[2] };
+      return {
+        kind: 'queue',
+        action: 'approve',
+        queueId: positionals[2],
+        runner: values.runner === true,
+      };
     case 'queue reject':
-      return { kind: 'queue', action: 'reject', queueId: positionals[2] };
+      return {
+        kind: 'queue',
+        action: 'reject',
+        queueId: positionals[2],
+        runner: values.runner === true,
+      };
     case 'run-once': {
       const routineId = positionals[1];
       if (routineId !== undefined) {
@@ -479,6 +509,7 @@ export function run(
               execArgv,
               ...call.target,
               overwrite: call.overwrite,
+              runner: call.runner,
               output: out,
               ...runOptions.undo,
             }),
@@ -510,7 +541,8 @@ export function run(
       }
       case 'queue': {
         // Loaded only for this command, like `undo`: it builds the
-        // pipeline over the folders of the server.
+        // pipeline over the folders of the server, with --runner over
+        // those of the runner.
         const out = output;
         return import('./queue/queue.js')
           .then(({ runQueue }) =>
@@ -519,6 +551,7 @@ export function run(
               execArgv,
               action: call.action,
               ...(call.queueId === undefined ? {} : { queueId: call.queueId }),
+              runner: call.runner,
               output: out,
               ...runOptions.queue,
             }),

@@ -4,8 +4,12 @@
  * the policy, for the operator to check and to add to the file of the
  * policy. It changes no file.
  *
- * It loads the configuration over stdio like the server, then every
- * routine of `ECCLIUM_ROUTINES_DIR` with the loader of `routine.v1`,
+ * It loads the configuration of the runner, as the runner container
+ * contract asks of a command about the runner (ADR 0036): it refuses the
+ * token of the server and requires what the runner requires, a file of
+ * the policy among it, which may still lack an entry for the routine.
+ * Then it loads every routine of `ECCLIUM_ROUTINES_DIR` with the loader of
+ * `routine.v1`,
  * without the preparation against the policy, which a routine without its
  * entry would not pass, and proposes for the one it names. A routine
  * whose output is a draft needs no entry: the command says so and ends
@@ -352,9 +356,11 @@ export async function proposeRoutineEntry(
   options: RoutineProposalOptions,
 ): Promise<ExitCode> {
   const { output, credential } = options;
+  // The configuration of the runner, never the token of the server
+  // (ADR 0036).
   const loaded = (options.load ?? loadConfig)({
     environment: options.environment,
-    transport: 'stdio',
+    transport: 'runner',
     execArgv: options.execArgv,
   });
   if (!loaded.ok) {
@@ -384,8 +390,9 @@ export async function proposeRoutineEntry(
     return exitCodes.usage;
   }
   const target = routine.output;
-  // A draft goes to a file, not to ChurchTools, so the command reads no
-  // token file of an alias and asks ChurchTools nothing (ADR 0033).
+  // A draft goes to a file, not to ChurchTools, so the command asks
+  // ChurchTools nothing (ADR 0033); the loader checked the token files as
+  // it does for the runner, and dropped their tokens.
   if (target.target !== 'wiki') return writeOut(output, draftNeedsNoEntryText);
   const { timeZone, stateDir } = config;
   if (timeZone === undefined) {

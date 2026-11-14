@@ -31,7 +31,12 @@ const ending = (text: string, code: ExitCode): QueueEnding =>
 
 /** The problems that end `ecclium queue` before it reads the queue. */
 export type QueueProblem =
-  'id_invalid' | 'read_only' | 'state_dir_missing' | 'keys_dir_missing';
+  | 'id_invalid'
+  | 'read_only'
+  | 'state_dir_missing'
+  | 'keys_dir_missing'
+  | 'run_needs_runner'
+  | 'entry_of_no_run';
 
 /** One ending per problem. */
 export const queueProblems: Readonly<Record<QueueProblem, QueueEnding>> =
@@ -51,6 +56,14 @@ export const queueProblems: Readonly<Record<QueueProblem, QueueEnding>> =
     keys_dir_missing: ending(
       'Ohne ‹ECCLIUM_KEYS_DIR› lassen sich die Einträge der Freigabe-Warteschlange nicht öffnen. Setzen Sie denselben Schlüsselordner wie in der Konfiguration des KI-Assistenten.',
       exitCodes.invalidConfig,
+    ),
+    run_needs_runner: ending(
+      'Der Eintrag stammt aus einem Lauf einer Routine. Ecclium gibt ihn nur mit der Konfiguration des Runners frei, mit dem Konto der Routine und nie mit dem Token des Servers. Rufen Sie den Befehl mit ‹--runner› und derselben Konfiguration auf wie den Runner, ohne das Token des Servers. Ansehen und abweisen lässt sich der Eintrag auch so.',
+      exitCodes.usage,
+    ),
+    entry_of_no_run: ending(
+      'Der Eintrag stammt aus keinem Lauf einer Routine. Mit ‹--runner› gibt Ecclium nur den Eintrag eines Laufs frei, mit dem Konto seiner Routine. Einen anderen Eintrag geben Sie ohne ‹--runner› mit der Konfiguration des Servers frei.',
+      exitCodes.usage,
     ),
   });
 
@@ -122,7 +135,7 @@ export const runAccountEnding = (code: RunPipelineCode): QueueEnding =>
   ending(
     `Der Eintrag stammt aus einem Lauf einer Routine, und eine Freigabe schreibt ihn mit dem Konto, das die Richtlinie für die Routine nennt, wie der Lauf selbst. ${runAccountCauses[code]} Mit dem Token des Servers schreibt Ecclium den Abschnitt nicht. ${
       code === 'run_credential_missing' || code === 'run_credential_mixed'
-        ? 'Nennen Sie für die Routine in der Richtlinie genau ein Konto und geben Sie dann frei, oder weisen Sie den Eintrag mit ‹ecclium queue reject› ab.'
+        ? 'Nennen Sie für die Routine in der Richtlinie genau ein Konto und geben Sie dann frei, oder weisen Sie den Eintrag mit ‹ecclium queue reject --runner› ab.'
         : code.startsWith('runner_tokens_dir_')
           ? 'Richten Sie den Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so ein, wie der Runner ihn braucht: ein Ordner Ihres Benutzers, kein Link, ohne Schreibrecht für die Gruppe und andere, und geben Sie dann frei.'
           : 'Legen Sie die Token-Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so an, wie der Runner sie braucht, mit den Rechten 600, und geben Sie dann frei.'
@@ -165,7 +178,7 @@ export const listEmpty = 'Es wartet kein Eintrag auf Ihre Freigabe.';
 
 /** The line after a list with entries that wait. */
 export const listFooter =
-  'Was ein Eintrag schreiben würde, zeigt ‹ecclium queue show <Kennung>›. Freigeben lässt er sich mit ‹ecclium queue approve <Kennung>›, abweisen mit ‹ecclium queue reject <Kennung>›. Nach 14 Tagen verfällt jeder Eintrag.';
+  'Was ein Eintrag schreiben würde, zeigt ‹ecclium queue show <Kennung>›. Freigeben lässt er sich mit ‹ecclium queue approve <Kennung>›, abweisen mit ‹ecclium queue reject <Kennung>›, einen Eintrag aus einem Lauf einer Routine jeweils mit ‹--runner›. Nach 14 Tagen verfällt jeder Eintrag.';
 
 /** How an entry reads in a list whose decision was counted but not kept. */
 export const usedWords =
@@ -175,9 +188,21 @@ export const usedWords =
 export const diffHeading =
   'Der Schreibvorgang würde so ändern, mit ‹-› für Zeilen davor und ‹+› für Zeilen danach, wie Ecclium das Ziel beim Einreihen las:';
 
-/** The line after an entry that waits. */
-export const showFooter =
-  'Freigeben lässt sich der Eintrag mit ‹ecclium queue approve›, abweisen mit ‹ecclium queue reject›, jeweils mit seiner Kennung. Die Freigabe plant den Schreibvorgang auf dem Stand des Ziels von dann neu und schreibt sofort.';
+/**
+ * The line after an entry that waits.
+ *
+ * @param fromRun - Whether a run of a routine queued the entry: it is then
+ *   decided with `--runner` and the configuration of the runner.
+ * @returns The line, for stdout.
+ * @example
+ * ```ts
+ * showFooterOf(true);
+ * ```
+ */
+export const showFooterOf = (fromRun: boolean): string =>
+  fromRun
+    ? 'Der Eintrag stammt aus einem Lauf einer Routine. Freigeben lässt er sich mit ‹ecclium queue approve --runner›, abweisen mit ‹ecclium queue reject --runner›, jeweils mit seiner Kennung und der Konfiguration des Runners. Die Freigabe plant den Schreibvorgang auf dem Stand des Ziels von dann neu und schreibt sofort, mit dem Konto der Routine.'
+    : 'Freigeben lässt sich der Eintrag mit ‹ecclium queue approve›, abweisen mit ‹ecclium queue reject›, jeweils mit seiner Kennung. Die Freigabe plant den Schreibvorgang auf dem Stand des Ziels von dann neu und schreibt sofort.';
 
 /** The line when a text did not reach stdout whole. */
 export const outputCutText =
@@ -238,20 +263,26 @@ export const wouldWriteHeading =
  *
  * @param version - The version of the target after the write.
  * @param undoId - The ID to take the write back with, if it kept one.
+ * @param runner - Whether the approval ran with the configuration of the
+ *   runner: the undo of the write of a run then needs `--runner` as well.
  * @returns The lines, for stdout.
  * @example
  * ```ts
  * approvedLines(4, '11111111-2222-4333-8444-555555555555');
  * ```
  */
-export function approvedLines(version: number, undoId?: string): string[] {
+export function approvedLines(
+  version: number,
+  undoId?: string,
+  runner = false,
+): string[] {
   const lines = [
     `Der Eintrag ist freigegeben und sein Inhalt vernichtet. Das Ziel steht jetzt in Version ${String(version)}.`,
   ];
   lines.push(
     undoId === undefined
       ? 'Zurücknehmen lässt sich der Schreibvorgang nicht, weil ‹ECCLIUM_SNAPSHOTS› auf ‹off› steht.'
-      : `Zurücknehmen lässt sich der Schreibvorgang mit ‹ecclium undo ${undoId}›.`,
+      : `Zurücknehmen lässt sich der Schreibvorgang mit ‹ecclium undo ${runner ? '--runner ' : ''}${undoId}›.`,
   );
   return lines;
 }
@@ -340,7 +371,7 @@ const approveReasons: Readonly<
     code: exitCodes.dataError,
   },
   changedSinceQueued: {
-    text: 'Das Ziel hat sich seit dem Einreihen geändert, darum hat Ecclium nichts geschrieben und nicht entschieden. Freigeben lässt sich der Eintrag nicht mehr: Weisen Sie ihn mit ‹ecclium queue reject› ab und lassen Sie den Schreibvorgang neu planen.',
+    text: 'Das Ziel hat sich seit dem Einreihen geändert, darum hat Ecclium nichts geschrieben und nicht entschieden. Freigeben lässt sich der Eintrag nicht mehr: Weisen Sie ihn mit ‹ecclium queue reject› ab, mit denselben Angaben wie eben, und lassen Sie den Schreibvorgang neu planen.',
     code: exitCodes.dataError,
   },
   clock: {

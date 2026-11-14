@@ -38,7 +38,9 @@ export type UndoProblem =
   | 'audit_incomplete'
   | 'queued_missing'
   | 'routine_busy'
-  | 'routine_lock_failed';
+  | 'routine_lock_failed'
+  | 'run_needs_runner'
+  | 'write_of_no_run';
 
 const snapshotsOff = ending(
   'Dieser Server hält mit ‹ECCLIUM_SNAPSHOTS=off› keine Snapshots fest, und eine Rücknahme braucht selbst einen, damit sie sich zurücknehmen lässt. Setzen Sie ‹ECCLIUM_SNAPSHOTS› auf ‹on›.',
@@ -88,6 +90,14 @@ export const undoProblems: Readonly<Record<UndoProblem, UndoEnding>> =
     routine_lock_failed: ending(
       'Die Sperrdatei der Routine liess sich nicht anlegen, weil der Ordner ‹runner› im Zustandsordner sich nicht nutzen lässt. Ecclium nimmt nichts zurück, ohne einen Lauf derselben Routine auszuschliessen. Der Ordner muss Ihrem Benutzer gehören und darf der Gruppe und anderen keine Rechte geben, üblich sind die Rechte 700.',
       exitCodes.invalidConfig,
+    ),
+    run_needs_runner: ending(
+      'Der Schreibvorgang gehört zu einem Lauf einer Routine. Ecclium nimmt ihn nur mit der Konfiguration des Runners zurück, mit dem Konto der Routine und nie mit dem Token des Servers. Rufen Sie den Befehl mit ‹--runner› und derselben Konfiguration auf wie den Runner, ohne das Token des Servers.',
+      exitCodes.usage,
+    ),
+    write_of_no_run: ending(
+      'Die Audit-Dateien der letzten 45 Tage verbinden diesen Schreibvorgang mit keinem Lauf einer Routine. Mit ‹--runner› nimmt Ecclium nur den Schreibvorgang eines Laufs zurück, mit dem Konto seiner Routine. Einen Schreibvorgang des Servers nehmen Sie ohne ‹--runner› mit der Konfiguration des Servers zurück. Prüfen Sie sonst die Kennung und ob ‹ECCLIUM_STATE_DIR› derselbe Ordner ist wie beim Runner.',
+      exitCodes.noInput,
     ),
   });
 
@@ -253,6 +263,9 @@ export const outputCutText =
  * @param subject - What the undo took back.
  * @param version - The version of the target after the undo.
  * @param undoId - The ID to take the undo back with, if it kept one.
+ * @param runner - Whether the undo ran with the configuration of the
+ *   runner: the undo of a write of a run belongs to the run, and taking it
+ *   back needs `--runner` as well.
  * @returns The lines, for stdout.
  * @example
  * ```ts
@@ -263,13 +276,14 @@ export function doneLines(
   subject: UndoSubject,
   version: number,
   undoId?: string,
+  runner = false,
 ): string[] {
   const lines = [
     `Der Schreibvorgang ist zurückgenommen, ${namings[subject].nominative} steht jetzt in Version ${String(version)}.`,
   ];
   if (undoId !== undefined) {
     lines.push(
-      `Auch diese Rücknahme lässt sich zurücknehmen, mit ‹ecclium undo ${undoId}›.`,
+      `Auch diese Rücknahme lässt sich zurücknehmen, mit ‹ecclium undo ${runner ? '--runner ' : ''}${undoId}›.`,
     );
   }
   return lines;
@@ -719,7 +733,7 @@ export function stoppedLine(left: number): string {
  * ```
  */
 export function undecidedLine(queueId: string): string {
-  return `Der Lauf hat den Eintrag ‹${queueId}› in die Freigabe-Warteschlange gestellt, und das Audit hält keinen Entscheid fest. Wartet er noch, weisen Sie ihn mit ‹ecclium queue reject ${queueId}› ab, damit ihn niemand später freigibt.`;
+  return `Der Lauf hat den Eintrag ‹${queueId}› in die Freigabe-Warteschlange gestellt, und das Audit hält keinen Entscheid fest. Wartet er noch, weisen Sie ihn mit ‹ecclium queue reject --runner ${queueId}› ab, damit ihn niemand später freigibt.`;
 }
 
 /**

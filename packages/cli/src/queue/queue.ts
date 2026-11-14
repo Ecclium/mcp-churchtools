@@ -20,6 +20,15 @@
  * the routine, as the run would have written it, and never with the token
  * of the server (ADR 0033).
  *
+ * Which configuration: with `--runner` the commands load the configuration
+ * of the runner, as the runner container contract asks of a command about
+ * the runner (ADR 0036), and otherwise the one over stdio. The
+ * configuration of the runner refuses the token of the server and holds
+ * the own account of the runner in its place, which never writes. So
+ * `approve` writes an entry of a run only with `--runner`, and with it
+ * only an entry of a run; `list`, `show` and `reject` ask ChurchTools
+ * nothing and work with both.
+ *
  * What an entry and a page hold is text of ChurchTools and of the model,
  * shown made safe for the terminal. The ID given is checked as a UUID
  * before any file is touched and named in no text.
@@ -78,6 +87,7 @@ import type {
 } from '@ecclium/mcp-churchtools-core/http';
 import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { commandCatalogOf } from '../compose/catalog.js';
 import { composeToolPipeline } from '../compose/pipeline.js';
 import { composeRunPipeline } from '../compose/run-pipeline.js';
 import { privateFileCodeOf } from '../compose/private-file-code.js';
@@ -94,7 +104,6 @@ import {
 } from '../messages/index.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
-import { createStdioCatalog } from '../stdio/catalog.js';
 import {
   approvedDiffHeading,
   approvedLines,
@@ -115,7 +124,7 @@ import {
   rejectedEnding,
   rejectedUnrecorded,
   runAccountEnding,
-  showFooter,
+  showFooterOf,
   timeOf,
   usedEnding,
   usedWords,
@@ -135,6 +144,11 @@ export interface QueueOptions {
   readonly action: QueueAction;
   /** The ID of the entry as given, for `show`, `approve` and `reject`. */
   readonly queueId?: string;
+  /**
+   * Whether `--runner` was given: the command then loads the configuration
+   * of the runner, and `approve` writes only an entry of a run.
+   */
+  readonly runner?: boolean | undefined;
   readonly output: Output;
   /** Replaces the loader, for tests. */
   readonly load?: ((sources: ConfigSources) => ConfigResult) | undefined;
@@ -320,9 +334,27 @@ const reportShow = (output: Output, outcome: QueueShowOutcome): ExitCode => {
   for (const line of content.diff) {
     whole = writeForeign(output, '', line) && whole;
   }
-  output.stdout(showFooter);
+  // An entry of a run is decided with the configuration of the runner.
+  output.stdout(showFooterOf(content.run !== undefined));
   if (!whole) output.stderr(outputCutText);
   return exitCodes.ok;
+};
+
+// What `approve` says of an entry it cannot decide, from what `show` found:
+// the same text the approval of the pipeline gives for it.
+const unapprovableEnding = (
+  shown: Exclude<QueueShowOutcome, { readonly kind: 'found' | 'failed' }>,
+): QueueEnding => {
+  switch (shown.kind) {
+    case 'missing':
+    case 'expired':
+    case 'off':
+      return queueMissing[shown.kind];
+    case 'used':
+      return usedEnding(false);
+    case 'decided':
+      return decidedEnding(shown.decision, undefined, false);
+  }
 };
 
 const reportReject = (output: Output, outcome: RejectOutcome): ExitCode => {
@@ -356,6 +388,8 @@ const reportReject = (output: Output, outcome: RejectOutcome): ExitCode => {
  *
  * @param output - The output of the command.
  * @param outcome - The outcome of the approval of the pipeline.
+ * @param runner - Whether the approval ran with the configuration of the
+ *   runner, so that the line on its undo names `--runner`.
  * @returns The exit code.
  * @example
  * ```ts
@@ -365,15 +399,20 @@ const reportReject = (output: Output, outcome: RejectOutcome): ExitCode => {
 export function reportApprove(
   output: Output,
   outcome: ApproveOutcome,
+  runner = false,
 ): ExitCode {
-  const code = approveReportOf(output, outcome);
+  const code = approveReportOf(output, outcome, runner);
   if ('unrecorded' in outcome && outcome.unrecorded === true) {
     return finish(output, approvedUnrecorded);
   }
   return code;
 }
 
-const approveReportOf = (output: Output, outcome: ApproveOutcome): ExitCode => {
+const approveReportOf = (
+  output: Output,
+  outcome: ApproveOutcome,
+  runner: boolean,
+): ExitCode => {
   switch (outcome.kind) {
     case 'missing':
     case 'expired':
@@ -395,7 +434,11 @@ const approveReportOf = (output: Output, outcome: ApproveOutcome): ExitCode => {
     case 'approved': {
       let whole = writeForeign(output, 'Freigegeben: ', outcome.summary);
       whole = writeDiff(output, approvedDiffHeading, outcome.diff) && whole;
-      for (const line of approvedLines(outcome.version, outcome.undoId)) {
+      for (const line of approvedLines(
+        outcome.version,
+        outcome.undoId,
+        runner,
+      )) {
         output.stdout(line);
       }
       if (!whole) output.stderr(outputCutText);
@@ -426,9 +469,11 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
     output.stderr(usageLine);
     return queueProblems.id_invalid.code;
   }
+  // The kind is a literal of the call, never a guess from the variables
+  // that are set (ADR 0036).
   const loaded = (options.load ?? loadConfig)({
     environment: options.environment,
-    transport: 'stdio',
+    transport: options.runner === true ? 'runner' : 'stdio',
     execArgv: options.execArgv,
   });
   if (!loaded.ok) {
@@ -535,7 +580,7 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
     });
   }
   try {
-    const catalog = createStdioCatalog(config);
+    const catalog = commandCatalogOf(config);
     // One halt of writes for both pipelines of the command.
     const writeHalt = createWriteHalt();
     const { pipeline, transport } = composeToolPipeline({
@@ -577,6 +622,21 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
         }
         const routine =
           shown.kind === 'found' ? shown.content.run?.routine : undefined;
+        const runner = config.transport === 'runner';
+        // An entry of a run goes out only with the configuration of the
+        // runner (ADR 0036); over stdio it is shown and rejected only.
+        if (routine !== undefined && !runner) {
+          return finish(output, queueProblems.run_needs_runner);
+        }
+        // With the configuration of the runner the pipeline of the command
+        // holds the own account of the runner, which never writes: an entry
+        // of no run ends here, and so does one that cannot be approved, with
+        // the text the approval would give, before anything is sent.
+        if (routine === undefined && runner) {
+          return shown.kind === 'found'
+            ? finish(output, queueProblems.entry_of_no_run)
+            : finish(output, unapprovableEnding(shown));
+        }
         if (routine !== undefined) {
           const built = composeRunPipeline({
             config,
@@ -625,6 +685,10 @@ const act = async (
     case 'reject':
       return reportReject(output, await pipeline.reject(call, request));
     case 'approve':
-      return reportApprove(output, await pipeline.approve(call, request));
+      return reportApprove(
+        output,
+        await pipeline.approve(call, request),
+        options.runner === true,
+      );
   }
 };

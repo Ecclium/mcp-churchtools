@@ -24,7 +24,9 @@
  * the token of the server, while it holds the lock of the routine, so that
  * no run of it writes in between. Every call writes one line of the type
  * `adoption` into the audit file, and an adoption keeps a snapshot of its
- * own, so that `ecclium undo` takes it back.
+ * own, so that `ecclium undo --runner` takes it back. It loads the
+ * configuration of the runner, which refuses the token of the server, as
+ * the runner container contract asks of a command about a run (ADR 0036).
  *
  * Its exit code follows sysexits, as `texts.ts` maps each case: 0 for a
  * preview, an adoption and nothing to do; 64 for a wrong call; 65 when the
@@ -79,6 +81,7 @@ import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { auditFolderTexts } from '../commands/audit-texts.js';
 import { folderExitCodes } from '../commands/audit-verify.js';
+import { commandCatalogOf } from '../compose/catalog.js';
 import { privateFileCodeOf } from '../compose/private-file-code.js';
 import { composeRunPipeline } from '../compose/run-pipeline.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -92,7 +95,6 @@ import {
 } from '../messages/index.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
-import { createStdioCatalog } from '../stdio/catalog.js';
 import { firstUndoDay } from '../undo/undo.js';
 import {
   adoptAccountEnding,
@@ -294,9 +296,12 @@ export async function adoptMarker(options: AdoptOptions): Promise<ExitCode> {
     return adoptProblems.confirm_invalid.code;
   }
   const confirm = options.confirm?.toLowerCase();
+  // The configuration of the runner, as for every command about a run: it
+  // refuses the token of the server and requires the folder of the kill
+  // switches (ADR 0036).
   const loaded = (options.load ?? loadConfig)({
     environment: options.environment,
-    transport: 'stdio',
+    transport: 'runner',
     execArgv: options.execArgv,
   });
   if (!loaded.ok) {
@@ -428,7 +433,7 @@ export async function adoptMarker(options: AdoptOptions): Promise<ExitCode> {
       // (ADR 0033).
       const built = composeRunPipeline({
         config,
-        catalog: createStdioCatalog(config),
+        catalog: commandCatalogOf(config),
         writer,
         clock,
         auditFile,

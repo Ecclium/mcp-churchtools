@@ -32,6 +32,17 @@
  * ADR 0034). With `--run` it takes back the writes of the run the newest
  * first and stops at the first that does not end with 0.
  *
+ * Which configuration: a write of a run is taken back with the
+ * configuration of the runner, as the runner container contract asks of a
+ * command about the runner (ADR 0036): `--run` always loads it, and with
+ * one ID `--runner` does. That configuration refuses the token of the
+ * server, requires the folder of the kill switches and holds the own
+ * account of the runner where the server holds its token. So with it the
+ * command takes back only a write that its audit files tie to a run, with
+ * the account of the routine, and never writes with the own account of the
+ * runner; over stdio it takes back only a write of the server and points
+ * the operator to `--runner` for one of a run.
+ *
  * Its exit code follows sysexits, as `texts.ts` maps each case: 0 when
  * the write is taken back or nothing is left to do; 64 for a wrong call;
  * 65 when the target changed, changes in between, was empty before or
@@ -45,11 +56,13 @@
  * page is no Markdown page, the appointment has parts Ecclium does not
  * change, lasts whole days or would move while the account of the server
  * did not create it, or the clock differs; and 78 for an invalid
- * configuration or a folder that cannot be used. For a run besides: 66
- * when no line in the range names the run or it wrote nothing in
- * ChurchTools; 74 when an audit file cannot be read whole and a write of a
- * run may stand in it; 75 while a run of the routine holds its lock; and
- * 78 when the account of the routine has no token Ecclium accepts.
+ * configuration or a folder that cannot be used. For a run besides: 64
+ * for the write of a run without `--runner`; 66 when no line in the range
+ * names the run or it wrote nothing in ChurchTools, and with `--runner`
+ * for a write the audit files tie to no run; 74 when an audit file cannot
+ * be read whole and a write of a run may stand in it; 75 while a run of
+ * the routine holds its lock; and 78 when the account of the routine has
+ * no token Ecclium accepts.
  *
  * @packageDocumentation
  */
@@ -98,6 +111,7 @@ import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { auditFolderTexts } from '../commands/audit-texts.js';
 import { folderExitCodes } from '../commands/audit-verify.js';
+import { commandCatalogOf } from '../compose/catalog.js';
 import { composeToolPipeline } from '../compose/pipeline.js';
 import { privateFileCodeOf } from '../compose/private-file-code.js';
 import { snapshotRetentionDays } from '../compose/retention.js';
@@ -113,7 +127,6 @@ import {
 } from '../messages/index.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
-import { createStdioCatalog } from '../stdio/catalog.js';
 import {
   changedLineOf,
   deletedLines,
@@ -153,6 +166,12 @@ export interface UndoOptions {
    * every write of the run is taken back, the newest first.
    */
   readonly runId?: string | undefined;
+  /**
+   * Whether `--runner` was given with the ID of one write: the command then
+   * loads the configuration of the runner and takes back only a write of a
+   * run. `runId` loads it always.
+   */
+  readonly runner?: boolean | undefined;
   /** Whether `--overwrite` was given. */
   readonly overwrite: boolean;
   readonly output: Output;
@@ -227,28 +246,37 @@ const finish = (output: Output, ended: UndoEnding): ExitCode => {
  *
  * @param output - The output of the command.
  * @param outcome - The outcome of the undo of the pipeline.
+ * @param runner - Whether the undo ran with the configuration of the
+ *   runner, so that the line on taking it back names `--runner`.
  * @returns The exit code.
  * @example
  * ```ts
  * return reportUndo(output, await pipeline.undo(call, request));
  * ```
  */
-export function reportUndo(output: Output, outcome: UndoOutcome): ExitCode {
-  const code = reportOf(output, outcome);
+export function reportUndo(
+  output: Output,
+  outcome: UndoOutcome,
+  runner = false,
+): ExitCode {
+  const code = reportOf(output, outcome, runner);
   if ('unrecorded' in outcome && outcome.unrecorded === true) {
     return finish(output, undoUnrecordedOf(outcome.subject ?? 'page'));
   }
   return code;
 }
 
-const reportOf = (output: Output, outcome: UndoOutcome): ExitCode => {
+const reportOf = (
+  output: Output,
+  outcome: UndoOutcome,
+  runner: boolean,
+): ExitCode => {
   switch (outcome.kind) {
     case 'done': {
       const { subject } = outcome;
       const shown = writeDiff(output, changedLineOf(subject), outcome.diff);
-      for (const line of doneLines(subject, outcome.version, outcome.undoId)) {
-        output.stdout(line);
-      }
+      const lines = doneLines(subject, outcome.version, outcome.undoId, runner);
+      for (const line of lines) output.stdout(line);
       if (!shown) output.stderr(outputCutText);
       return exitCodes.ok;
     }
@@ -365,9 +393,13 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     output.stderr(usageLine);
     return undoProblems.id_invalid.code;
   }
+  // A run, or `--runner`, takes the configuration of the runner, never the
+  // token of the server (ADR 0036). The kind is a literal of the call, not
+  // a guess from the variables that are set.
+  const runner = runId !== undefined || options.runner === true;
   const loaded = (options.load ?? loadConfig)({
     environment: options.environment,
-    transport: 'stdio',
+    transport: runner ? 'runner' : 'stdio',
     execArgv: options.execArgv,
   });
   if (!loaded.ok) {
@@ -415,6 +447,11 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
       output.stderr(auditFolderTexts[opened.code]);
       return folderExitCodes[opened.code];
     }
+    // A write of a run goes back only with the configuration of the runner,
+    // and with it only a write of a run: its transport holds the own account
+    // of the runner, which never writes (ADR 0033, ADR 0036).
+    if (run !== undefined && !runner) return refuse(output, 'run_needs_runner');
+    if (run === undefined && runner) return refuse(output, 'write_of_no_run');
     target = { kind: 'write', eventId, ...(run === undefined ? {} : { run }) };
   }
 
@@ -483,7 +520,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     });
     const composeOptions = {
       config,
-      catalog: createStdioCatalog(config),
+      catalog: commandCatalogOf(config),
       writer,
       clock,
       auditFile,
@@ -503,6 +540,12 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
         signal: new AbortController().signal,
       });
     if (target.kind === 'write' && target.run === undefined) {
+      // Only over stdio, with the token of the server: the configuration of
+      // the runner holds the own account of the runner here, which never
+      // writes, and refused such a write above.
+      if (config.transport === 'runner') {
+        throw new TypeError('The runner takes back only a write of a run.');
+      }
       const { pipeline, transport } = composeToolPipeline(composeOptions);
       try {
         const outcome = await pipeline.undo(
@@ -544,6 +587,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
               { eventId: target.eventId, overwrite: options.overwrite, run },
               request,
             ),
+            true,
           );
         }
         // Read again under the lock: a run that still ran when the files
@@ -634,7 +678,7 @@ const undoRun = async (
       output.stdout(notSentLine);
       continue;
     }
-    code = reportUndo(output, outcome);
+    code = reportUndo(output, outcome, true);
     if (code !== exitCodes.ok) {
       const left = written.length - index - 1;
       if (left > 0) output.stderr(stoppedLine(left));
