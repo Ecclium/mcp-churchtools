@@ -320,12 +320,15 @@ describe('the stand-in of ChurchTools', () => {
     });
   const page = `/api/wiki/categories/7/pages/${guid}`;
 
-  it('answers only a known token', () => {
+  it('answers only a known token, and names its account for the report', () => {
     const standIn = createChurchTools(config);
-    expect(ask(standIn, 'GET', '/api/whoami', '', 'other').status).toBe(401);
+    const unknown = ask(standIn, 'GET', '/api/whoami', '', 'other');
+    expect(unknown.status).toBe(401);
+    expect(unknown).not.toHaveProperty('account');
     expect(ask(standIn, 'GET', '/api/permissions/global')).toEqual({
       status: 200,
       body: { data: { churchwiki: { view: true } } },
+      account: 1,
     });
   });
 

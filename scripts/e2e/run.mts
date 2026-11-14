@@ -96,6 +96,10 @@ const runMark = randomBytes(3).toString('hex');
 
 const category = { id: 7, name: 'Berichte' } as const;
 const pageTitle = 'Wochenbericht';
+// The accounts of ChurchTools: the own one of the runner, which reads
+// nothing here, and the one of the routine, which writes.
+const runnerAccountId = 101;
+const reportsAccountId = 102;
 const allowed = ['churchtools.e2e.test:443', 'model.e2e.test:443'];
 // Outside the list: the decoy, and a target of the list on another port.
 // The address of the decoy joins them at run time.
@@ -378,11 +382,11 @@ const prepare = (work: string, image: string): void => {
     churchtools: {
       accounts: [
         // The account of the runner itself reads nothing here.
-        { token: runnerToken, id: 101, rights: {} },
+        { token: runnerToken, id: runnerAccountId, rights: {} },
         // The account of the routine: exactly what its tools need.
         {
           token: reportsToken,
-          id: 102,
+          id: reportsAccountId,
           rights: {
             churchwiki: {
               view: true,
@@ -1175,16 +1179,23 @@ const main = async (): Promise<number> => {
         // The token file of the server in the container lies outside the
         // contract: the command ends before it asks ChurchTools.
         const asked = reportOf('churchtools')?.calls.length ?? -1;
+        const withServer = runner(work, ['undo', '--run', runId], {
+          environment: {
+            ECCLIUM_CHURCHTOOLS_TOKEN_FILE: '/run/secrets/ct_token_runner',
+          },
+        });
         expectCode(
           failures,
           'undo --run mit der Token-Datei des Servers',
-          runner(work, ['undo', '--run', runId], {
-            environment: {
-              ECCLIUM_CHURCHTOOLS_TOKEN_FILE: '/run/secrets/ct_token_runner',
-            },
-          }),
+          withServer,
           78,
         );
+        // For that reason, not for another problem of the configuration.
+        if (!withServer.stderr.includes('ECCLIUM_CHURCHTOOLS_TOKEN_FILE')) {
+          failures.push(
+            'Die Abweisung nennt die Token-Datei des Servers nicht als Grund.',
+          );
+        }
         if ((reportOf('churchtools')?.calls.length ?? -1) !== asked) {
           failures.push(
             'Mit der Token-Datei des Servers fragte der Befehl ChurchTools an.',
@@ -1200,6 +1211,19 @@ const main = async (): Promise<number> => {
         if (undone !== 2) {
           failures.push(
             `Die Rücknahme schrieb ${String(undone - 1)} PATCH statt einem.`,
+          );
+        }
+        // Both writes with the account of the routine, never with the own
+        // account of the runner that the configuration holds.
+        const writers = (reportOf('churchtools')?.calls ?? [])
+          .filter(
+            (call) =>
+              call.method === 'PATCH' && call.path.startsWith('/api/wiki/'),
+          )
+          .map((call) => call.account);
+        if (writers.some((account) => account !== reportsAccountId)) {
+          failures.push(
+            `Ein PATCH kam nicht vom Konto der Routine, sondern von ${writers.map(String).join(', ')}.`,
           );
         }
         if (

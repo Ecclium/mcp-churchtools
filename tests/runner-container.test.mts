@@ -439,6 +439,14 @@ describe('the environment of the runner container', () => {
       exitCodes.invalidConfig,
     ]);
     expect(called.requests).toEqual([]);
+    // Each for the token file of the server, not for another problem.
+    expect(
+      called.lines.filter((line) =>
+        /Für den Runner ist ‹?ECCLIUM_CHURCHTOOLS_TOKEN_FILE›? gesetzt\./u.test(
+          line,
+        ),
+      ),
+    ).toHaveLength(4);
   });
 
   // Why /keys and /run/secrets stand outside /data: the loader refuses
