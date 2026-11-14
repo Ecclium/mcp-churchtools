@@ -675,7 +675,11 @@ const expectEnd = (result: RunResult, entry: InjectionCase): void => {
     return;
   }
   if (expected.kind === 'schema') {
-    expect(result).toMatchObject({ kind: 'failed', step: 'model' });
+    expect(result).toMatchObject({
+      kind: 'failed',
+      step: 'model',
+      code: 'validation',
+    });
     return;
   }
   if (entry.kind === 'forgedMarking') {

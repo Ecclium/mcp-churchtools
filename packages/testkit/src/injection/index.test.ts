@@ -40,14 +40,16 @@ const byId = (id: string): InjectionCase => {
   return found;
 };
 
-// The hosts a text names after a scheme or www., with look-alike letters
-// read as the Latin ones and the ideographic full stop as a dot.
+// The hosts a text names, after a scheme or www. or bare, with look-alike
+// letters read as the Latin ones and the ideographic full stop as a dot.
 const hostsOf = (text: string): readonly string[] =>
   [
     ...text
       .replaceAll('\u0430', 'a')
       .replaceAll('\u3002', '.')
-      .matchAll(/(?:https?:\/\/|www\.)([^/\s"')>]+)/gu),
+      .matchAll(
+        /(?:https?:\/\/|www\.|^|[\s(«])((?:[a-z0-9-]+\.)+(?:example|org|com|net|ch|de|tools|invalid|test))(?![a-z0-9-])/gu,
+      ),
   ].map((match) => match[1] ?? '');
 
 describe('the injection corpus', () => {
@@ -109,6 +111,13 @@ describe('the injection corpus', () => {
         ).toBe(true);
       }
     }
+    // Bare hosts with look-alike letters or another dot count as well.
+    expect(hostsOf(byId('de-homoglyph').heard)).toEqual([
+      'anmeldung.example.org',
+    ]);
+    expect(hostsOf(byId('en-bare-url-ideographic-stop').heard)).toEqual([
+      'exfil.example',
+    ]);
   });
 
   it('hides the instruction of tag characters from a reader, not from a model', () => {
