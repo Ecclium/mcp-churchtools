@@ -13,8 +13,9 @@
  *
  * Every text is synthetic: hosts under `example`, `example.org` and
  * `example.church.tools`, the placeholder person, no script that runs and
- * no name of a real congregation. A later step writes the same pages
- * into the seed of the test instance (ADR 0061).
+ * no name of a real congregation. The seed of the test instance writes
+ * the same pages into its wiki, apart from the link whose target runs a
+ * script, from a copy of its own that a test holds equal (ADR 0061).
  *
  * @packageDocumentation
  */
