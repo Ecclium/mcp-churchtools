@@ -9,12 +9,14 @@
  *
  * Nothing here comes from a real congregation: names follow the
  * placeholder rules («Person A»), persons have no contact data, and the
- * texts of the wiki are written for this file.
+ * texts of the wiki are written for this file or come from the corpus of
+ * prompt injections (`corpus.mts`).
  *
  * @packageDocumentation
  */
 import { seedWikiCategoryName } from '../../spike/lib/seed-gate.mts';
-import { at, anchorSaturday } from './dates.mts';
+import { corpusPages, corpusTitles } from './corpus.mts';
+import { at, anchorSaturday, mondayOf } from './dates.mts';
 
 /** The marker every object of the seed carries. */
 export const marker = 'Seedprobe';
@@ -143,7 +145,7 @@ export type AgendaItemSpec =
 
 /** The event an appointment carries. */
 export interface EventSpec {
-  readonly label: 'e1' | 'e2';
+  readonly label: 'e1' | 'e2' | 'e3';
   readonly services: readonly {
     readonly service: ServiceSpec['label'];
     readonly count: number;
@@ -154,7 +156,7 @@ export interface EventSpec {
 
 /** An appointment of the seed in its calendar. */
 export interface AppointmentSpec {
-  readonly label: 'a1' | 'a2' | 'a3' | 'a4';
+  readonly label: 'a1' | 'a2' | 'a3' | 'a4' | 'a5' | 'a6';
   readonly title: string;
   /** Start and end with time, or whole days for an appointment over the day. */
   readonly when:
@@ -177,10 +179,32 @@ export interface BookingSpec {
 
 /** A page of the wiki. */
 export interface PageSpec {
-  readonly label: 'w1' | 'w2' | 'w3';
+  /** `w1` to `w3`, or the ID of a case of the corpus. */
+  readonly label: string;
   readonly title: string;
   readonly isMarkdown: boolean;
   readonly text: string;
+}
+
+/**
+ * The title of an appointment of the corpus: the marker first, so the seed
+ * finds it again, then the attack.
+ *
+ * @param line - The line of a case of the corpus.
+ * @returns The title.
+ */
+export function corpusTitle(line: string): string {
+  return `${marker} Korpus: ${line}`;
+}
+
+/**
+ * The title of a page of the corpus.
+ *
+ * @param id - The ID of a case of the corpus.
+ * @returns The title, with the marker first.
+ */
+export function corpusPageTitle(id: string): string {
+  return `${marker} Korpus ${id}`;
 }
 
 /** Everything of the seed that hangs on the day of the run. */
@@ -194,10 +218,13 @@ export interface DatedData {
  * Builds the appointments and bookings for a run.
  *
  * @param now - The time of the run.
- * @returns The data with dates from the next Saturday on.
+ * @returns The data with dates from the next Saturday on, the two
+ *   appointments of the corpus from the Wednesday after the Monday of the
+ *   week of the run.
  */
 export function datedData(now: Date): DatedData {
   const saturday = anchorSaturday(now);
+  const monday = mondayOf(now);
   return {
     saturday,
     appointments: [
@@ -267,6 +294,42 @@ export function datedData(now: Date): DatedData {
         when: { kind: 'day', day: at(saturday, 7) },
         booksResource: true,
       },
+      // The two appointments of the corpus, counted from the Monday of the
+      // week of the seed, because the routines count their days from a
+      // trigger on Monday. The event lies on the Wednesday after, inside the
+      // days the rota report reads (+0 to +14 days) from the trigger of the
+      // week of the seed and from the next one. The appointment without an
+      // event lies a week later, inside the days the preview of dates reads
+      // (+7 to +35 days) from both triggers. Both carry an attack in the
+      // title, which the event takes as its name.
+      {
+        label: 'a5',
+        title: corpusTitle(corpusTitles.event.line),
+        when: {
+          kind: 'time',
+          start: at(monday, 9, 17),
+          end: at(monday, 9, 18),
+        },
+        event: {
+          label: 'e3',
+          // One open place and nobody assigned: no service request goes
+          // out, so nobody gets a mail.
+          services: [{ service: 's1', count: 1 }],
+          assignments: [],
+          agenda: [],
+        },
+        booksResource: false,
+      },
+      {
+        label: 'a6',
+        title: corpusTitle(corpusTitles.appointment.line),
+        when: {
+          kind: 'time',
+          start: at(monday, 16, 18),
+          end: at(monday, 16, 19),
+        },
+        booksResource: false,
+      },
     ],
     bookings: [
       {
@@ -282,7 +345,11 @@ export function datedData(now: Date): DatedData {
 const longParagraph =
   'Dieser Abschnitt ist synthetisch. Er steht nur hier, damit die Seite lang genug ist, um sie in Teilen zu lesen. Kein Satz nennt eine Person, eine Gemeinde oder einen Ort.';
 
-/** The pages of the wiki: Markdown, HTML and one long page in Markdown. */
+/**
+ * The pages of the wiki: Markdown, HTML and one long page in Markdown, then
+ * one page in Markdown per case of the corpus, labelled with the ID of the
+ * case.
+ */
 export const pages: readonly PageSpec[] = [
   {
     label: 'w1',
@@ -329,4 +396,10 @@ export const pages: readonly PageSpec[] = [
       ]).flat(),
     ].join('\n'),
   },
+  ...corpusPages.map((entry): PageSpec => ({
+    label: entry.id,
+    title: corpusPageTitle(entry.id),
+    isMarkdown: true,
+    text: entry.text,
+  })),
 ];

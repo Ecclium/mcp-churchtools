@@ -5,8 +5,21 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  checkRunSection,
+  checkRunText,
+  escapeRunText,
+  lastTrigger,
+} from '@ecclium/mcp-churchtools-core';
+import { injectionCorpus, lookalikes } from '@ecclium/mcp-churchtools-testkit';
+
+import {
+  corpusPages,
+  corpusTitles,
+  leftOut,
+} from '../../scripts/seed/lib/corpus.mts';
 import { runSeed } from '../../scripts/seed/lib/course.mts';
-import { pages } from '../../scripts/seed/lib/data.mts';
+import { datedData, pages } from '../../scripts/seed/lib/data.mts';
 import { anchorSaturday } from '../../scripts/seed/lib/dates.mts';
 import { pageLimit, readList } from '../../scripts/seed/lib/find.mts';
 import { SeedRun } from '../../scripts/seed/lib/run.mts';
@@ -86,6 +99,11 @@ function forbidden(setting: SeedSetting): string[] {
 function expectRefusal(result: SeedResult, hint: HintKey): void {
   expect(result.code).toBe(exitCodes.configuration);
   expect(result.output.stderr()).toContain(hints[hint]);
+}
+
+// The same outcome for every page of the data set, by label.
+function allPages(outcome: string): Record<string, string> {
+  return Object.fromEntries(pages.map((page) => [page.label, outcome]));
 }
 
 describe('the guard of the seed, from the environment', () => {
@@ -408,8 +426,10 @@ describe('anlegen', () => {
         a2: 'angelegt',
         a3: 'angelegt',
         a4: 'angelegt',
+        a5: 'angelegt',
+        a6: 'angelegt',
       },
-      events: { e1: 'angelegt', e2: 'angelegt' },
+      events: { e1: 'angelegt', e2: 'angelegt', e3: 'angelegt' },
       einteilungen: {
         e1s1pD: 'angelegt',
         e1s1pA: 'angelegt',
@@ -424,7 +444,7 @@ describe('anlegen', () => {
         e2i3: 'angelegt',
       },
       buchungen: { b1: 'angelegt', a4: 'vorhanden' },
-      seiten: { w1: 'uebersprungen', w2: 'uebersprungen', w3: 'uebersprungen' },
+      seiten: allPages('uebersprungen'),
       pruefungen: { diensteOhneMails: 'ja', gHSeedkonto: 'nein' },
     });
     expect(result.result).not.toHaveProperty('abbruch');
@@ -500,11 +520,8 @@ describe('anlegen', () => {
     setting.instance.grantSeedCategory();
     const third = await run(setting, 'anlegen');
     expect(third.result['struktur']).toMatchObject({ w: 'vorhanden' });
-    expect(third.result['seiten']).toEqual({
-      w1: 'angelegt',
-      w2: 'angelegt',
-      w3: 'angelegt',
-    });
+    expect(third.result['seiten']).toEqual(allPages('angelegt'));
+    expect(setting.instance.store.pages).toHaveLength(3 + corpusPages.length);
     expect(
       setting.instance
         .writes()
@@ -690,13 +707,15 @@ describe('zuruecksetzen', () => {
     const result = await run(setting, 'zuruecksetzen');
     expect(result.code).toBe(exitCodes.ok);
     expect(result.result).toMatchObject({
-      seiten: { w1: 'geloescht', w2: 'geloescht', w3: 'geloescht' },
-      events: { e1: 'geloescht', e2: 'geloescht' },
+      seiten: allPages('geloescht'),
+      events: { e1: 'geloescht', e2: 'geloescht', e3: 'geloescht' },
       termine: {
         a1: 'geloescht',
         a2: 'geloescht',
         a3: 'geloescht',
         a4: 'geloescht',
+        a5: 'geloescht',
+        a6: 'geloescht',
       },
       lieder: { l1: 'geloescht', l2: 'geloescht' },
       buchungen: { b1: 'geloescht' },
@@ -707,14 +726,15 @@ describe('zuruecksetzen', () => {
     const events = deletes.filter((item) =>
       /^\/api\/events\/\d+$/.test(item.path),
     );
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     // Every event goes before the first appointment.
     const firstAppointment = deletes.findIndex((item) =>
       item.path.includes('/appointments/'),
     );
     expect(firstAppointment).toBeGreaterThan(
-      deletes.indexOf(events[1] as (typeof deletes)[number]),
+      deletes.indexOf(events[2] as (typeof deletes)[number]),
     );
+    expect(setting.instance.store.pages).toEqual([]);
     for (const call of events) {
       expect(call.query.get('sendMail')).toBe('false');
     }
@@ -778,19 +798,26 @@ describe('zuruecksetzen without its events', () => {
     });
     const result = await run(setting, 'zuruecksetzen');
     expect(result.result).toMatchObject({
-      events: { e1: { abgelehnt: 403 }, e2: { abgelehnt: 403 } },
+      events: {
+        e1: { abgelehnt: 403 },
+        e2: { abgelehnt: 403 },
+        e3: { abgelehnt: 403 },
+      },
       termine: {
         a1: 'uebersprungen',
         a2: 'uebersprungen',
         a3: 'geloescht',
         a4: 'geloescht',
+        a5: 'uebersprungen',
+        a6: 'geloescht',
       },
     });
+    // a1, a2 and a5 with their events, and the one made by hand.
     expect(
       setting.instance.store.appointments.filter((item) =>
         String(item['title']).startsWith('Seedprobe'),
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
 });
 
@@ -855,5 +882,567 @@ describe('the data set', () => {
     expect(anchorSaturday(new Date('2026-10-29T00:00:00Z')).toISOString()).toBe(
       '2026-10-31T00:00:00.000Z',
     );
+  });
+});
+
+describe('the lists of pages of the seed', () => {
+  const answer = (count: number, total: number): SeedRun =>
+    new SeedRun({
+      client: {
+        get: () =>
+          Promise.resolve({
+            status: 200,
+            headers: new Headers(),
+            setCookies: [],
+            body: {
+              data: Array.from({ length: count }, (_, index) => ({
+                id: index + 1,
+              })),
+              meta: { count: total },
+            },
+            kind: 'JSON',
+          }),
+      },
+      writer: undefined,
+      guard: new Guard(),
+      wait: () => Promise.resolve(),
+    });
+  const path = '/api/wiki/categories/1/pages';
+
+  it('take a list that counts more pages than it holds as unreadable', async () => {
+    expect(await readList(answer(3, 4), path, [], false, true)).toBeUndefined();
+    expect(await readList(answer(3, 3), path, [], false, true)).toHaveLength(3);
+    // Without the check, as for every other list without pages.
+    expect(await readList(answer(3, 4), path, [], false)).toHaveLength(3);
+  });
+
+  it('then create no page and delete none', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    setting.instance.grantSeedCategory();
+    setting.instance.behave({ hiddenPages: 1 });
+    const created = await run(setting, 'anlegen');
+    expect(created.result['seiten']).toEqual(allPages('antwort unerwartet'));
+    expect(setting.instance.store.pages).toEqual([]);
+
+    setting.instance.behave({ hiddenPages: 0 });
+    await run(setting, 'anlegen');
+    setting.instance.behave({ hiddenPages: 1 });
+    const reset = await run(setting, 'zuruecksetzen');
+    expect(reset.result['seiten']).toEqual(allPages('antwort unerwartet'));
+    expect(setting.instance.store.pages).toHaveLength(pages.length);
+  });
+});
+
+describe('pruefen with the corpus', () => {
+  it('finds the pages, the appointments and their events, each event under the title of its appointment', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    setting.instance.grantSeedCategory();
+    await run(setting, 'anlegen');
+    const before = setting.instance.writes().length;
+    const checked = await run(setting, 'pruefen', { terminal: false });
+    expect(checked.code).toBe(exitCodes.ok);
+    expect(checked.result).toMatchObject({
+      termine: { a5: 'vorhanden', a6: 'vorhanden' },
+      events: { e1: 'vorhanden', e2: 'vorhanden', e3: 'vorhanden' },
+      seiten: allPages('vorhanden'),
+    });
+    expect(setting.instance.writes()).toHaveLength(before);
+    expect(leaks(checked.output, forbidden(setting))).toEqual([]);
+    // Another anlegen finds every page, appointment and event and writes
+    // nothing.
+    const again = await run(setting, 'anlegen');
+    expect(again.result).toMatchObject({
+      termine: { a5: 'vorhanden', a6: 'vorhanden' },
+      events: { e3: 'vorhanden' },
+      seiten: allPages('vorhanden'),
+    });
+    expect(setting.instance.writes()).toHaveLength(before);
+  });
+
+  it('reports an event under another name, and a missing one', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const title = datedData(now).appointments.find(
+      (spec) => spec.label === 'a5',
+    )?.title;
+    const event = setting.instance.store.events.find(
+      (item) => item['name'] === title,
+    );
+    expect(event).toBeDefined();
+    if (event !== undefined) {
+      event['name'] = 'Seedprobe Anlass';
+    }
+    const renamed = await run(setting, 'pruefen', { terminal: false });
+    expect(renamed.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'anderer Name',
+    });
+    setting.instance.store.events.splice(
+      setting.instance.store.events.indexOf(event ?? {}),
+      1,
+    );
+    const missing = await run(setting, 'pruefen', { terminal: false });
+    expect(missing.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'fehlt',
+    });
+  });
+
+  it('reports the events as missing once zuruecksetzen took them, with the calendar still there', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    await run(setting, 'zuruecksetzen');
+    const result = await run(setting, 'pruefen', { terminal: false });
+    expect(result.result['struktur']).toMatchObject({ c: 'vorhanden' });
+    expect(result.result['termine']).toMatchObject({
+      a5: 'fehlt',
+      a6: 'fehlt',
+    });
+    expect(result.result['events']).toEqual({
+      e1: 'fehlt',
+      e2: 'fehlt',
+      e3: 'fehlt',
+    });
+  });
+
+  it('reports the event of an appointment that is gone as missing, while other events are there', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const { store } = setting.instance;
+    const title = datedData(now).appointments.find(
+      (spec) => spec.label === 'a5',
+    )?.title;
+    const appointment = store.appointments.findIndex(
+      (item) => item['title'] === title,
+    );
+    const event = store.events.findIndex((item) => item['name'] === title);
+    expect(appointment).toBeGreaterThanOrEqual(0);
+    expect(event).toBeGreaterThanOrEqual(0);
+    store.appointments.splice(appointment, 1);
+    store.events.splice(event, 1);
+    const result = await run(setting, 'pruefen', { terminal: false });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.result['termine']).toMatchObject({
+      a5: 'fehlt',
+      a6: 'vorhanden',
+    });
+    expect(result.result['events']).toEqual({
+      e1: 'vorhanden',
+      e2: 'vorhanden',
+      e3: 'fehlt',
+    });
+  });
+
+  it('reports the events as unreadable when the list of events or of appointments cannot be read', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const unreadable = {
+      e1: 'antwort unerwartet',
+      e2: 'antwort unerwartet',
+      e3: 'antwort unerwartet',
+    };
+    setting.instance.behave({ refuse: new Map([['GET /api/events', 500]]) });
+    const events = await run(setting, 'pruefen', { terminal: false });
+    expect(events.result['termine']).toMatchObject({ a5: 'vorhanden' });
+    expect(events.result['events']).toEqual(unreadable);
+    setting.instance.behave({
+      refuse: new Map([['GET /api/calendars/{}/appointments', 500]]),
+    });
+    const appointments = await run(setting, 'pruefen', { terminal: false });
+    expect(appointments.result['termine']).toMatchObject({
+      a5: 'antwort unerwartet',
+    });
+    expect(appointments.result['events']).toEqual(unreadable);
+  });
+
+  it('reports an event or an appointment that is there twice as mehrfach', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const { store } = setting.instance;
+    const title = datedData(now).appointments.find(
+      (spec) => spec.label === 'a5',
+    )?.title;
+    const appointment = store.appointments.find(
+      (item) => item['title'] === title,
+    );
+    const event = store.events.find((item) => item['name'] === title);
+    expect(appointment).toBeDefined();
+    expect(event).toBeDefined();
+    store.events.push({ ...event, id: 990001 });
+    const eventTwice = await run(setting, 'pruefen', { terminal: false });
+    expect(eventTwice.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'mehrfach',
+    });
+    store.events.pop();
+    store.appointments.push({ ...appointment, id: 990002 });
+    const appointmentTwice = await run(setting, 'pruefen', {
+      terminal: false,
+    });
+    expect(appointmentTwice.result['termine']).toMatchObject({
+      a5: 'mehrfach',
+    });
+    expect(appointmentTwice.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'mehrfach',
+    });
+  });
+
+  it('reports the events as missing without the calendar', async () => {
+    const setting = seedSetup();
+    const result = await run(setting, 'pruefen', { terminal: false });
+    expect(result.result['events']).toEqual({
+      e1: 'fehlt',
+      e2: 'fehlt',
+      e3: 'fehlt',
+    });
+  });
+});
+
+// Latin letters for the letters of other scripts that look like them.
+const latinOf = new Map(
+  Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ').flatMap(
+    (letter) => lookalikes(letter).map((other) => [other, letter] as const),
+  ),
+);
+
+// A text as a model or a browser could read it: in NFKC, with the
+// ideographic full stop as a dot, the text that tag characters stand for
+// set apart by spaces, and HTML entities with a number decoded. With
+// `fold`, letters that look like Latin ones become those, so that a
+// disguised name shows; without it, a host counts as what it really is.
+function readable(text: string, fold = false): string {
+  let result = '';
+  let hidden = '';
+  for (const sign of text.normalize('NFKC')) {
+    const point = sign.codePointAt(0) ?? 0;
+    if (point >= 0xe0000 && point <= 0xe007f) {
+      hidden += String.fromCodePoint(point - 0xe0000);
+      continue;
+    }
+    if (hidden !== '') {
+      result += ` ${hidden} `;
+      hidden = '';
+    }
+    result +=
+      point === 0x3002 ? '.' : fold ? (latinOf.get(sign) ?? sign) : sign;
+  }
+  return (hidden === '' ? result : `${result} ${hidden} `)
+    .replaceAll(/&#x([0-9a-f]+);?/giu, (_, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replaceAll(/&#(\d+);?/gu, (_, digits: string) =>
+      String.fromCodePoint(Number(digits)),
+    );
+}
+
+// The host names in a text, after a scheme, after `//` or `@`, or bare,
+// but not the names of files in a path: once as written and once with
+// look-alike letters folded.
+function hostsIn(text: string): string[] {
+  return [false, true].flatMap((fold) =>
+    Array.from(
+      readable(text, fold)
+        .replaceAll('//', ' ')
+        .replaceAll('@', ' ')
+        .matchAll(
+          /(?<![\p{L}\p{N}/.-])(?:[\p{L}\p{N}-]+\.)+(?=[\p{L}\p{N}-]*\p{L})[\p{L}\p{N}-]{2,}(?![\p{L}\p{N}-])/gu,
+        ),
+      (match) => match[0].toLowerCase(),
+    ),
+  );
+}
+
+const exampleHost = (host: string): boolean =>
+  host === 'example.org' ||
+  host === 'example.church.tools' ||
+  host.endsWith('.example') ||
+  host.endsWith('.example.org');
+
+// What must never stand on the instance: a host outside the names for
+// examples, `localhost`, an IP address outside the ranges for
+// documentation, a script as the target of a link or in HTML, and a
+// mention with a number.
+function unsafe(text: string): string[] {
+  const plain = readable(text);
+  const joined = plain.replaceAll(/[\t\n\r]/gu, '');
+  return [
+    ...new Set(hostsIn(text).filter((host) => !exampleHost(host))),
+    ...(plain.match(/\blocalhost\b/giu) ?? []),
+    ...(plain.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/gu) ?? []).filter(
+      (address) => !/^(?:192\.0\.2|198\.51\.100|203\.0\.113)\./u.test(address),
+    ),
+    ...(plain.match(/\[[0-9a-f]*:[0-9a-f:.]*\]/giu) ?? []).filter(
+      (address) => !/^\[2001:db8:/iu.test(address),
+    ),
+    ...(joined.match(
+      /(?:\]\(\s*<?|\]:\s*<?|<|(?:href|src|action|formaction)\s*=\s*["']?)\s*javascript:/giu,
+    ) ?? []),
+    ...(plain.match(/<\s*script\b/giu) ?? []),
+    ...(plain.match(/<[^>]*\bon[a-z]+\s*=/giu) ?? []),
+    ...(plain.match(/searchEntry:\s*(?:%23|#)\s*\d+/giu) ?? []),
+  ];
+}
+
+describe('the corpus in the seed', () => {
+  const cases = new Map(injectionCorpus.map((entry) => [entry.id, entry]));
+
+  it('holds every case of the corpus as a page, apart from the one it leaves out', () => {
+    expect(leftOut).toEqual(['en-javascript-link']);
+    for (const id of leftOut) {
+      expect(cases.has(id)).toBe(true);
+    }
+    expect(corpusPages.map((entry) => entry.id)).toEqual(
+      injectionCorpus
+        .map((entry) => entry.id)
+        .filter((id) => !leftOut.includes(id)),
+    );
+    for (const entry of corpusPages) {
+      expect(entry.text).toBe(cases.get(entry.id)?.page);
+    }
+  });
+
+  it('writes each page of the corpus in Markdown, titled with the marker and its case', () => {
+    for (const entry of corpusPages) {
+      expect(pages.find((spec) => spec.label === entry.id)).toEqual({
+        label: entry.id,
+        title: `Seedprobe Korpus ${entry.id}`,
+        isMarkdown: true,
+        text: entry.text,
+      });
+    }
+    const titles = pages.map((spec) => spec.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(pages.map((spec) => spec.label)).toEqual(
+      expect.arrayContaining(['w1', 'w2', 'w3']),
+    );
+  });
+
+  it('puts the line of a case into the title of each appointment, which a run that copies it keeps', () => {
+    const data = datedData(now);
+    const fieldLength = Math.min(
+      ...[
+        ['dienstplan-report.yaml', 'termin'],
+        ['termin-vorschau.yaml', 'titel'],
+      ].map(([file, field]) => {
+        const text = readFileSync(
+          join(import.meta.dirname, '..', '..', 'routines', file ?? ''),
+          'utf8',
+        );
+        const match = new RegExp(
+          `${field ?? ''}: \\{ type: text, maxLength: (\\d+) \\}`,
+          'u',
+        ).exec(text);
+        return Number(match?.[1]);
+      }),
+    );
+    expect(fieldLength).toBe(120);
+    const titled = [
+      ['a5', corpusTitles.event],
+      ['a6', corpusTitles.appointment],
+    ] as const;
+    for (const [label, entry] of titled) {
+      expect(entry.line).toBe(cases.get(entry.id)?.line);
+      const title =
+        data.appointments.find((spec) => spec.label === label)?.title ?? '';
+      expect(title).toBe(`Seedprobe Korpus: ${entry.line}`);
+      // A run that copies the title fills a field of its blocks with it:
+      // `termin` of the rota report, `titel` of the preview of dates.
+      expect(title.length).toBeLessThanOrEqual(fieldLength);
+      expect(checkRunText(title, new Set())).toMatchObject({
+        ok: true,
+        text: title,
+      });
+      expect(
+        checkRunSection(
+          `### Termine\n\n- ${escapeRunText(title)}\n`,
+          new Set(),
+        ),
+      ).toMatchObject({ ok: true });
+    }
+    const [withEvent, withoutEvent] = ['a5', 'a6'].map((label) =>
+      data.appointments.find((spec) => spec.label === label),
+    );
+    expect(withEvent?.event).toMatchObject({
+      label: 'e3',
+      services: [{ service: 's1', count: 1 }],
+      assignments: [],
+      agenda: [],
+    });
+    expect(withoutEvent?.event).toBeUndefined();
+  });
+
+  it('sends no host outside the names for examples, no script and no mention of the instance', () => {
+    const texts = [
+      ...pages.flatMap((spec) => [spec.title, spec.text]),
+      ...datedData(now).appointments.map((spec) => spec.title),
+    ];
+    for (const text of texts) {
+      expect(unsafe(text)).toEqual([]);
+    }
+    // The check sees what it looks for, also in a form a reader does not.
+    const stop = String.fromCodePoint(0x3002);
+    const cyrillicA = lookalikes('a')[0] ?? '';
+    const tags = Array.from('www.exfil.invalid', (sign) =>
+      String.fromCodePoint(0xe0000 + (sign.codePointAt(0) ?? 0)),
+    ).join('');
+    const probes: readonly (readonly [string, readonly string[]])[] = [
+      [`Siehe exfil${stop}invalid`, ['exfil.invalid']],
+      [`Siehe ${tags}`, ['www.exfil.invalid']],
+      [`Siehe ex${cyrillicA}mple.org`, [`ex${cyrillicA}mple.org`]],
+      [`Siehe ${cyrillicA}nmeldung.example.org`, []],
+      ['![x](//exfil.invalid/x.png)', ['exfil.invalid']],
+      ['<img src="//exfil.invalid/x.png">', ['exfil.invalid']],
+      ['![x](https://example.org@exfil.invalid/x.png)', ['exfil.invalid']],
+      ['Rückfragen an sekretariat@exfil.invalid', ['exfil.invalid']],
+      ['Siehe www.exfil.xn--invalid', ['www.exfil.xn--invalid']],
+      ['Siehe http://localhost/', ['localhost']],
+      ['Update unter 10.0.0.1', ['10.0.0.1']],
+      ['Update unter [fd00::1]', ['[fd00::1]']],
+      ['[a](<javascript:alert(1)>)', ['](<javascript:']],
+      ['<javascript:alert(1)>', ['<javascript:']],
+      ['[r]: javascript:alert(1)', [']: javascript:']],
+      ['[a](java&#115;cript:alert(1))', ['](javascript:']],
+      ['<a href="java\nscript:alert(1)">a</a>', ['href="javascript:']],
+      ['<script>alert(1)</script>', ['<script']],
+      [
+        '<img src="https://exfil.example/x.png" onerror=alert(1)>',
+        ['<img src="https://exfil.example/x.png" onerror='],
+      ],
+      [
+        '[A](https://example.org/?x=1#PersonView/searchEntry:%2312/)',
+        ['searchEntry:%2312'],
+      ],
+      ['searchEntry:#12', ['searchEntry:#12']],
+    ];
+    for (const [text, found] of probes) {
+      expect(unsafe(text), text).toEqual(found);
+    }
+    expect(unsafe(cases.get('en-javascript-link')?.page ?? '')).not.toEqual([]);
+  });
+
+  it('lies inside the days the two routines read, from the trigger of the week of the seed and from the next one', () => {
+    const routine = (
+      file: string,
+    ): { schedule: string; from: number; to: number } => {
+      const text = readFileSync(
+        join(import.meta.dirname, '..', '..', 'routines', file),
+        'utf8',
+      );
+      const days = /from: '\+(\d+)d', to: '\+(\d+)d'/u.exec(text);
+      const schedule = /^schedule: '([^']+)'/mu.exec(text);
+      return {
+        schedule: schedule?.[1] ?? '',
+        from: Number(days?.[1]),
+        to: Number(days?.[2]),
+      };
+    };
+    const rota = routine('dienstplan-report.yaml');
+    const preview = routine('termin-vorschau.yaml');
+    expect(rota).toEqual({ schedule: '0 6 * * MON', from: 0, to: 14 });
+    expect(preview).toEqual({ schedule: '0 6 * * MON', from: 7, to: 35 });
+    // Days as the routine counts them: on the clock of the congregation.
+    const timeZone = 'Europe/Zurich';
+    const dayMs = 24 * 60 * 60 * 1000;
+    const format = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const dayOf = (date: string): number =>
+      Date.parse(`${date}T00:00:00Z`) / dayMs;
+    const localDay = (time: number): number => dayOf(format.format(time));
+    const triggerAt = (time: number): { at: number; day: number } => {
+      const trigger = lastTrigger({
+        schedule: rota.schedule,
+        timeZone,
+        clock: { now: () => time },
+      });
+      return { at: trigger.at, day: dayOf(trigger.period.date) };
+    };
+    const startOf = (
+      data: ReturnType<typeof datedData>,
+      label: string,
+    ): number => {
+      const spec = data.appointments.find((item) => item.label === label);
+      if (spec?.when.kind !== 'time') {
+        throw new Error(`no time for ${label}`);
+      }
+      return spec.when.start.getTime();
+    };
+    const starts = [Date.UTC(2026, 9, 12), Date.UTC(2027, 2, 15)];
+    // The triggers in the weeks of the test, each read once from the core:
+    // reading them hour by hour took longer than a test may under coverage.
+    const found = new Map<number, number>();
+    for (const first of starts) {
+      for (let day = -8; day < 30; day += 1) {
+        const trigger = triggerAt(first + day * dayMs + 12 * 60 * 60 * 1000);
+        found.set(trigger.at, trigger.day);
+      }
+    }
+    const triggers = [...found].sort(([one], [other]) => one - other);
+    const failures: string[] = [];
+    let checked = 0;
+    let early = 0;
+    // Three weeks each around the change to winter time and to summer
+    // time, hour by hour.
+    for (const first of starts) {
+      for (let hour = 0; hour < 21 * 24; hour += 1) {
+        const seeded = first + hour * 60 * 60 * 1000;
+        const when = new Date(seeded).toISOString();
+        const data = datedData(new Date(seeded));
+        const event = startOf(data, 'a5');
+        const appointment = startOf(data, 'a6');
+        if (event <= seeded) {
+          failures.push(`${when}: the event lies before the seed`);
+        }
+        let index = -1;
+        for (const [position, [at]] of triggers.entries()) {
+          if (at <= seeded) {
+            index = position;
+          }
+        }
+        const last = triggers[index];
+        const next = triggers[index + 1];
+        if (
+          last === undefined ||
+          next === undefined ||
+          next[1] - last[1] !== 7
+        ) {
+          failures.push(`${when}: no trigger before and a week after`);
+          continue;
+        }
+        // A run by hand serves the last trigger, the daemon the next one.
+        // On a Monday before the trigger, the last one lies a week back;
+        // such a seed counts for the next trigger only.
+        const days = [next[1]];
+        if (localDay(seeded) - last[1] < 7) {
+          days.push(last[1]);
+        } else {
+          early += 1;
+        }
+        for (const day of days) {
+          const toEvent = localDay(event) - day;
+          const toAppointment = localDay(appointment) - day;
+          if (
+            toEvent < rota.from ||
+            toEvent >= rota.to ||
+            toAppointment < preview.from ||
+            toAppointment >= preview.to
+          ) {
+            failures.push(
+              `${when}: ${String(toEvent)} and ${String(toAppointment)} days from the trigger`,
+            );
+          }
+          checked += 1;
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+    expect(checked).toBeGreaterThan(1900);
+    expect(early).toBeGreaterThan(0);
   });
 });

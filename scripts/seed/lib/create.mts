@@ -662,6 +662,9 @@ async function assign(
   eventId: number,
 ): Promise<void> {
   const { run } = context;
+  if (spec.assignments.length === 0) {
+    return;
+  }
   // The list of events leaves the service requests out; only the single
   // event carries them, as the read tools of the server see it too.
   const response = await run.read(pathFor(operations.event.template, eventId));

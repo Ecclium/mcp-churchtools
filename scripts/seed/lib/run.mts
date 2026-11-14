@@ -63,6 +63,7 @@ export const outcomes = [
   'nein',
   'sichtbar',
   'sichtbar und bearbeitbar',
+  'anderer Name',
 ] as const;
 
 /** One fixed word of the report. */

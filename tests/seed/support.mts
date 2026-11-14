@@ -68,6 +68,8 @@ export interface InstanceOptions {
   readonly servicesSendMails?: boolean;
   /** Whether the lists of groups, songs and bookings ignore their filter. */
   readonly ignoreFilters?: boolean;
+  /** How many pages the list of a category of the wiki counts but holds back. */
+  readonly hiddenPages?: number;
 }
 
 /** The seed account of the synthetic instance. */
@@ -341,10 +343,13 @@ export class SeedInstance {
     return this.options.ignoreFilters === true;
   }
 
-  private list(items: readonly Item[]): Response {
+  private list(items: readonly Item[], hidden = 0): Response {
     return this.answer({
       data: items.map((item) => ({ ...item, notiz: this.canaries.personName })),
-      meta: { count: items.length, pagination: { current: 1, lastPage: 1 } },
+      meta: {
+        count: items.length + hidden,
+        pagination: { current: 1, lastPage: 1 },
+      },
     });
   }
 
@@ -619,6 +624,7 @@ export class SeedInstance {
       if (method === 'GET') {
         return this.list(
           s.pages.filter((item) => item['categoryId'] === categoryId),
+          this.options.hiddenPages,
         );
       }
       if (method === 'DELETE') {
