@@ -246,7 +246,7 @@ Einen Ordner `stop` im Zustandsordner liest nur ein Server über stdio ohne `ECC
 
 ### Grenzen
 
-Der Container läuft mit Grenzen für die Zahl der Prozesse, Threads eingeschlossen, und für den Speicher. Der Job `e2e` in CI startet den Runner mit diesen Grenzen und liest nach jedem Lauf von `ecclium run-once` die Höchstwerte aus der cgroup des Containers; ein Lauf, der eine Grenze erreicht, lässt den Job scheitern. Am 14.11.2026 brauchte ein solcher Lauf, der eine Liste von Seiten liest, ein Modell fragt und einen Abschnitt schreibt, lokal unter Ubuntu 24.04 auf arm64 höchstens 13 Prozesse und 79 MiB Speicher. Die Werte der Tabelle sind Ausgangswerte: das Doppelte davon, aufgerundet auf eine Zweierpotenz.
+Der Container läuft mit Grenzen für die Zahl der Prozesse, Threads eingeschlossen, und für den Speicher. Der Job `e2e` in CI startet den Runner mit diesen Grenzen und liest nach jedem Lauf von `ecclium run-once` die Höchstwerte aus der cgroup des Containers; ein Lauf, der eine Grenze erreicht, lässt den Job scheitern. Am 14.11.2026 brauchte ein solcher Lauf, der eine Liste von Seiten liest, ein Modell fragt und einen Abschnitt schreibt, lokal unter Ubuntu 24.04 auf arm64 höchstens 13 Prozesse und 79 MiB Speicher, in CI auf amd64 höchstens 13 Prozesse und 68,9 MiB. Die Werte der Tabelle sind Ausgangswerte: das Doppelte der lokalen Höchstwerte, aufgerundet auf eine Zweierpotenz.
 
 | Grenze   | Wert    | In Docker Compose |
 | -------- | ------- | ----------------- |
