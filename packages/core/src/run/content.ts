@@ -23,6 +23,7 @@ import {
   contactKeysOf,
   normalizeContent,
 } from '../content/index.js';
+import { markingTextsOf } from '../marker/index.js';
 import type { Policy } from '../policy/schema.js';
 import { findPersonalData } from '../redaction/index.js';
 
@@ -50,6 +51,12 @@ export function checkRunText(
  * Checks a section the core rendered from a template and the fields of an
  * answer, as the text of a page, and gives the form to write.
  *
+ * A section brings no line of the marking of its own, wherever a reader
+ * would find one: the core adds the line after the section (ADR 0032).
+ * The write guard refuses such a section for a write as well; refusing it
+ * here ends a trial run and a draft to a file the same way, and the run
+ * names the reason before it plans anything.
+ *
  * @param markdown - The rendered section.
  * @param contacts - The keys of the contact values it may hold.
  * @returns The section to write, or every reason to refuse it.
@@ -62,7 +69,14 @@ export function checkRunSection(
   markdown: string,
   contacts: ReadonlySet<string>,
 ): ContentCheckResult {
-  return checkMarkdown(markdown, { contacts });
+  const checked = checkMarkdown(markdown, { contacts });
+  if (checked.ok && markingTextsOf(checked.text).length > 0) {
+    return Object.freeze({
+      ok: false,
+      violations: Object.freeze(['marking'] as const),
+    });
+  }
+  return checked;
 }
 
 // Every sign of ASCII that CommonMark lets a backslash escape.
