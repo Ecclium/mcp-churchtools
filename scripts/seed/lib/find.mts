@@ -80,6 +80,7 @@ export function searchWindow(now: Date): Window {
  * @param path - Filled path of the list.
  * @param query - Query parameters besides `limit` and `page`.
  * @param paged - Whether the list takes `limit` and `page`.
+ * @param counted - For a list without pages: whether an answer whose `meta.count` names more entries than it brings counts as unreadable.
  * @returns The entries, or `undefined` if an answer had another form or the run stopped.
  */
 export async function readList(
@@ -87,6 +88,7 @@ export async function readList(
   path: string,
   query: readonly (readonly [string, string])[],
   paged: boolean,
+  counted = false,
 ): Promise<readonly JsonObject[] | undefined> {
   const all: JsonObject[] = [];
   for (let page = 1; page <= maxPages; page += 1) {
@@ -106,7 +108,11 @@ export async function readList(
     }
     all.push(...data);
     if (!paged) {
-      return all;
+      const meta = isObject(response.body) ? response.body['meta'] : undefined;
+      const count = isObject(meta) ? meta['count'] : undefined;
+      return counted && typeof count === 'number' && count > data.length
+        ? undefined
+        : all;
     }
     const lastPage = pagination(response.body)?.['lastPage'];
     if (typeof lastPage !== 'number') {
@@ -471,11 +477,15 @@ export async function findPages(
   run: SeedRun,
   categoryId: number,
 ): Promise<Map<PageSpec['label'], FoundPage> | undefined> {
+  // The list has no pages, only `meta.count` (F6). Should it ever hold
+  // back entries, the seed would create a page twice or leave one behind
+  // on reset, so a shorter list than its count is unreadable.
   const entries = await readList(
     run,
     pathFor(operations.wikiCategoryPages.template, categoryId),
     [],
     false,
+    true,
   );
   if (entries === undefined) {
     return undefined;

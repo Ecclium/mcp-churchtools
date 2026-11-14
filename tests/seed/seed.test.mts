@@ -884,6 +884,55 @@ describe('the data set', () => {
   });
 });
 
+describe('the lists of pages of the seed', () => {
+  const answer = (count: number, total: number): SeedRun =>
+    new SeedRun({
+      client: {
+        get: () =>
+          Promise.resolve({
+            status: 200,
+            headers: new Headers(),
+            setCookies: [],
+            body: {
+              data: Array.from({ length: count }, (_, index) => ({
+                id: index + 1,
+              })),
+              meta: { count: total },
+            },
+            kind: 'JSON',
+          }),
+      },
+      writer: undefined,
+      guard: new Guard(),
+      wait: () => Promise.resolve(),
+    });
+  const path = '/api/wiki/categories/1/pages';
+
+  it('take a list that counts more pages than it holds as unreadable', async () => {
+    expect(await readList(answer(3, 4), path, [], false, true)).toBeUndefined();
+    expect(await readList(answer(3, 3), path, [], false, true)).toHaveLength(3);
+    // Without the check, as for every other list without pages.
+    expect(await readList(answer(3, 4), path, [], false)).toHaveLength(3);
+  });
+
+  it('then create no page and delete none', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    setting.instance.grantSeedCategory();
+    setting.instance.behave({ hiddenPages: 1 });
+    const created = await run(setting, 'anlegen');
+    expect(created.result['seiten']).toEqual(allPages('antwort unerwartet'));
+    expect(setting.instance.store.pages).toEqual([]);
+
+    setting.instance.behave({ hiddenPages: 0 });
+    await run(setting, 'anlegen');
+    setting.instance.behave({ hiddenPages: 1 });
+    const reset = await run(setting, 'zuruecksetzen');
+    expect(reset.result['seiten']).toEqual(allPages('antwort unerwartet'));
+    expect(setting.instance.store.pages).toHaveLength(pages.length);
+  });
+});
+
 // Latin letters for the letters of other scripts that look like them.
 const latinOf = new Map(
   Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ').flatMap(
