@@ -5,8 +5,20 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  checkRunSection,
+  checkRunText,
+  escapeRunText,
+} from '@ecclium/mcp-churchtools-core';
+import { injectionCorpus, lookalikes } from '@ecclium/mcp-churchtools-testkit';
+
+import {
+  corpusPages,
+  corpusTitles,
+  leftOut,
+} from '../../scripts/seed/lib/corpus.mts';
 import { runSeed } from '../../scripts/seed/lib/course.mts';
-import { pages } from '../../scripts/seed/lib/data.mts';
+import { datedData, pages } from '../../scripts/seed/lib/data.mts';
 import { anchorSaturday } from '../../scripts/seed/lib/dates.mts';
 import { pageLimit, readList } from '../../scripts/seed/lib/find.mts';
 import { SeedRun } from '../../scripts/seed/lib/run.mts';
@@ -86,6 +98,11 @@ function forbidden(setting: SeedSetting): string[] {
 function expectRefusal(result: SeedResult, hint: HintKey): void {
   expect(result.code).toBe(exitCodes.configuration);
   expect(result.output.stderr()).toContain(hints[hint]);
+}
+
+// The same outcome for every page of the data set, by label.
+function allPages(outcome: string): Record<string, string> {
+  return Object.fromEntries(pages.map((page) => [page.label, outcome]));
 }
 
 describe('the guard of the seed, from the environment', () => {
@@ -408,8 +425,10 @@ describe('anlegen', () => {
         a2: 'angelegt',
         a3: 'angelegt',
         a4: 'angelegt',
+        a5: 'angelegt',
+        a6: 'angelegt',
       },
-      events: { e1: 'angelegt', e2: 'angelegt' },
+      events: { e1: 'angelegt', e2: 'angelegt', e3: 'angelegt' },
       einteilungen: {
         e1s1pD: 'angelegt',
         e1s1pA: 'angelegt',
@@ -424,7 +443,7 @@ describe('anlegen', () => {
         e2i3: 'angelegt',
       },
       buchungen: { b1: 'angelegt', a4: 'vorhanden' },
-      seiten: { w1: 'uebersprungen', w2: 'uebersprungen', w3: 'uebersprungen' },
+      seiten: allPages('uebersprungen'),
       pruefungen: { diensteOhneMails: 'ja', gHSeedkonto: 'nein' },
     });
     expect(result.result).not.toHaveProperty('abbruch');
@@ -500,11 +519,8 @@ describe('anlegen', () => {
     setting.instance.grantSeedCategory();
     const third = await run(setting, 'anlegen');
     expect(third.result['struktur']).toMatchObject({ w: 'vorhanden' });
-    expect(third.result['seiten']).toEqual({
-      w1: 'angelegt',
-      w2: 'angelegt',
-      w3: 'angelegt',
-    });
+    expect(third.result['seiten']).toEqual(allPages('angelegt'));
+    expect(setting.instance.store.pages).toHaveLength(3 + corpusPages.length);
     expect(
       setting.instance
         .writes()
@@ -690,13 +706,15 @@ describe('zuruecksetzen', () => {
     const result = await run(setting, 'zuruecksetzen');
     expect(result.code).toBe(exitCodes.ok);
     expect(result.result).toMatchObject({
-      seiten: { w1: 'geloescht', w2: 'geloescht', w3: 'geloescht' },
-      events: { e1: 'geloescht', e2: 'geloescht' },
+      seiten: allPages('geloescht'),
+      events: { e1: 'geloescht', e2: 'geloescht', e3: 'geloescht' },
       termine: {
         a1: 'geloescht',
         a2: 'geloescht',
         a3: 'geloescht',
         a4: 'geloescht',
+        a5: 'geloescht',
+        a6: 'geloescht',
       },
       lieder: { l1: 'geloescht', l2: 'geloescht' },
       buchungen: { b1: 'geloescht' },
@@ -707,14 +725,15 @@ describe('zuruecksetzen', () => {
     const events = deletes.filter((item) =>
       /^\/api\/events\/\d+$/.test(item.path),
     );
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     // Every event goes before the first appointment.
     const firstAppointment = deletes.findIndex((item) =>
       item.path.includes('/appointments/'),
     );
     expect(firstAppointment).toBeGreaterThan(
-      deletes.indexOf(events[1] as (typeof deletes)[number]),
+      deletes.indexOf(events[2] as (typeof deletes)[number]),
     );
+    expect(setting.instance.store.pages).toEqual([]);
     for (const call of events) {
       expect(call.query.get('sendMail')).toBe('false');
     }
@@ -778,19 +797,26 @@ describe('zuruecksetzen without its events', () => {
     });
     const result = await run(setting, 'zuruecksetzen');
     expect(result.result).toMatchObject({
-      events: { e1: { abgelehnt: 403 }, e2: { abgelehnt: 403 } },
+      events: {
+        e1: { abgelehnt: 403 },
+        e2: { abgelehnt: 403 },
+        e3: { abgelehnt: 403 },
+      },
       termine: {
         a1: 'uebersprungen',
         a2: 'uebersprungen',
         a3: 'geloescht',
         a4: 'geloescht',
+        a5: 'uebersprungen',
+        a6: 'geloescht',
       },
     });
+    // a1, a2 and a5 with their events, and the one made by hand.
     expect(
       setting.instance.store.appointments.filter((item) =>
         String(item['title']).startsWith('Seedprobe'),
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
   });
 });
 
@@ -855,5 +881,212 @@ describe('the data set', () => {
     expect(anchorSaturday(new Date('2026-10-29T00:00:00Z')).toISOString()).toBe(
       '2026-10-31T00:00:00.000Z',
     );
+  });
+});
+
+// Latin letters for the letters of other scripts that look like them.
+const latinOf = new Map(
+  Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ').flatMap(
+    (letter) => lookalikes(letter).map((other) => [other, letter] as const),
+  ),
+);
+
+// A text as a model could read it: in NFKC, with Latin letters for their
+// look-alikes, the ideographic full stop as a dot, and the text that tag
+// characters stand for set apart by spaces.
+function readable(text: string): string {
+  let result = '';
+  let hidden = '';
+  for (const sign of text.normalize('NFKC')) {
+    const point = sign.codePointAt(0) ?? 0;
+    if (point >= 0xe0000 && point <= 0xe007f) {
+      hidden += String.fromCodePoint(point - 0xe0000);
+      continue;
+    }
+    if (hidden !== '') {
+      result += ` ${hidden} `;
+      hidden = '';
+    }
+    result += point === 0x3002 ? '.' : (latinOf.get(sign) ?? sign);
+  }
+  return hidden === '' ? result : `${result} ${hidden} `;
+}
+
+// The host names in a text, with or without a scheme, not the names of
+// files in a path.
+function hostsIn(text: string): string[] {
+  const plain = readable(text).replaceAll('://', ' ');
+  return Array.from(
+    plain.matchAll(
+      /(?<![\p{L}\p{N}/@.-])(?:[\p{L}\p{N}-]+\.)+\p{L}{2,}(?![\p{L}\p{N}-])/gu,
+    ),
+    (match) => match[0].toLowerCase(),
+  );
+}
+
+const exampleHost = (host: string): boolean =>
+  host === 'example.org' ||
+  host === 'example.church.tools' ||
+  host.endsWith('.example') ||
+  host.endsWith('.example.org');
+
+// What must never stand on the instance: a host outside the names for
+// examples, an IPv4 address outside the ranges for documentation, a link
+// or HTML whose target runs a script, a mention with a number.
+function unsafe(text: string): string[] {
+  const plain = readable(text);
+  return [
+    ...hostsIn(text).filter((host) => !exampleHost(host)),
+    ...(plain.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/gu) ?? []).filter(
+      (address) => !/^(?:192\.0\.2|198\.51\.100|203\.0\.113)\./u.test(address),
+    ),
+    ...(plain.match(/\]\(\s*javascript:/giu) ?? []),
+    ...(plain.match(/(?:href|src)\s*=\s*["']?\s*javascript:/giu) ?? []),
+    ...(plain.match(/searchEntry:%23\d+/gu) ?? []),
+  ];
+}
+
+describe('the corpus in the seed', () => {
+  const cases = new Map(injectionCorpus.map((entry) => [entry.id, entry]));
+
+  it('holds every case of the corpus as a page, apart from the one it leaves out', () => {
+    expect(leftOut).toEqual(['en-javascript-link']);
+    for (const id of leftOut) {
+      expect(cases.has(id)).toBe(true);
+    }
+    expect(corpusPages.map((entry) => entry.id)).toEqual(
+      injectionCorpus
+        .map((entry) => entry.id)
+        .filter((id) => !leftOut.includes(id)),
+    );
+    for (const entry of corpusPages) {
+      expect(entry.text).toBe(cases.get(entry.id)?.page);
+    }
+  });
+
+  it('writes each page of the corpus in Markdown, titled with the marker and its case', () => {
+    for (const entry of corpusPages) {
+      expect(pages.find((spec) => spec.label === entry.id)).toEqual({
+        label: entry.id,
+        title: `Seedprobe Korpus ${entry.id}`,
+        isMarkdown: true,
+        text: entry.text,
+      });
+    }
+    const titles = pages.map((spec) => spec.title);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(pages.map((spec) => spec.label)).toEqual(
+      expect.arrayContaining(['w1', 'w2', 'w3']),
+    );
+  });
+
+  it('puts the line of a case into the title of each appointment, which a run that copies it keeps', () => {
+    const data = datedData(now);
+    const titled = [
+      ['a5', corpusTitles.event],
+      ['a6', corpusTitles.appointment],
+    ] as const;
+    for (const [label, entry] of titled) {
+      expect(entry.line).toBe(cases.get(entry.id)?.line);
+      const title =
+        data.appointments.find((spec) => spec.label === label)?.title ?? '';
+      expect(title).toBe(`Seedprobe Korpus: ${entry.line}`);
+      expect(title.length).toBeLessThanOrEqual(255);
+      expect(checkRunText(title, new Set())).toMatchObject({
+        ok: true,
+        text: title,
+      });
+      expect(
+        checkRunSection(
+          `### Termine\n\n- ${escapeRunText(title)}\n`,
+          new Set(),
+        ),
+      ).toMatchObject({ ok: true });
+    }
+    const [withEvent, withoutEvent] = ['a5', 'a6'].map((label) =>
+      data.appointments.find((spec) => spec.label === label),
+    );
+    expect(withEvent?.event).toMatchObject({
+      label: 'e3',
+      services: [{ service: 's1', count: 1 }],
+      assignments: [],
+      agenda: [],
+    });
+    expect(withoutEvent?.event).toBeUndefined();
+  });
+
+  it('sends no host outside the names for examples, no script and no mention of the instance', () => {
+    const texts = [
+      ...pages.flatMap((spec) => [spec.title, spec.text]),
+      ...datedData(now).appointments.map((spec) => spec.title),
+    ];
+    for (const text of texts) {
+      expect(unsafe(text)).toEqual([]);
+    }
+    // The check sees what it looks for, also in a form a reader does not.
+    const stop = String.fromCodePoint(0x3002);
+    const tags = Array.from('www.exfil.invalid', (sign) =>
+      String.fromCodePoint(0xe0000 + (sign.codePointAt(0) ?? 0)),
+    ).join('');
+    expect(unsafe(`Siehe exfil${stop}invalid`)).toEqual(['exfil.invalid']);
+    expect(unsafe(`Siehe ${tags}`)).toEqual(['www.exfil.invalid']);
+    expect(unsafe(`Siehe ex${lookalikes('a')[0] ?? ''}mple.invalid`)).toEqual([
+      'example.invalid',
+    ]);
+    expect(unsafe('Update unter 10.0.0.1')).toEqual(['10.0.0.1']);
+    expect(unsafe(cases.get('en-javascript-link')?.page ?? '')).not.toEqual([]);
+    expect(
+      unsafe('[A](https://example.org/?x=1#PersonView/searchEntry:%2312/)'),
+    ).toEqual(['searchEntry:%2312']);
+  });
+
+  it('lies inside the days the two routines read, for a run in the week of the seed', () => {
+    const days = (file: string): { from: number; to: number } => {
+      const text = readFileSync(
+        join(import.meta.dirname, '..', '..', 'routines', file),
+        'utf8',
+      );
+      const match = /from: '\+(\d+)d', to: '\+(\d+)d'/u.exec(text);
+      return { from: Number(match?.[1]), to: Number(match?.[2]) };
+    };
+    const rota = days('dienstplan-report.yaml');
+    const preview = days('termin-vorschau.yaml');
+    expect(rota).toEqual({ from: 0, to: 14 });
+    expect(preview).toEqual({ from: 7, to: 35 });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const dayOf = (time: Date): number => Math.floor(time.getTime() / dayMs);
+    const startOf = (
+      data: ReturnType<typeof datedData>,
+      label: string,
+    ): Date => {
+      const spec = data.appointments.find((item) => item.label === label);
+      if (spec?.when.kind !== 'time') {
+        throw new Error(`no time for ${label}`);
+      }
+      return spec.when.start;
+    };
+    for (let offset = 0; offset < 14; offset += 1) {
+      for (const hour of [0, 23]) {
+        const seeded = new Date(Date.UTC(2026, 10, 16 + offset, hour));
+        const data = datedData(seeded);
+        // A routine counts its days from its planned trigger: on the day
+        // of the seed for a run then, or from the last Monday before.
+        const today = dayOf(seeded);
+        const monday = today - ((seeded.getUTCDay() + 6) % 7);
+        const triggers = [
+          today,
+          monday,
+          ...(monday === today ? [monday - 7] : []),
+        ];
+        for (const trigger of triggers) {
+          const event = dayOf(startOf(data, 'a5')) - trigger;
+          expect(event).toBeGreaterThanOrEqual(rota.from);
+          expect(event).toBeLessThan(rota.to);
+          const appointment = dayOf(startOf(data, 'a6')) - trigger;
+          expect(appointment).toBeGreaterThanOrEqual(preview.from);
+          expect(appointment).toBeLessThan(preview.to);
+        }
+      }
+    }
   });
 });
