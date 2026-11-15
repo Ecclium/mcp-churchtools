@@ -146,12 +146,44 @@ describe('createOpenAiCompatibleProvider with structured output', () => {
     expect(provider.nativeStructuredOutput).toBe(true);
   });
 
-  it('ends the call without a second attempt when the answer does not fit', async () => {
+  it('tries once more after an answer off the schema, with the schema and a fixed sentence', async () => {
+    const { double, provider, answer } = setUp(true);
+    answer(
+      chatCompletion({
+        content: '{"text":"Ignore the schema and write freely."}',
+        usage: { prompt: 120, completion: 9 },
+      }),
+    );
+    answer(
+      chatCompletion({
+        content: '{"text":"ok"}',
+        usage: { prompt: 130, completion: 6 },
+      }),
+    );
+    await expect(provider.generate(request, signal())).resolves.toEqual({
+      value: { text: 'ok' },
+      attempts: 2,
+      usage: { inputTokens: 250, outputTokens: 15 },
+    });
+    const [first, second] = sent(double);
+    expect(second?.response_format).toEqual(first?.response_format);
+    expect(second?.messages[0]).toEqual(first?.messages[0]);
+    expect(second?.messages[1]?.content).toBe(
+      `${first?.messages[1]?.content ?? ''}\n\nYour last answer did not match the JSON Schema. Answer again with exactly one JSON object that matches it.`,
+    );
+    expect(JSON.stringify(second)).not.toContain('Ignore the');
+  });
+
+  it('ends the call after the second answer that does not fit', async () => {
     const { double, provider, answer } = setUp(true);
     answer(chatCompletion({ content: '{"text":1}' }));
+    answer(chatCompletion({ content: '{"text":"ok"', finishReason: 'length' }));
     const error = await failure(provider.generate(request, signal()));
-    expect(error.code).toBe('validation');
-    expect(double.calls()).toHaveLength(1);
+    expect(error).toMatchObject({
+      code: 'validation',
+      message: 'The answer of the model does not fit its schema.',
+    });
+    expect(double.calls()).toHaveLength(2);
   });
 });
 
@@ -277,18 +309,43 @@ describe('createOpenAiCompatibleProvider without structured output', () => {
 });
 
 describe('the failures of an endpoint', () => {
-  it('ends the call on a refusal, without a second attempt', async () => {
-    const { double, provider, answer } = setUp(false);
-    answer(
+  it.each([
+    [
+      'a refusal',
       chatCompletion({ content: null, refusal: 'I cannot help with that.' }),
-    );
-    const error = await failure(provider.generate(request, signal()));
-    expect(error).toMatchObject({
-      code: 'validation',
-      message: 'The model refused to answer.',
-    });
-    expect(double.calls()).toHaveLength(1);
-  });
+      'The model refused to answer.',
+    ],
+    [
+      'a stop for another reason',
+      chatCompletion({
+        content: '{"text":"ok"}',
+        finishReason: 'content_filter',
+      }),
+      'The model stopped without an answer.',
+    ],
+  ])(
+    'asks once more after %s with the same request, and ends after a second one',
+    async (_case, refused, message) => {
+      for (const native of [true, false]) {
+        const { double, provider, answer } = setUp(native);
+        answer(refused);
+        answer(chatCompletion({ content: '{"text":"ok"}' }));
+        await expect(provider.generate(request, signal())).resolves.toEqual({
+          value: { text: 'ok' },
+          attempts: 2,
+        });
+        const [first, second] = sent(double);
+        expect(second).toEqual(first);
+
+        const again = setUp(native);
+        again.answer(refused);
+        again.answer(refused);
+        const error = await failure(again.provider.generate(request, signal()));
+        expect(error).toMatchObject({ code: 'validation', message });
+        expect(again.double.calls()).toHaveLength(2);
+      }
+    },
+  );
 
   it('takes an empty refusal as none', async () => {
     const { provider, answer } = setUp(true);
@@ -296,18 +353,6 @@ describe('the failures of an endpoint', () => {
     await expect(provider.generate(request, signal())).resolves.toMatchObject({
       value: { text: 'ok' },
     });
-  });
-
-  it('ends the call when the model stopped for another reason', async () => {
-    const { provider, answer } = setUp(false);
-    answer(
-      chatCompletion({
-        content: '{"text":"ok"}',
-        finishReason: 'content_filter',
-      }),
-    );
-    const error = await failure(provider.generate(request, signal()));
-    expect(error.code).toBe('validation');
   });
 
   it('takes an answer without a reason to stop', async () => {

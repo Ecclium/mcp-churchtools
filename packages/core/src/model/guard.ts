@@ -339,21 +339,16 @@ const drawBoundary = (
   throw refuse('No boundary for the blocks of a call of a model was found.');
 };
 
-// The result of a provider, checked: one or two attempts, two only without
-// structured output, the tokens as counts, and the answer once more
-// against the output schema.
+// The result of a provider, checked: one or two attempts, with or without
+// structured output (ADR 0033), the tokens as counts, and the answer once
+// more against the output schema.
 const checkResult = async <T>(
   result: unknown,
   output: ModelOutputSpec<T>,
-  native: boolean,
 ): Promise<ModelResult<T>> => {
   const attempts = own(result, 'attempts');
   const usage = own(result, 'usage');
-  if (
-    !isPlainObject(result) ||
-    (attempts !== 1 && attempts !== 2) ||
-    (attempts === 2 && native)
-  ) {
+  if (!isPlainObject(result) || (attempts !== 1 && attempts !== 2)) {
     throw unfit();
   }
   let tokens: TokenUsage | undefined;
@@ -473,7 +468,7 @@ export function guardModelProvider(
         'The call of the model failed.',
       );
     }
-    return checkResult(result, output, native);
+    return checkResult(result, output);
   };
 
   return Object.freeze({ info, nativeStructuredOutput: native, generate });

@@ -460,13 +460,12 @@ describe('a call through the guard', () => {
     expect(error.message).not.toContain('Vendor');
   });
 
-  it('takes a second attempt only from a provider without structured output', async () => {
+  it('takes a second attempt from a provider with and without structured output', async () => {
     const twice = () => ({ value: { text: 'ok' }, attempts: 2 });
     const native = recording(twice);
-    const error = await failure(
+    await expect(
       guardModelProvider(native.provider).generate(request(), signal()),
-    );
-    expect(error.code).toBe('upstream');
+    ).resolves.toEqual({ value: { text: 'ok' }, attempts: 2 });
     const text = recording(twice, { nativeStructuredOutput: false });
     await expect(
       guardModelProvider(text.provider).generate(request(), signal()),
