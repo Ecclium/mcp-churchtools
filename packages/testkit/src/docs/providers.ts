@@ -201,7 +201,7 @@ export function renderProvidersReference(): string {
     '',
     'Eine Routine mit einem Erzeugungsschritt braucht ein Sprachmodell. Sie nennt es nur über einen Alias wie `default`, nie über einen Anbieter. Welcher Anbieter, welches Modell und welches Land dahinter stehen, sagt die Datei der Anbieter, damit Sie nie raten müssen, wohin Daten der Gemeinde gehen ([ADR 0033](adr/0033-runner-modell-ohne-werkzeuge.md)). Das Modell bekommt Daten und ein Ausgabeschema, nie ein Werkzeug.',
     '',
-    'Stand: Der Start liest und prüft die Datei, `ecclium config check` zeigt die Anbieter. Benutzt wird sie erst vom Runner einer späteren Version.',
+    'Stand: Der Start liest und prüft die Datei, `ecclium config check` zeigt die Anbieter. Ein Modell fragt nur der Runner an, für die Läufe der Routinen mit einem Erzeugungsschritt ([Runner](betrieb/runner.md)). Der Server über stdio fragt nie ein Modell an.',
     '',
     '## Datei',
     '',

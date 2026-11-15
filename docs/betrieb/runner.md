@@ -1,6 +1,6 @@
 # Runner der Routinen
 
-**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt `ecclium run-once` und den Daemon `ecclium runner`, so wie sie heute gebaut sind, und unter «Container», was der Runner in einem Container vorfinden muss.
+**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt `ecclium run-once` und den Daemon `ecclium runner`, so wie sie heute gebaut sind, und unter «Container», was der Runner in einem Container vorfinden muss. Wie Sie ihn der Reihe nach einrichten, steht unter [Runner einrichten](runner-einrichten.md), was in einem Lauf geschieht und warum, unter [Routinen und Läufe](../workflows.md).
 
 Der Runner führt Routinen nach ihrem Zeitplan aus: Er liest Daten aus ChurchTools, gibt sie maskiert einem Sprachmodell oder prüft sie mit festen Prüfungen des Kerns, prüft das Ergebnis und schreibt einen Abschnitt ins Wiki oder einen Entwurf als Datei ([Routinen](../routines.md), [Richtlinie](../policy.md), [Anbieter](../providers.md)). Er läuft ohne Menschen, deshalb schreibt er ins Wiki nur, was die Richtlinie erlaubt.
 
@@ -37,7 +37,7 @@ Läuft eine Routine schon in einem anderen Prozess, überspringt ein zweiter Auf
 
 `ecclium runner` startet mit denselben Prüfungen wie `run-once --due` und nennt jede Routine, die nicht startet. Startet keine, endet er mit 78. Danach sieht er die Routinen beim Start an, dann zur frühesten Zeit, zu der eine fällig wird oder ihren nächsten Versuch hat, und spätestens alle 15 Minuten, damit eine Uhr, die springt, oder ein Rechner, der schlief, nichts verliert. Jeder dieser Durchgänge ist derselbe wie bei `run-once --due`. Auf stderr steht nur etwas, wenn eine Routine lief oder nicht laufen konnte; eine Routine, die nicht startet, nennt er bei jedem Durchgang.
 
-Den Ordner der Routinen, die Richtlinie und die Datei der Anbieter liest der Daemon beim Start. Änderungen daran wirken nach einem Neustart. Tokens und Schlüssel der Modelle liest er für jeden Lauf neu.
+Den Ordner der Routinen, die Richtlinie und die Datei der Anbieter liest der Daemon beim Start. Änderungen daran wirken nach einem Neustart. Tokens liest er für jeden Lauf neu, die Schlüssel der Modelle in jedem Durchgang, sobald ein Lauf sie braucht.
 
 Kommt eine Zeile des Audits nicht in die Audit-Datei, etwa bei voller Platte, schreibt der Prozess bis zu einem Neustart nichts mehr. Der Daemon beendet dann den laufenden Durchgang und sich selbst mit 75, damit ein Neustart, etwa durch die Regel `restart` von Docker Compose, die Sperre hebt. Mehr als drei Versuche einer Auslösung gibt es auch so nicht.
 
@@ -109,7 +109,7 @@ Nennt eine Routine unter `notify` einen Kanal, meldet der Runner jeden Lauf als 
 
 `result` ist `written`, `unchanged`, `queued`, `drafted` oder `failed`, bei `failed` steht `code` dabei und meist `step`, der Schritt, in dem der Lauf endete. Eine Meldung enthält nie einen Inhalt. Die Datei entsteht mit den Rechten 600, und Ecclium folgt keinem Link an ihrem Pfad. Rotieren Sie sie wie ein Log.
 
-Was der Runner zu jeder Routine tut, steht ausserdem auf Deutsch auf stderr, zwischen den Zeilen des Logs und den Kopien des Audits. Zu Beginn nennt er für jedes Modell, das er braucht, Anbieter, Modell, Land und die Grundlage einer Übermittlung ausserhalb der Schweiz und des EWR.
+Was der Runner zu jeder Routine tut, steht ausserdem auf Deutsch auf stderr, zwischen den Zeilen des Logs und den Kopien des Audits. In jedem Durchgang nennt er jedes Modell, das ein Lauf braucht, bevor dieser Lauf liest: Anbieter, Modell, Land und die Grundlage einer Übermittlung ausserhalb der Schweiz und des EWR.
 
 ## Metrikdatei
 
@@ -146,7 +146,7 @@ Mit `ECCLIUM_RUNNER_PING_URL_FILE` meldet der Runner jeden Durchgang, in dem er 
 
 ## Ausgehender Weg
 
-Der Runner liest fremde Texte und schreibt danach. Er soll deshalb nur über einen Proxy nach aussen gehen, der nur die Ziele der Konfiguration durchlässt ([ADR 0035](../adr/0035-proxy-und-grenze-im-netz.md)). Er startet nur mit `ECCLIUM_EGRESS_PROXY`, etwa `http://egress:3128`, oder mit `ECCLIUM_EGRESS=off`. Mit einem Proxy prüft er bei jedem Start einen Tunnel zu ChurchTools, ohne eine Anfrage zu senden, und endet mit 69, wenn der Proxy ihn nicht gibt. Mit `off` läuft er ohne Grenze im Netz, warnt bei jedem Start, und jede Zeile eines Laufs im Audit trägt `egressOff`. Ein Runner ausserhalb von Docker, etwa für einen Lauf von Hand, braucht deshalb einen Proxy oder `ECCLIUM_EGRESS=off`. `HTTP_PROXY` und `HTTPS_PROXY` nutzt Ecclium nicht. Die Vorlage für Squid, die Liste der Ziele aus `ecclium init egress` und Ziele im lokalen Netz beschreibt [Grenze im Netz mit Squid](egress.md). Ob der Weg so steht und welche Rechte der Konten des Runners zu weit sind, prüft [`ecclium doctor`](doctor.md).
+Der Runner liest fremde Texte und schreibt danach. Er soll deshalb nur über einen Proxy nach aussen gehen, der nur die Ziele der Konfiguration durchlässt ([ADR 0035](../adr/0035-proxy-und-grenze-im-netz.md)). Er startet nur mit `ECCLIUM_EGRESS_PROXY`, etwa `http://egress:3128`, oder mit `ECCLIUM_EGRESS=off`. Mit einem Proxy prüft er bei jedem Start einen Tunnel zu ChurchTools, ohne eine Anfrage zu senden, und endet mit 69, wenn der Proxy ihn nicht gibt. Mit `off` läuft er ohne Grenze im Netz, warnt bei jedem Start, und die Zeile vom Typ `run` jedes Laufs im Audit trägt `egressOff`. Ein Runner ausserhalb von Docker, etwa für einen Lauf von Hand, braucht deshalb einen Proxy oder `ECCLIUM_EGRESS=off`. `HTTP_PROXY` und `HTTPS_PROXY` nutzt Ecclium nicht. Die Vorlage für Squid, die Liste der Ziele aus `ecclium init egress` und Ziele im lokalen Netz beschreibt [Grenze im Netz mit Squid](egress.md). Ob der Weg so steht und welche Rechte der Konten des Runners zu weit sind, prüft [`ecclium doctor`](doctor.md).
 
 ## Exit-Codes
 
