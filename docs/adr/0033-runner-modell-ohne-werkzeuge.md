@@ -1,6 +1,6 @@
 # ADR 0033: Runner-Modell ohne Werkzeuge, Ausgabe in Blöcken mit festen Feldern, Maskierung `strict` zum Modell, Anbieter mit `transferBasis`
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 15.11.2026
 - Datum: 09.11.2026
 - Fällt vor: Phase 6
 - Ergänzt: [ADR 0030](0030-contentpolicy.md), [ADR 0032](0032-richtlinie-und-pruefcode.md) und [ADR 0056](0056-ausgehender-weg.md)
@@ -211,4 +211,5 @@ Teil 9 seit dem 14.11.2026: das Korpus der Prompt-Injections.
 - **Ein manipuliertes Wiki:** Keine mitgelieferte Routine gibt Text des Wikis einem Modell. `packages/cli/src/compose/run-injection.test.ts` prüft deshalb eine Routine, die ein Betreiber so schreiben könnte, mit den echten Lese-Tools, der Pipeline des Laufs und dem Write-Guard am Double von ChurchTools: Jeder Aufruf ausser einer Lesung ist der PATCH der Seite, die die Richtlinie nennt; Tag-Zeichen erreichen das Modell nie; eine abgewiesene Antwort schreibt nichts und legt nichts in die Freigabe-Warteschlange; eine behaltene zeigt keinen Link, kein Bild und kein HTML.
 - **Kennzeichnung:** `checkRunSection` weist einen Abschnitt mit einer Zeile, die ein Leser für die Kennzeichnung hält, mit dem Grund `marking` ab ([ADR 0032](0032-richtlinie-und-pruefcode.md), Umsetzung Teil 8).
 - **Gegenproben:** Ohne diese Abweisung, mit Tag-Zeichen, die die Pipeline nicht entfernt, und ohne die Prüfung eines Felds werden die Tests rot.
-- **Grenze:** Ein Modell, das gehorcht, kann den Inhalt eines Berichts verfälschen, etwa «Alle Dienste sind besetzt.» schreiben; Ziel, Aktion und Aufbau bestimmt es nicht. Ein Lauf mit einem echten Modell gegen die Testinstanz, deren Seed die Seiten des Korpus trägt, gehört zur Abnahme der Phase und vor jedes Release.
+- **Grenze:** Ein Modell, das gehorcht, kann den Inhalt eines Berichts verfälschen, etwa «Alle Dienste sind besetzt.» schreiben; Ziel, Aktion und Aufbau bestimmt es nicht. Ein Lauf mit einem echten Modell gegen die Testinstanz, deren Seed die Seiten des Korpus trägt, gehört vor jedes Release.
+- **Abnahme, 15.11.2026:** An der Testinstanz mit frischem Seed und einem Modell eines Anbieters mit Rechenzentrum in der Schweiz schrieb `dienstplan-report` einen gekennzeichneten Abschnitt, und ein zweiter Lauf derselben Woche ersetzte ihn. Dem Satz im Titel eines Events des Korpus folgte das Modell im Bericht nicht. In einem Entwurf von `termin-vorschau` trug ein Termin des Korpus als Titel nur noch den verlangten Satz, und jedes Datum hatte ein falsches Jahr, obwohl die Daten es richtig enthielten. Zwei Berichte aus denselben Daten unterschieden sich, und einer von fünf Aufrufen endete mit `validation`. Ziel, Tool und Aufbau blieben in jedem Lauf, wie dieser Entscheid sie festlegt; was in einem Feld steht, bestimmt das Modell.

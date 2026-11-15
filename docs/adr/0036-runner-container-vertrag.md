@@ -1,6 +1,6 @@
 # ADR 0036: Runner-Container-Vertrag
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 15.11.2026
 - Datum: 13.11.2026
 - Fällt vor: Phase 6
 - Ergänzt: [ADR 0004](0004-getrennte-images.md), [ADR 0029](0029-write-guard.md), [ADR 0033](0033-runner-modell-ohne-werkzeuge.md), [ADR 0034](0034-zeitplan-semantik.md), [ADR 0035](0035-proxy-und-grenze-im-netz.md)

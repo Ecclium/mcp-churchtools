@@ -1,6 +1,6 @@
 # ADR 0034: Zeitplan der Routinen: croner als einzige Quelle, eine Semantik für Daemon und `run-once --due`
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 15.11.2026
 - Datum: 09.11.2026
 - Fällt vor: Phase 6
 - Ergänzt: [ADR 0063](0063-quotastore-als-datei.md)
