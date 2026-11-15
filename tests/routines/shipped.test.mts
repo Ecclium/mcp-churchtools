@@ -491,6 +491,71 @@ describe('the shipped routine termin-vorschau', () => {
     );
     expect(data?.kind === 'data' ? data.text : '').toContain('Adventsbasar');
   });
+
+  it('names the days of the run to the model and writes no draft with a day in another year', async () => {
+    const read: RunRead = (_tool, input) =>
+      Promise.resolve(
+        outcome(
+          {
+            from: input['from'],
+            to: input['to'],
+            page: 1,
+            appointments: [
+              {
+                id: 11,
+                calendarId: 1,
+                title: 'Gottesdienst',
+                subtitle: null,
+                allDay: false,
+                locationName: 'Kirche',
+                startDate: '2026-11-29T09:00:00Z',
+                endDate: '2026-11-29T10:30:00Z',
+              },
+            ],
+            more: false,
+            notice: null,
+          },
+          1,
+        ),
+      );
+    // Right day and month, wrong year, as a model wrote at a test instance.
+    const mock = createMockModelProvider({
+      kind: 'obedient',
+      respond: () => ({
+        termine: [
+          {
+            datum: '1800-11-29',
+            zeit: '10:00 Uhr',
+            titel: 'Gottesdienst',
+            text: 'Gottesdienst in der Kirche.',
+          },
+        ],
+        hinweise: [],
+      }),
+    });
+    const result = await executeRun(
+      prepare(),
+      trigger,
+      {
+        read,
+        model: guardModelProvider(mock.provider),
+        policy,
+        log: silent,
+        clock: { now: () => trigger.at },
+      },
+      new AbortController().signal,
+    );
+    expect(result).toEqual({
+      kind: 'failed',
+      step: 'model',
+      code: 'validation',
+      final: true,
+    });
+    // A week to five weeks after the trigger, one day more on each side.
+    expect(mock.requests()[0]?.system).toContain(
+      'Every date in your answer is a day from 2026-11-22 to 2026-12-22',
+    );
+  });
 });
 
 describe('the shipped routine wiki-hygiene', () => {

@@ -8,7 +8,8 @@
  * 1. read the inputs through the port of the composition root,
  * 2. call the model behind its guard, with the system text of the core,
  *    the prompt file of the routine and the data in their blocks, within
- *    a fixed deadline and the limit of tokens of the routine,
+ *    a fixed deadline and the limit of tokens of the routine; a date of
+ *    the answer must be one of the days of the run (`days.ts`),
  * 3. check the answer: every person one of the data, every text through
  *    the content policy with the contact values of the policy and of the
  *    data,
@@ -52,6 +53,7 @@ import { checkBlockFields } from '../routine/check.js';
 import type { RoutineCheckName, RoutineOutput } from '../routine/schema.js';
 import { checkAnswer, type FilledBlocks } from './answer.js';
 import { type CheckContext, hiddenTitle, runChecks } from './checks.js';
+import { datesRule, runDaysOf } from './days.js';
 import { readInputs, type RunRead } from './inputs.js';
 import { outputSpecOf } from './output-spec.js';
 import type { PreparedRun } from './prepare.js';
@@ -291,12 +293,21 @@ export async function executeRun(
     read.inputs.flatMap((input) => input.values),
   );
 
+  // The days a date of the answer may name, from the parameters and the
+  // data of the run. A routine with a field of the kind date gets them
+  // also as a rule after the system text, because not every vendor shows
+  // the model the schema (ADR 0033).
+  const days = runDaysOf(run, trigger, read.inputs);
+  const dated = Object.values(generate.blocks).some((block) =>
+    Object.values(block.fields).some((field) => field.type === 'date'),
+  );
+
   const asked = clock.now();
   let answer;
   try {
     answer = await model.generate(
       {
-        system: runSystemText,
+        system: dated ? `${runSystemText}\n${datesRule(days)}` : runSystemText,
         parts: [
           { kind: 'instructions', text: loaded.prompt as string },
           ...read.inputs.map((input) => ({
@@ -305,7 +316,7 @@ export async function executeRun(
             value: input.values,
           })),
         ],
-        output: outputSpecOf(generate.blocks, run.redaction),
+        output: outputSpecOf(generate.blocks, run.redaction, days),
         maxOutputTokens: generate.maxOutputTokens,
       },
       AbortSignal.any([signal, AbortSignal.timeout(runLimits.modelMs)]),

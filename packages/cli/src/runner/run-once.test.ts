@@ -1574,6 +1574,9 @@ describe('the catalog of the runner itself', () => {
       entries: [],
       extra: { ECCLIUM_TOOLSETS: undefined },
     });
+    // The categories name no day, so no date of the model fits the days of
+    // the run (ADR 0033): the model answers without an entry.
+    t.state.answer = { unbesetzt: [] };
     const { code, stdout } = await t.call(preview(wikiRoutine), {
       ownCatalog: true,
     });

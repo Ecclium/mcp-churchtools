@@ -30,6 +30,7 @@ import type { RunCallOutcome, Trigger } from '@ecclium/mcp-churchtools-core';
 import type { ErrorCode, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { isParamField, isParamList } from '../routine/schema.js';
+import { relativeDayOf } from './days.js';
 import type { PreparedInput, PreparedRun } from './prepare.js';
 
 /** The limits of the reads of a run, frozen. */
@@ -83,21 +84,6 @@ export type InputsResult =
       readonly input: string;
     };
 
-const dayMs = 86_400_000;
-const relativeDay = /^([+-])(\d+)d$/;
-
-// The day of the trigger plus the days of a relative day, as YYYY-MM-DD.
-const dayFrom = (date: string, sign: string, days: number): string => {
-  const [year, month, day] = date.split('-').map(Number) as [
-    number,
-    number,
-    number,
-  ];
-  const at =
-    Date.UTC(year, month - 1, day) + (sign === '-' ? -days : days) * dayMs;
-  return new Date(at).toISOString().slice(0, 10);
-};
-
 // An own data property of a plain object, never through a getter.
 const ownData = (value: unknown, key: string): unknown => {
   if (typeof value !== 'object' || value === null) return undefined;
@@ -141,11 +127,7 @@ const inputOf = (
       }
       input[name] = taken;
     } else if (typeof value === 'string') {
-      const days = relativeDay.exec(value);
-      input[name] =
-        days === null
-          ? value
-          : dayFrom(trigger.period.date, String(days[1]), Number(days[2]));
+      input[name] = relativeDayOf(value, trigger.period.date) ?? value;
     } else {
       input[name] = value;
     }

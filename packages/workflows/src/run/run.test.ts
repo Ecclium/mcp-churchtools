@@ -4,7 +4,10 @@ import type {
   RunToolFacts,
   Trigger,
 } from '@ecclium/mcp-churchtools-core';
-import { guardModelProvider } from '@ecclium/mcp-churchtools-core';
+import {
+  guardModelProvider,
+  runSystemText,
+} from '@ecclium/mcp-churchtools-core';
 import type { Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createMockModelProvider,
@@ -16,6 +19,7 @@ import { checkRoutine } from '../routine/check.js';
 import type { LoadedRoutine } from '../routine/loader.js';
 import { parseTemplate } from '../routine/template.js';
 import { checkAnswer, unnamedPerson } from './answer.js';
+import { datesRule, isDay, relativeDayOf, runDaysOf } from './days.js';
 import { executeRun } from './execute.js';
 import { readInputs, type RunRead, runReadLimits } from './inputs.js';
 import { outputSpecOf } from './output-spec.js';
@@ -475,8 +479,73 @@ describe('the schema of an answer', () => {
     liste: [{ text: 'Probe', tag: '2026-11-16', zahl: 3, person: pseudonym }],
   };
 
+  const days = { first: '2026-11-15', last: '2026-11-30' };
+  const checkOf = (spec: ReturnType<typeof outputSpecOf>) => (value: unknown) =>
+    Promise.resolve(spec.validate['~standard'].validate(value));
+  const withTag = (tag: string) => ({ liste: [{ ...valid.liste[0], tag }] });
+  const tagSchema = (spec: ReturnType<typeof outputSpecOf>) =>
+    (
+      spec.jsonSchema as {
+        properties: {
+          liste: { items: { properties: { tag: Record<string, unknown> } } };
+        };
+      }
+    ).properties.liste.items.properties.tag;
+
+  it('takes a date only among the days of the run and names them to the vendor', async () => {
+    const spec = outputSpecOf(blocks, 'strict', days);
+    for (const tag of ['2026-11-15', '2026-11-22', '2026-11-30']) {
+      expect((await checkOf(spec)(withTag(tag))).issues).toBeUndefined();
+    }
+    for (const tag of [
+      '1800-11-22',
+      '2026-11-14',
+      '2026-12-01',
+      '2027-11-22',
+    ]) {
+      expect((await checkOf(spec)(withTag(tag))).issues).toBeDefined();
+    }
+    expect(tagSchema(spec)).toEqual({
+      type: 'string',
+      pattern: '^(?:2026)-(\\d{2})-(\\d{2})$',
+      description: 'A day from 2026-11-15 to 2026-11-30, as YYYY-MM-DD.',
+    });
+  });
+
+  it('names each year of days over a new year, and any year over ten', async () => {
+    const turn = outputSpecOf(blocks, 'strict', {
+      first: '2026-12-30',
+      last: '2027-01-02',
+    });
+    expect(tagSchema(turn)['pattern']).toBe(
+      '^(?:2026|2027)-(\\d{2})-(\\d{2})$',
+    );
+    expect((await checkOf(turn)(withTag('2027-01-01'))).issues).toBeUndefined();
+    const wide = outputSpecOf(blocks, 'strict', {
+      first: '2016-01-01',
+      last: '2026-11-30',
+    });
+    expect(tagSchema(wide)['pattern']).toBe('^\\d{4}-(\\d{2})-(\\d{2})$');
+    expect((await checkOf(wide)(withTag('2016-01-01'))).issues).toBeUndefined();
+    expect((await checkOf(wide)(withTag('2015-12-31'))).issues).toBeDefined();
+  });
+
+  it('takes no date when the run names no day', async () => {
+    const spec = outputSpecOf(blocks, 'strict', undefined);
+    expect((await checkOf(spec)(withTag('2026-11-16'))).issues).toBeDefined();
+    await expect(checkOf(spec)({ liste: [] })).resolves.toEqual({
+      value: { liste: [] },
+    });
+    expect(tagSchema(spec)).toEqual({
+      type: 'string',
+      pattern: '^\\d{4}-(\\d{2})-(\\d{2})$',
+      description:
+        'No day of this run fits: leave out every entry with a date.',
+    });
+  });
+
   it('takes exactly the blocks and fields, in strict a pseudonym for a person', async () => {
-    const spec = outputSpecOf(blocks, 'strict');
+    const spec = outputSpecOf(blocks, 'strict', days);
     expect(spec.name).toBe('routine_output');
     expect(spec.jsonSchema).not.toHaveProperty('$schema');
     const check = (value: unknown) =>
@@ -496,7 +565,7 @@ describe('the schema of an answer', () => {
   });
 
   it('takes an ID for a person in standard', async () => {
-    const spec = outputSpecOf(blocks, 'standard');
+    const spec = outputSpecOf(blocks, 'standard', days);
     const result = await Promise.resolve(
       spec.validate['~standard'].validate({
         liste: [{ ...valid.liste[0], person: 12 }],
@@ -1041,5 +1110,185 @@ describe('a run that ends at the section', () => {
       final: true,
       violations: ['webAddress'],
     });
+  });
+});
+
+describe('the days of a run', () => {
+  const trigger: Trigger = {
+    at: Date.UTC(2026, 10, 9, 5),
+    period: { isoWeek: '2026-W46', date: '2026-11-09', month: '2026-11' },
+  };
+  const runOf = (params: Record<string, unknown>): PreparedRun =>
+    ({ inputs: [{ input: { params } }] }) as unknown as PreparedRun;
+
+  it('counts the days the parameters name, with one day more on each side', () => {
+    expect(
+      runDaysOf(
+        runOf({ calendarIds: [1], from: '+7d', to: '+35d' }),
+        trigger,
+        [],
+      ),
+    ).toEqual({ first: '2026-11-15', last: '2026-12-15' });
+    expect(
+      runDaysOf(
+        runOf({ from: '2026-10-01', query: 'Gottesdienst', to: '-2d' }),
+        trigger,
+        [],
+      ),
+    ).toEqual({ first: '2026-09-30', last: '2026-11-08' });
+  });
+
+  it('counts a day or a moment of its own in the data, never one in a text or behind a getter', () => {
+    const behind = {};
+    Object.defineProperty(behind, 'startDate', {
+      enumerable: true,
+      get: () => '1800-01-01',
+    });
+    const values = [
+      {
+        events: [
+          { startDate: '2026-11-01T18:00:00Z', endDate: '2026-11-20' },
+          {
+            startDate: '2026-12-31T19:00:00Z',
+            endDate: '2026-12-31T23:30:00Z',
+          },
+        ],
+        notes: [
+          '<<data-abababababababab>>1800-01-01<</data-abababababababab>>',
+          '1800-01-01 Jubiläum',
+          '2026-02-30T10:00:00Z',
+        ],
+        behind,
+      },
+    ];
+    expect(
+      runDaysOf(runOf({ from: '+0d', to: '+14d' }), trigger, [{ values }]),
+    ).toEqual({ first: '2026-10-31', last: '2027-01-01' });
+  });
+
+  it('names no days when neither the parameters nor the data name one', () => {
+    expect(
+      runDaysOf(runOf({ query: 'Gottesdienst' }), trigger, [
+        { values: [{ events: [], more: false }] },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('turns a relative day and nothing else into a day', () => {
+    expect(relativeDayOf('+14d', '2026-11-09')).toBe('2026-11-23');
+    expect(relativeDayOf('-10d', '2026-03-05')).toBe('2026-02-23');
+    expect(relativeDayOf('14d', '2026-11-09')).toBeUndefined();
+    expect(isDay('2024-02-29')).toBe(true);
+    expect(isDay('2026-02-29')).toBe(false);
+    expect(isDay('2026-11-09T10:00:00Z')).toBe(false);
+  });
+
+  it('says the days to the model in one line', () => {
+    expect(datesRule({ first: '2026-11-15', last: '2026-12-15' })).toBe(
+      'Every date in your answer is a day from 2026-11-15 to 2026-12-15, written as YYYY-MM-DD and taken from the data.',
+    );
+    expect(datesRule(undefined)).toBe(
+      'The data of this run name no day. Write no entry that needs a date.',
+    );
+  });
+
+  // A run with a block of a text and a date, on a model that answers the
+  // day the test gives.
+  const dated = (fields: Record<string, unknown>) => {
+    const value = routineValue();
+    return {
+      ...value,
+      generate: {
+        ...value.generate,
+        output: { blocks: { liste: { maxItems: 3, fields } } },
+      },
+    };
+  };
+  const execute = async (
+    value: Record<string, unknown>,
+    text: string,
+    respond: () => unknown,
+  ) => {
+    const checked = checkRoutine(value);
+    if (!checked.ok) throw new Error(checked.code);
+    const parsed = parseTemplate(text, checked.routine.generate?.blocks ?? {});
+    if (!parsed.ok) throw new Error(parsed.code);
+    const prepared = prepareRun(
+      {
+        routine: checked.routine,
+        prompt: 'Prompt.',
+        template: parsed.template,
+      },
+      context(),
+    );
+    if (!prepared.ok) throw new Error(prepared.code);
+    const read: RunRead = () => {
+      const outcome = redactedOutcome({ events: [] });
+      if (!outcome.ok) throw new Error('no data');
+      return Promise.resolve({
+        ok: true,
+        data: outcome.data,
+        entries: 0,
+        more: false,
+        persons: {},
+      });
+    };
+    const mock = createMockModelProvider({ kind: 'obedient', respond });
+    const result = await executeRun(
+      prepared.run,
+      trigger,
+      {
+        read,
+        model: guardModelProvider(mock.provider),
+        policy: policyOf(),
+        log: {
+          debug: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => undefined,
+        },
+        clock: { now: () => trigger.at },
+      },
+      new AbortController().signal,
+    );
+    return { result, requests: mock.requests() };
+  };
+
+  it('gives the model the days and refuses an answer with a day outside them', async () => {
+    const fields = {
+      text: { type: 'text', maxLength: 40 },
+      tag: { type: 'date' },
+    };
+    const text = '{{#liste}}\n- {{tag}} {{text}}\n{{/liste}}\n';
+    const within = await execute(dated(fields), text, () => ({
+      liste: [{ text: 'Gottesdienst', tag: '2026-11-15' }],
+    }));
+    expect(within.result).toMatchObject({ kind: 'rendered' });
+    expect(within.result.kind === 'rendered' && within.result.section).toBe(
+      '- 15\\.11.2026 Gottesdienst\n',
+    );
+    expect(within.requests[0]?.system).toBe(
+      `${runSystemText}\nEvery date in your answer is a day from 2026-11-08 to 2026-11-24, written as YYYY-MM-DD and taken from the data.`,
+    );
+
+    const outside = await execute(dated(fields), text, () => ({
+      liste: [{ text: 'Gottesdienst', tag: '1800-11-15' }],
+    }));
+    expect(outside.result).toEqual({
+      kind: 'failed',
+      step: 'model',
+      code: 'validation',
+      final: true,
+    });
+  });
+
+  it('keeps the system text of the core for a routine without a date', async () => {
+    const { result, requests } = await execute(
+      dated({ text: { type: 'text', maxLength: 40 } }),
+      '{{#liste}}\n- {{text}}\n{{/liste}}\n',
+      () => ({ liste: [{ text: 'Gottesdienst' }] }),
+    );
+    expect(result).toMatchObject({ kind: 'rendered' });
+    expect(requests[0]?.system).toBe(runSystemText);
   });
 });
