@@ -87,10 +87,21 @@ export const hasCharacterReference = (raw: string): boolean => {
 // often only makes the check refuse more.
 const hostEnds = ' \t\n!"#%&\'()*,./:;<>?@[\\]_{}';
 
+// The signs that separate the parts of a host name: the full stop and the
+// three that IDNA maps to it (UTS 46), the ideographic one and its full
+// and half width forms. A browser takes `example。org` for example.org,
+// and NFKC folds only the full width form (ADR 0030).
+const isDot = (code: number): boolean =>
+  code === 0x2e || code === 0x3002 || code === 0xff0e || code === 0xff61;
+
 // Past the end of a text the code is NaN, which is no sign of a host.
 const isHostSign = (code: number): boolean =>
   code >= 0x80
-    ? code !== 0x85 && code !== 0x1680 && code !== 0x2028 && code !== 0x2029
+    ? code !== 0x85 &&
+      code !== 0x1680 &&
+      code !== 0x2028 &&
+      code !== 0x2029 &&
+      !isDot(code)
     : code >= 0 && !hostEnds.includes(String.fromCharCode(code));
 
 // Whether a word of lower-case ASCII stands at the index, in either case.
@@ -134,7 +145,7 @@ const isMailAt = (text: string, at: number): boolean => {
   if (at === 0 || !isHostSign(text.charCodeAt(at - 1))) return false;
   for (let index = at + 1; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
-    if (code === 0x2e) {
+    if (isDot(code)) {
       if (isHostSign(text.charCodeAt(index + 1))) return true;
     } else if (!isHostSign(code)) {
       return false;
@@ -151,7 +162,10 @@ const isMailAt = (text: string, at: number): boolean => {
  * @ before a host with a dot (ADR 0030, F20). Which library ChurchTools
  * shows Markdown with is not known, and some link a domain without a
  * scheme, so this refuses more than the usual ones would: `bericht.pdf`
- * and `St.Gallen` too, not `z.B.`, `d.h.` or `Mt.5`.
+ * and `St.Gallen` too, not `z.B.`, `d.h.` or `Mt.5`. The ideographic full
+ * stop and its width forms count as a dot, as in `example。org`, so two
+ * sentences of Chinese or Japanese without a space after `。` count as an
+ * address as well.
  *
  * @param text - The plain text a reader sees.
  * @returns Whether it holds such a sequence.
@@ -178,7 +192,7 @@ export function hasWebAddress(text: string): boolean {
       return true;
     }
     if (code === 0x40 && isMailAt(text, index)) return true;
-    if (code !== 0x2e) continue;
+    if (!isDot(code)) continue;
     if (
       isWordAt(text, index - 3, 'www') &&
       (index === 3 || !isHostSign(text.charCodeAt(index - 4)))

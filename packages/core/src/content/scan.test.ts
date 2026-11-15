@@ -67,6 +67,25 @@ describe('hasWebAddress', () => {
     expect(hasWebAddress('x@y und @a.a')).toBe(false);
     expect(hasWebAddress('a@ b')).toBe(false);
   });
+
+  it('reads the ideographic full stop and its width forms as a dot (ADR 0030)', () => {
+    for (const dot of ['\u3002', '\uff0e', '\uff61']) {
+      expect(hasWebAddress(`exfil${dot}example`), dot).toBe(true);
+      expect(hasWebAddress(`Siehe www${dot}1`), dot).toBe(true);
+      expect(hasWebAddress(`a@a${dot}a`), dot).toBe(true);
+      expect(hasWebAddress(`教会${dot}example`), dot).toBe(true);
+      // Like the full stop: an abbreviation, a verse and the end stay.
+      expect(hasWebAddress(`z${dot}B${dot} Mt${dot}5 Ende${dot}`), dot).toBe(
+        false,
+      );
+      // It ends the name of a host as the full stop does.
+      expect(hasWebAddress(`x${dot}.de`), dot).toBe(false);
+    }
+    // Two sentences of Chinese or Japanese without a space count as an
+    // address, as St.Gallen does; with a space they stay.
+    expect(hasWebAddress('礼拜\u3002欢迎')).toBe(true);
+    expect(hasWebAddress('礼拜\u3002 欢迎')).toBe(false);
+  });
 });
 
 describe('hasWebAddress, ways without a dot after a word', () => {
