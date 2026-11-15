@@ -111,8 +111,8 @@ export interface ModelResult<T> {
   /** The answer, checked against the output schema. */
   readonly value: T;
   /**
-   * 1, or 2 when a provider without structured output asked once more
-   * after an answer that was no JSON of the schema (ADR 0033).
+   * 1, or 2 when the provider asked once more after an answer that did not
+   * count, with or without structured output (ADR 0033).
    */
   readonly attempts: 1 | 2;
   /** The tokens, where the vendor reported them. */
@@ -134,7 +134,8 @@ export interface ModelProvider {
   readonly info: ProviderInfo;
   /**
    * Whether the vendor follows a JSON Schema for the answer. Without it,
-   * the adapter asks for JSON in the text and may try exactly once more.
+   * the adapter asks for JSON in the text. Either way it may try exactly
+   * once more after an answer that does not count.
    */
   readonly nativeStructuredOutput: boolean;
   /**

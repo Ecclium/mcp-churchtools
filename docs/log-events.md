@@ -29,7 +29,7 @@ In dieser Reihenfolge, jedes nur, wenn es einen Wert hat. Die Felder des Kerns b
 | `method` | Aufruf | Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben. Eine Anfrage an ein Modell und der Ping des Runners sind immer `POST`. |
 | `purpose` | Aufruf | Zweck einer Anfrage: `model` für eine Anfrage an ein Sprachmodell, `ping` für den Ping des Runners an eine Überwachung ([ADR 0009](adr/0009-positivliste-ausgehend.md)). Anfragen an ChurchTools tragen das Feld nicht. |
 | `status` | Aufruf | Status einer Antwort von ChurchTools, einem Modell oder dem Dienst des Pings, 100 bis 599. |
-| `attempt` | Aufruf | Nummer eines Versuchs, 1 bis 10. Heute nur in `run_model_answered`: 2, wenn ein Anbieter ohne strukturierte Ausgabe ein zweites Mal gefragt wurde. |
+| `attempt` | Aufruf | Nummer eines Versuchs, 1 bis 10. Heute nur in `run_model_answered`: 2, wenn der Anbieter nach einer Antwort, die nicht zählte, ein zweites Mal gefragt wurde. |
 | `file` | Aufruf | Name einer Audit-Datei nach ihrem festen Muster, nie ein Pfad, nur im Anker. |
 | `seq` | Aufruf | Stelle des Kopfs der Kette einer Audit-Datei, nur im Anker. |
 | `hash` | Aufruf | SHA-256 des Kopfs der Kette einer Audit-Datei, hexadezimal, nur im Anker. |

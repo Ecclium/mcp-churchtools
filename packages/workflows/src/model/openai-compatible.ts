@@ -10,12 +10,16 @@
  *
  * Why it looks as it does: the model gets data and an output schema, never
  * a tool. A vendor that follows a JSON Schema gets it as `response_format`
- * of the type `json_schema`, and an answer that does not fit ends the call.
- * A vendor without structured output is asked for one JSON object in the
- * text and gets exactly one second attempt, with a fixed sentence for the
- * reason, never with the text of the first answer, so that an injection
- * in that answer does not reach the second prompt. No text of the vendor
- * leaves the adapter: every failure is a code with a fixed sentence.
+ * of the type `json_schema`; a vendor without structured output is asked
+ * for one JSON object in the text. Either way, an answer that does not
+ * count gets exactly one second attempt: one off the schema, cut off or no
+ * JSON with a fixed sentence for the reason, a refusal or a stop for
+ * another reason with the same request once more. Never with the text of
+ * the first answer, so that an injection in that answer does not reach the
+ * second prompt. A vendor that follows a schema may still end an answer
+ * early or off the schema, and without a second attempt the report of that
+ * week would be missing (ADR 0033). No text of the vendor leaves the
+ * adapter: every failure is a code with a fixed sentence.
  *
  * Fields of the request: `model`, `messages` with one message of the role
  * `system` and one of the role `user`, `max_tokens` and, with structured
@@ -62,16 +66,30 @@ export const openAiCompatibleLimits: {
   maxResponseBytes: 1024 * 1024,
 });
 
-/** Why an answer did not count, and the sentence for the second attempt. */
-type Rejection = 'json' | 'schema' | 'length';
+/** Why an answer did not count. */
+type Rejection = 'json' | 'schema' | 'length' | 'refusal' | 'stop';
 
 // The sentences of a second attempt, fixed: the reason, never the answer.
-const retrySentences: Readonly<Record<Rejection, string>> = Object.freeze({
-  json: 'Your last answer was not one JSON object. Answer again with exactly one JSON object and nothing else.',
-  schema:
-    'Your last answer did not match the JSON Schema. Answer again with exactly one JSON object that matches it.',
-  length:
-    'Your last answer was cut off. Answer again with exactly one shorter JSON object.',
+// A refusal and a stop for another reason, such as a filter of the vendor,
+// have none: the answer holds nothing to correct, and the same request
+// once more is all a later try of the run would send as well.
+const retrySentences: Readonly<Partial<Record<Rejection, string>>> =
+  Object.freeze({
+    json: 'Your last answer was not one JSON object. Answer again with exactly one JSON object and nothing else.',
+    schema:
+      'Your last answer did not match the JSON Schema. Answer again with exactly one JSON object that matches it.',
+    length:
+      'Your last answer was cut off. Answer again with exactly one shorter JSON object.',
+  });
+
+// The message of a call that ends, by the reason of its last answer.
+const offSchema = 'The answer of the model does not fit its schema.';
+const endMessages: Readonly<Record<Rejection, string>> = Object.freeze({
+  json: offSchema,
+  schema: offSchema,
+  length: offSchema,
+  refusal: 'The model refused to answer.',
+  stop: 'The model stopped without an answer.',
 });
 
 // What the model is asked when the vendor does not follow a schema.
@@ -149,9 +167,11 @@ export function createOpenAiCompatibleProvider(
     const system = native
       ? request.system
       : `${request.system}\n\n${jsonInstruction(request.output)}`;
+    const sentence =
+      rejection === undefined ? undefined : retrySentences[rejection];
     const texts = [
       ...request.parts.map((part) => part.text),
-      ...(rejection === undefined ? [] : [retrySentences[rejection]]),
+      ...(sentence === undefined ? [] : [sentence]),
     ];
     const messages = [
       { role: 'system', content: system },
@@ -217,18 +237,19 @@ export function createOpenAiCompatibleProvider(
     // The schema of the answer asks for at least one choice.
     const choice = answer.choices[0] as (typeof answer.choices)[number];
     // A refusal and a stop for another reason, such as a filter of the
-    // vendor, are answers that do not fit, not failures of the vendor: a
-    // later try of the run would get the same (ADR 0034).
+    // vendor, are answers that do not count, not failures of the vendor:
+    // they get the second attempt, and after it end in `validation`, which
+    // a later try of the run would not change (ADR 0034).
     const refusal = choice.message.refusal;
     if (refusal !== undefined && refusal !== null && refusal !== '') {
-      throw fail('validation', 'The model refused to answer.');
+      return { ok: false, rejection: 'refusal', ...withUsage };
     }
     const reason = choice.finish_reason;
     if (reason === 'length') {
       return { ok: false, rejection: 'length', ...withUsage };
     }
     if (reason !== 'stop' && reason !== undefined && reason !== null) {
-      throw fail('validation', 'The model stopped without an answer.');
+      return { ok: false, rejection: 'stop', ...withUsage };
     }
     const content = choice.message.content;
     const json = parseModelJson(content ?? '');
@@ -269,22 +290,13 @@ export function createOpenAiCompatibleProvider(
         ...(first.usage === undefined ? {} : { usage: first.usage }),
       });
     }
-    // A vendor that follows the schema has no excuse for an answer that
-    // does not fit; only a vendor without it gets a second attempt.
-    // `validation`, not `upstream`: the vendor answered, the answer does
-    // not fit, and the run ends without a further try (ADR 0034).
-    if (native) {
-      throw fail(
-        'validation',
-        'The answer of the model does not fit its schema.',
-      );
-    }
+    // Exactly one second attempt, with or without structured output
+    // (ADR 0033). `validation`, not `upstream`, after it: the vendor
+    // answered, the answer does not count, and the run ends without a
+    // further try (ADR 0034).
     const second = await attempt(request, first.rejection, signal);
     if (!second.ok) {
-      throw fail(
-        'validation',
-        'The answer of the model does not fit its schema.',
-      );
+      throw fail('validation', endMessages[second.rejection]);
     }
     const usage = sum(first.usage, second.usage);
     return Object.freeze({

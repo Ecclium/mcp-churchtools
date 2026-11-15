@@ -353,7 +353,11 @@ const fieldKinds: readonly (readonly [string, string, string])[] = [
     'Klartext. Der Kern setzt ihn als reinen Text ein, Zeichen von Markdown zeichnen darin nichts aus, und jedes Feld geht durch die ContentPolicy.',
   ],
   ['integer', '`min` und `max`', 'Eine ganze Zahl in diesen Grenzen.'],
-  ['date', 'feste Form', 'Ein Datum wie `2026-11-09`.'],
+  [
+    'date',
+    'feste Form, Tage des Laufs',
+    'Ein Datum wie `2026-11-09`, nur vom ersten bis zum letzten Tag des Laufs: den Tagen, die die Parameter der Eingaben nennen, etwa `+7d`, oder die in den gelesenen Daten in einem Feld für ein Datum stehen, etwa der Beginn eines Termins, je mit einem Tag mehr davor und danach. Titel und Namen zählen nicht. Nennt ein Lauf keinen Tag, passt kein Datum.',
+  ],
   [
     'person',
     'feste Form',
@@ -446,7 +450,7 @@ export function renderRoutinesReference(): string {
     '',
     '## Arten von Feldern',
     '',
-    'Jedes Feld ist begrenzt: Text mit `maxLength`, eine Zahl mit `min` und `max`, Datum und Verweis auf eine Person durch ihre feste Form. Einen Text ohne `maxLength` und eine Zahl ohne `min` oder `max` nimmt der Lader nicht an. Eine Antwort des Modells mit einem unbekannten Feld, einem Wert über einer Grenze oder einem Verweis auf eine Person, die nicht in den Daten stand, ist ungültig.',
+    'Jedes Feld ist begrenzt: Text mit `maxLength`, eine Zahl mit `min` und `max`, Datum und Verweis auf eine Person durch ihre feste Form. Einen Text ohne `maxLength` und eine Zahl ohne `min` oder `max` nimmt der Lader nicht an. Eine Antwort des Modells mit einem unbekannten Feld, einem Wert über einer Grenze, einem Datum ausserhalb der Tage des Laufs oder einem Verweis auf eine Person, die nicht in den Daten stand, ist ungültig. Passt sie nicht zum Schema, etwa wegen eines Datums ausserhalb der Tage, fragt Ecclium das Modell genau einmal mehr, nie mit dem Text der ersten Antwort; passt auch die zweite nicht, endet der Lauf, ohne zu schreiben. Eine Person, die nicht in den Daten stand, beendet den Lauf ohne zweiten Versuch.',
     '',
     ...table(
       ['Art', 'Grenze', 'Inhalt'],
