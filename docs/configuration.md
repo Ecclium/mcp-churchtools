@@ -147,7 +147,7 @@ Der Proxy für alle ausgehenden Verbindungen des Prozesses, als `http://host:por
 
 ## `ECCLIUM_EGRESS`
 
-Nur `off`: Der Runner startet ohne Proxy und damit ohne Grenze im Netz ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)). Er warnt dann bei jedem Start, und jede Zeile eines Laufs im Audit trägt den Vermerk `egressOff`. Zusammen mit `ECCLIUM_EGRESS_PROXY` bricht der Start ab. Für den Server und die Befehle ändert die Variable nichts. Nicht gesetzt: Der Runner verlangt `ECCLIUM_EGRESS_PROXY`.
+Nur `off`: Der Runner startet ohne Proxy und damit ohne Grenze im Netz ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)). Er warnt dann bei jedem Start, und die Zeile vom Typ `run` jedes Laufs im Audit trägt den Vermerk `egressOff`. Zusammen mit `ECCLIUM_EGRESS_PROXY` bricht der Start ab. Für den Server und die Befehle ändert die Variable nichts. Nicht gesetzt: Der Runner verlangt `ECCLIUM_EGRESS_PROXY`.
 
 ## `ECCLIUM_EGRESS_ALLOW_LAN`
 
