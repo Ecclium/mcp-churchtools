@@ -811,7 +811,10 @@ describe('renderConfigReport and the policy', () => {
     expect(start).toBe(lines.indexOf(hostNote) + 1);
     expect(lines.slice(start + 1)).toEqual([
       row('Interaktiv', 'keine Einträge'),
-      row('Für Routinen', 'keine Einträge, sie gelten erst mit dem Runner'),
+      row(
+        'Für Routinen',
+        'keine Einträge, sie gelten nur für Läufe des Runners',
+      ),
       row('Lesebudget', '200 Aufrufe je Akteur und UTC-Tag'),
       '  Befund: Der interaktive Teil hat keine Einträge. Bestätigte Schreibvorgänge dürfen dann auf jedes Ziel, das das Dienstkonto schreiben darf, ausser bei Gruppen und Diensten. Empfohlen sind Einträge für die Ziele, auf die Ecclium schreiben soll.',
       valid,
@@ -825,7 +828,7 @@ describe('renderConfigReport and the policy', () => {
     });
     expect(lines).toContain(row('Interaktiv', '1 Eintrag'));
     expect(lines).toContain(
-      row('Für Routinen', '2 Einträge, sie gelten erst mit dem Runner'),
+      row('Für Routinen', '2 Einträge, sie gelten nur für Läufe des Runners'),
     );
     expect(lines).toContain(
       row('Lesebudget', '150 Aufrufe je Akteur und UTC-Tag'),
