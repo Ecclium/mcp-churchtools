@@ -7,7 +7,9 @@
  * one target, a limit per run above the limit per day, and one routine
  * with two levels of redaction or different exceptions for the rights of
  * its account, or an exception that ends before it starts; an exception
- * of more than 30 days is invalid. A policy that contradicts itself would
+ * of more than 30 days is invalid. An entry of the unattended part with the
+ * own account of the runner as its credential gets a code of its own. A
+ * policy that contradicts itself would
  * leave it to chance which entry counts, so the server does not start
  * with one. What passes gets its defaults, names in the normal form NFC
  * and GUIDs in lower case, so that planning compares like with like.
@@ -31,6 +33,7 @@ import {
   type Policy,
   policyFileSchema,
   policyLimits,
+  runnerOwnAlias,
   type UnattendedEntry,
   type UnattendedTarget,
 } from './schema.js';
@@ -40,6 +43,7 @@ export const policyCheckCodes = Object.freeze([
   'policy_version_unknown',
   'policy_invalid',
   'policy_contradiction',
+  'policy_credential_runner',
 ] as const);
 
 /** Why a value is no policy. */
@@ -328,6 +332,12 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
   const unattended: UnattendedEntry[] = [];
   for (const [index, entry] of (file.unattended ?? []).entries()) {
     const at = `unattended[${String(index)}]`;
+    // Every routine without an entry reads with the own account of the
+    // runner, so a routine that wrote with it would give all of them its
+    // rights to write (ADR 0032).
+    if (entry.credential === runnerOwnAlias) {
+      return refuse('policy_credential_runner', `${at}.credential`);
+    }
     const modelRedaction = entry.modelRedaction ?? 'strict';
     const level = levels.get(entry.routine);
     if (level !== undefined && level !== modelRedaction) {

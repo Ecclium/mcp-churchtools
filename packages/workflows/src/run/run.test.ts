@@ -123,7 +123,7 @@ const loadedOf = (value: Record<string, unknown>): LoadedRoutine => {
 
 const entry = (over: Record<string, unknown> = {}) => ({
   routine: 'bericht',
-  credential: 'runner',
+  credential: 'berichte',
   modelRedaction: 'strict' as const,
   target: { kind: 'wiki_category' as const, id: 7, name: 'Berichte' },
   tools: ['ct_wiki_page_append_section'],
@@ -160,7 +160,7 @@ describe('preparing a run', () => {
     );
     if (!prepared.ok) throw new Error(prepared.code);
     expect(prepared.run.redaction).toBe('standard');
-    expect(prepared.run.credential).toBe('runner');
+    expect(prepared.run.credential).toBe('berichte');
     expect(prepared.run.target?.target.name).toBe('Berichte');
     expect(prepared.run.inputs.map((input) => input.facts.list)).toEqual([
       'events',
@@ -321,7 +321,7 @@ describe('preparing a run', () => {
       ok: true,
       run: {
         preview: true,
-        credential: 'runner',
+        credential: 'berichte',
         target: { routine: 'bericht' },
       },
     });
@@ -424,7 +424,7 @@ describe('preparing a run', () => {
     expect(prepared.run.inputs).toEqual([]);
     expect(prepared.run).not.toHaveProperty('model');
     expect(prepared.run.redaction).toBe('standard');
-    expect(prepared.run.credential).toBe('runner');
+    expect(prepared.run.credential).toBe('berichte');
     expect(prepared.run.target?.target.name).toBe('Berichte');
   });
 

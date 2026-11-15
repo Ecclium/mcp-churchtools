@@ -3501,7 +3501,7 @@ describe('loadConfig for the runner', () => {
     const report = memoryFiles();
     const archive = memoryFiles();
     const result = asRunner({
-      policy: runnerPolicy(['bericht', 'runner', 'bericht', 'archiv']),
+      policy: runnerPolicy(['bericht', 'archiv', 'bericht', 'archiv']),
       own: own.fs,
       files: {
         [accountTokenPath('bericht')]: report.fs,
@@ -3519,7 +3519,8 @@ describe('loadConfig for the runner', () => {
   // the alias or the path, so that it fits into a public issue.
   it('stops at a refused file of an account and names the field of its first entry', () => {
     const result = asRunner({
-      policy: runnerPolicy(['runner', 'bericht', 'bericht']),
+      policy: runnerPolicy(['archiv', 'bericht', 'bericht']),
+      files: { [accountTokenPath('archiv')]: memoryFiles().fs },
     });
     expect(result.ok).toBe(false);
     expect(result.report.problems).toEqual([
@@ -3531,6 +3532,27 @@ describe('loadConfig for the runner', () => {
     ]);
     expect(setting(result, 'churchtoolsToken')?.origin).toBe('file');
     expect(JSON.stringify(result.report)).not.toMatch(/bericht|ct_token/u);
+  });
+
+  // Its own account reads for every routine without an entry, so no
+  // entry writes with it, and no other file is read for such a policy.
+  it('refuses a policy that names its own account for an entry', () => {
+    const own = memoryFiles();
+    const report = memoryFiles();
+    const result = asRunner({
+      policy: runnerPolicy(['bericht', 'runner']),
+      own: own.fs,
+      files: { [accountTokenPath('bericht')]: report.fs },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.report.problems).toEqual([
+      {
+        code: 'policy_credential_runner',
+        variable: 'ECCLIUM_POLICY_FILE',
+        field: 'unattended[1].credential',
+      },
+    ]);
+    expect(report.opened).toEqual([]);
   });
 
   it('names no field for its own file and checks the other files all the same', () => {
@@ -4357,6 +4379,8 @@ describe('loadConfig and its problems', () => {
       withPolicy(
         `${policyYaml}    - target: { kind: wiki_category, id: 12, name: Archiv }\n      tools: [ct_wiki_page_update]\n      maxPerDay: 4\n`,
       ),
+    // The server refuses it as well: both read the same policy.
+    policy_credential_runner: () => withPolicy(runnerPolicy(['runner'])),
     providers_file_relative: () =>
       load({ ...valid(), ECCLIUM_PROVIDERS_FILE: 'providers.yaml' }),
     // The token comes from the environment, so that only the file of the

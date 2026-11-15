@@ -107,7 +107,7 @@ const policy = {
   unattended: [
     {
       routine: 'dienstplan-report',
-      credential: 'runner',
+      credential: 'berichte',
       target: {
         kind: 'wiki_page',
         categoryId: 7,
@@ -120,7 +120,7 @@ const policy = {
     },
     {
       routine: 'wiki-hygiene',
-      credential: 'runner',
+      credential: 'berichte',
       target: {
         kind: 'wiki_page',
         categoryId: 7,
@@ -280,7 +280,7 @@ describe('the shipped routine dienstplan-report', () => {
     ]);
     expect(prepared.run.redaction).toBe('strict');
     expect(prepared.run.target?.target.name).toBe('Dienstplan-Auswertung');
-    expect(prepared.run.credential).toBe('runner');
+    expect(prepared.run.credential).toBe('berichte');
   });
 
   it('renders the blocks of a stand-in model with the names of the run, and gives the model no name of the run', async () => {
@@ -521,7 +521,7 @@ describe('the shipped routine wiki-hygiene', () => {
     expect(run).not.toHaveProperty('model');
     expect(run.redaction).toBe('standard');
     expect(run.target?.target.name).toBe('Wiki-Pflege');
-    expect(run.credential).toBe('runner');
+    expect(run.credential).toBe('berichte');
   });
 
   it('renders the report of the checks with the pages and links of the wiki', async () => {

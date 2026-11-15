@@ -29,7 +29,8 @@
  * `ECCLIUM_TIME_ZONE`, which the command requires like the runner.
  *
  * Its exit code follows sysexits: 0 when the proposal is written, also one
- * with comments only, 64 for a routine the folder does not hold, 66 when
+ * with comments only, 64 for a wrong call, such as a routine the folder
+ * does not hold or the alias `runner`, 66 when
  * the folder of `ECCLIUM_ROUTINES_DIR` is missing or no folder, 69 when
  * ChurchTools gives no list, 74 when the proposal did not reach stdout
  * whole, and 78 for an invalid configuration, routines that do not load,

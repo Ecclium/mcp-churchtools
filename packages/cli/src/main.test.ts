@@ -685,6 +685,12 @@ describe('ecclium policy init in the command line', () => {
         ],
         'credential_invalid',
       ],
+      // The own account of the runner, which the policy refuses for every
+      // entry (ADR 0032).
+      [
+        ['policy', 'init', '--routine', 'dienstplan', '--credential', 'runner'],
+        'credential_runner_invalid',
+      ],
     ] as const) {
       const result = await runInit(args);
       expect(result.code).toBe(exitCodes.usage);

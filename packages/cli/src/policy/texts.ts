@@ -28,6 +28,8 @@ export const policyInitCallTexts: Readonly<
     'Die Kennung aus ‹--routine› ist keine Kennung einer Routine: Kleinbuchstaben, Ziffern und Bindestriche, höchstens 63 Zeichen, am Anfang ein Buchstabe oder eine Ziffer. Ecclium nennt sie nicht noch einmal. Nennen Sie die Kennung, wie sie im Namen der Datei der Routine steht, ohne ‹.yaml›.',
   credential_invalid:
     'Der Alias aus ‹--credential› hat nicht die Form eines Alias der Richtlinie: Kleinbuchstaben, Ziffern und Bindestriche, höchstens 63 Zeichen, am Anfang ein Buchstabe oder eine Ziffer. Ecclium nennt ihn nicht noch einmal. Nennen Sie den Alias, wie ihn die Datei ‹ct_token_<Alias>› trägt.',
+  credential_runner_invalid:
+    '‹runner› ist das eigene Konto des Runners, mit dem jede Routine ohne Eintrag in der Richtlinie liest. Die Richtlinie nimmt es für keinen Eintrag an. Nennen Sie mit ‹--credential› das Konto, mit dem die Routine schreiben soll, etwa ‹berichte›.',
 });
 
 /** The problems of `ecclium policy init` that end it before a proposal. */

@@ -372,19 +372,16 @@ describe('the tools of an account', () => {
   });
 
   it('count the routines without an entry for the own account of the runner', () => {
-    // A routine without an entry reads with the account `runner`, and a
-    // routine whose entries name `runner` shares it (ADR 0023, ADR 0033).
+    // A routine without an entry reads with the account `runner`, one with
+    // an entry never does: the policy refuses `runner` for an entry (ADR
+    // 0023, ADR 0032, ADR 0033).
     expect(accountToolsOf(runs, 'runner')).toEqual(['ct_songs_search']);
     expect(
       accountToolsOf(
-        [...runs, preparedOf('eigen', ['ct_events_list'], true, 'runner')],
+        [...runs, preparedOf('eigen', ['ct_events_list'], true, 'berichte')],
         'runner',
       ),
-    ).toEqual([
-      'ct_events_list',
-      'ct_songs_search',
-      'ct_wiki_page_append_section',
-    ]);
+    ).toEqual(['ct_songs_search']);
   });
 });
 
