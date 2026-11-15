@@ -50,7 +50,7 @@ export const providersFieldMeanings: Readonly<Record<string, string>> =
     'providers[].endpoint':
       'Die Adresse der Chat-Schnittstelle mit `https` und Pfad, etwa `https://model.example.org/v1/chat/completions`, in ihrer eindeutigen Form: Host in Kleinbuchstaben, keine IP-Adresse und kein `localhost`, kein Standardport, keine Query, kein Fragment und keine Zeichen mit `%`. Ecclium sendet nur an genau diese Adresse.',
     'providers[].structuredOutput':
-      'Ob der Anbieter die Antwort nach einem JSON Schema strukturiert (`response_format` vom Typ `json_schema`). Mit `false` bittet Ecclium im Text um JSON und versucht es nach einer ungültigen Antwort genau einmal mehr.',
+      'Ob der Anbieter die Antwort nach einem JSON Schema strukturiert (`response_format` vom Typ `json_schema`). Mit `false` bittet Ecclium im Text um JSON. Nach einer Antwort, die nicht zählt, versucht Ecclium es in beiden Fällen genau einmal mehr.',
     'providers[].apiKeyFile':
       'Absoluter Pfad der Datei mit dem Schlüssel. Ecclium prüft sie wie die Token-Datei von ChurchTools: kein Link, eine gewöhnliche Datei Ihres Benutzers, keine Rechte für Gruppe und andere, etwa mit den Rechten 600, nur sichtbare ASCII-Zeichen. Der Schlüssel selbst steht nie in dieser Datei.',
     'providers[].transferBasis':
@@ -257,9 +257,9 @@ export function renderProvidersReference(): string {
     '',
     'Ecclium bringt einen Adapter für die Chat-Schnittstelle, die viele Anbieter nach dem Vorbild von OpenAI anbieten. Er sendet `model`, eine Nachricht der Rolle `system` und eine der Rolle `user` und `max_tokens`.',
     '',
-    '- Mit `structuredOutput: true` sendet er das Ausgabeschema als `response_format` vom Typ `json_schema`. Passt die Antwort nicht dazu, endet der Aufruf ohne zweiten Versuch.',
-    '- Mit `structuredOutput: false` bittet er im Systemtext um genau ein JSON-Objekt nach dem Schema. Ist die Antwort kein JSON, passt nicht zum Schema oder ist abgeschnitten, versucht er es genau einmal mehr, mit einem festen Satz zum Grund und nie mit dem Text der ersten Antwort.',
-    '- Eine Weigerung des Modells oder ein anderer Grund, warum es aufhörte, beendet den Aufruf. Kein Text des Anbieters erscheint in einer Meldung oder im Log.',
+    '- Mit `structuredOutput: true` sendet er das Ausgabeschema als `response_format` vom Typ `json_schema`.',
+    '- Mit `structuredOutput: false` bittet er im Systemtext um genau ein JSON-Objekt nach dem Schema.',
+    '- Ist die Antwort kein JSON, passt nicht zum Schema oder ist abgeschnitten, versucht er es in beiden Fällen genau einmal mehr, mit einem festen Satz zum Grund und nie mit dem Text der ersten Antwort. Nach einer Weigerung des Modells oder einem anderen Grund, warum es aufhörte, sendet er dieselbe Anfrage noch einmal. Zählt auch die zweite Antwort nicht, endet der Aufruf. Kein Text des Anbieters erscheint in einer Meldung oder im Log.',
     '- Ob ein Anbieter `json_schema` und `max_tokens` so annimmt, zeigt erst ein Lauf mit ihm. Lehnt er die Anfrage mit 400, 404 oder 422 ab, meldet Ecclium einen Fehler der Konfiguration.',
   ];
   return `${lines.join('\n')}\n`;

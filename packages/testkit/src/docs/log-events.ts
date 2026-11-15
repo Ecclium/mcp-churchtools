@@ -92,7 +92,7 @@ export const logFieldMeanings: Readonly<
   attempt: {
     setBy: 'Aufruf',
     meaning:
-      'Nummer eines Versuchs, 1 bis 10. Heute nur in `run_model_answered`: 2, wenn ein Anbieter ohne strukturierte Ausgabe ein zweites Mal gefragt wurde.',
+      'Nummer eines Versuchs, 1 bis 10. Heute nur in `run_model_answered`: 2, wenn der Anbieter nach einer Antwort, die nicht zählte, ein zweites Mal gefragt wurde.',
   },
   file: {
     setBy: 'Aufruf',
