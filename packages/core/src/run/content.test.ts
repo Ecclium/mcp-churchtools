@@ -1,4 +1,8 @@
-import { ibanOf, injectionCorpus } from '@ecclium/mcp-churchtools-testkit';
+import {
+  ibanOf,
+  injectionCorpus,
+  lookalikeOf,
+} from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
@@ -107,6 +111,25 @@ describe('the payloads of the injection corpus in a text field', () => {
     if (section.ok) {
       expect(section.text.replaceAll('\\', '')).toContain(checked.text);
     }
+  });
+
+  it('refuses the forged marking with a letter of another script in a section (ADR 0032)', () => {
+    const forged = injectionCorpus.find(
+      (entry) => entry.id === 'de-forged-marking',
+    );
+    if (forged?.obey.kind !== 'text') throw new Error('No forged marking.');
+    // The Cyrillic «і» for the Latin one in «Ecclium», which NFKC keeps.
+    const payload = forged.obey.payload.replace(
+      'Ecclium',
+      lookalikeOf('Ecclium', [0, 0, 0, 0, 1]),
+    );
+    expect(payload).not.toBe(forged.obey.payload);
+    const checked = checkRunText(payload, new Set());
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    expect(
+      checkRunSection(`- ${escapeRunText(checked.text)}\n`, new Set()),
+    ).toEqual({ ok: false, violations: ['marking'] });
   });
 });
 
