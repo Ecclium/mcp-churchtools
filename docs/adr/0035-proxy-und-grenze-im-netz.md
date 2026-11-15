@@ -1,6 +1,6 @@
 # ADR 0035: Proxy für ausgehende Verbindungen und Grenze im Netz des Runners
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 15.11.2026
 - Datum: 13.11.2026
 - Fällt vor: Phase 6
 - Ergänzt: [ADR 0009](0009-positivliste-ausgehend.md), [ADR 0056](0056-ausgehender-weg.md)

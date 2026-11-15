@@ -359,7 +359,7 @@ export const policyLines = (policy: Policy): readonly string[] => {
     row('Interaktiv', entries(policy.interactive.targets.length)),
     row(
       'Für Routinen',
-      `${entries(policy.unattended.length)}, sie gelten erst mit dem Runner`,
+      `${entries(policy.unattended.length)}, sie gelten nur für Läufe des Runners`,
     ),
     row('Lesebudget', `${formatNumber(budget)} Aufrufe je Akteur und UTC-Tag`),
   ];
