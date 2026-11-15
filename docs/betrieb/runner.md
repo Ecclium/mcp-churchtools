@@ -1,6 +1,6 @@
 # Runner der Routinen
 
-**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt `ecclium run-once` und den Daemon `ecclium runner`, so wie sie heute gebaut sind, und unter «Container», was der Runner in einem Container vorfinden muss.
+**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt `ecclium run-once` und den Daemon `ecclium runner`, so wie sie heute gebaut sind, und unter «Container», was der Runner in einem Container vorfinden muss. Wie Sie ihn der Reihe nach einrichten, steht unter [Runner einrichten](runner-einrichten.md), was in einem Lauf geschieht und warum, unter [Routinen und Läufe](../workflows.md).
 
 Der Runner führt Routinen nach ihrem Zeitplan aus: Er liest Daten aus ChurchTools, gibt sie maskiert einem Sprachmodell oder prüft sie mit festen Prüfungen des Kerns, prüft das Ergebnis und schreibt einen Abschnitt ins Wiki oder einen Entwurf als Datei ([Routinen](../routines.md), [Richtlinie](../policy.md), [Anbieter](../providers.md)). Er läuft ohne Menschen, deshalb schreibt er ins Wiki nur, was die Richtlinie erlaubt.
 
