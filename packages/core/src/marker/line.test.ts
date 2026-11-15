@@ -1,4 +1,5 @@
 import { isIsoDate, type IsoDate } from '@ecclium/mcp-churchtools-plugin-api';
+import { lookalikeOf } from '@ecclium/mcp-churchtools-testkit';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -301,6 +302,56 @@ describe('markingTextsOf', () => {
     expect(
       markingTextsOf('Nur Text.\n\nAutomatisch erstellt von Hand.'),
     ).toEqual([]);
+  });
+
+  it('finds the start of a marking with signs of another script in it, but never reads it as one (ADR 0032)', () => {
+    const line = markingLineOf(interactive, 'Sekretariat');
+    const start = 'Automatisch erstellt am 05.11.2026 durch Ecclium';
+    expect(line.startsWith(start)).toBe(true);
+    // Each sign with a look-alike in another script on its own, then all
+    // of them together, a letter with a combining mark and the ideographic
+    // full stop in the date.
+    const variants: string[] = [];
+    for (let at = 0; at < start.length; at += 1) {
+      const variant = lookalikeOf(
+        start,
+        Array.from(start, (_, index) => (index === at ? 1 : 0)),
+      );
+      if (variant !== start) variants.push(variant);
+    }
+    variants.push(
+      lookalikeOf(
+        start,
+        Array.from(start, () => 1),
+      ),
+      start.replace('Ecclium', 'Eccli\u0307um'),
+      start.replace('05.11', '05\u300211'),
+      // A space as another sign, and braille blanks, which no font draws.
+      start.replace('am ', 'am\u00b7'),
+      start.replaceAll(' ', '\u2800'),
+      start.replace(' erstellt', '\u2800\u2800erstellt'),
+    );
+    expect(variants.length).toBeGreaterThan(20);
+    for (const variant of variants) {
+      const text = line.replace(start, variant);
+      expect(
+        markingTextsOf(`Text.\n\n- ${text}\n\nMehr.`),
+        variant,
+      ).toHaveLength(1);
+      expect(readMarkingLine(text), variant).toBeUndefined();
+    }
+  });
+
+  it('leaves a text that shares only some of the words of a marking', () => {
+    for (const text of [
+      'Automatisch erstellt am 05.11.2026 durch Max Muster.',
+      'Automatisch erstellt am Montag durch Ecclium.',
+      'Automatisch erstellt am 05.11.2026 durch Ecclesia.',
+      'Automatisch erstellt am 5.11.2026 durch Ecclium.',
+      `${lookalikeOf('Automatisch', [1])} erstellt durch Ecclium.`,
+    ]) {
+      expect(markingTextsOf(text), text).toEqual([]);
+    }
   });
 
   it('gives the same form for the same line written another way', () => {

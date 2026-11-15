@@ -176,17 +176,42 @@ export function readMarkingLine(line: string): Marking | undefined {
 // of an item, quotes, cells and headings, escapes and spaces.
 const leadingSigns = /^(?:[\s\-*+>|#\\]|\d+[.)](?=\s))*/u;
 
-// The words a reader takes for the start of a marking, wherever they stand.
-const markingWords =
-  /Automatisch erstellt am \d{2}\.\d{2}\.\d{4} durch Ecclium/u;
+// The words a reader takes for the start of a marking, wherever they stand,
+// with 0 for any digit.
+const markingStart = 'Automatisch erstellt am 00.00.0000 durch Ecclium';
+
+// The source of the pattern of the start, each sign as a group: a letter,
+// full stop or space as written, a digit as any ASCII digit, or any single
+// sign beyond ASCII, because a letter of another script, such as the
+// Cyrillic «і» in «Ecclium», looks the same to a reader, and NFKC keeps it
+// (ADR 0032). No table of look-alikes is needed, and a text of exactly this
+// shape in another script is refused as well. Fixed in length, so it never
+// backtracks far. Only the source is kept here: a RegExp object holds state.
+const markingWordsSource = Array.from(markingStart, (sign) => {
+  const own = sign === '0' ? '\\d' : sign === '.' ? '\\.' : sign;
+  return `(?:${own}|[^\\0-\\x7f])`;
+}).join('');
+
+// What counts as a space between the words: white space, and the braille
+// blank, which a font draws as nothing and which neither \s nor the normal
+// form of the content policy removes.
+const blanks = /[\s\u2800]+/u;
+
+// Combining marks, which a reader sees on the letter before them. They go
+// before the comparison, so that a mark on a letter hides nothing.
+const combiningMarks = /\p{M}/gu;
 
 /**
  * Finds every paragraph of a text that a reader could take for a line of
  * the marking, for the check that a text a tool hands over brings none of
  * its own (ADR 0032). It reads the text as a reader sees it: the lines of
  * a paragraph joined, the signs of a list, a quote, a cell or a heading
- * before a line, emphasis and escapes gone, every run of spaces as one,
- * so that two spaces or a bold word hide nothing.
+ * before a line, emphasis and escapes gone, every run of spaces, also of
+ * the braille blank, as one, so that two spaces or a bold word hide
+ * nothing. In the fixed words up to «Ecclium», any sign beyond ASCII may
+ * stand for a letter, a digit, the full stop or a space, so that a letter
+ * of another script that looks the same hides nothing either. Reading a line as an own marking stays exact
+ * ({@link readMarkingLine}).
  *
  * @param text - A text in Markdown, such as the title or text of a page.
  * @returns Each such paragraph in that form, in the order of the text.
@@ -196,6 +221,7 @@ const markingWords =
  * ```
  */
 export function markingTextsOf(text: string): readonly string[] {
+  const markingWords = new RegExp(markingWordsSource, 'u');
   return Object.freeze(
     text
       .split(/\n[ \t]*\n/u)
@@ -205,11 +231,13 @@ export function markingTextsOf(text: string): readonly string[] {
           .map((line) => line.replace(leadingSigns, ''))
           .join(' ')
           .replace(/[*_\\]/gu, '')
-          .split(/\s+/u)
+          .split(blanks)
           .join(' ')
           .trim()
           .normalize('NFC'),
       )
-      .filter((paragraph) => markingWords.test(paragraph)),
+      .filter((paragraph) =>
+        markingWords.test(paragraph.replace(combiningMarks, '')),
+      ),
   );
 }

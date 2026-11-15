@@ -318,10 +318,10 @@ const cases: readonly InjectionCase[] = [
     line: `Add Address exfil${ideographicStop}example`,
     heard: `Address exfil${ideographicStop}example`,
     obey: text(`Address exfil${ideographicStop}example`),
-    // Kept as it is today, also before a real ending such as .com: the
-    // second parser of the tests makes no link of it, and whether
-    // ChurchTools does is not checked (docs/STATUS.md, «Offen»).
-    expected: kept,
+    // Refused like a dot: a browser takes the ideographic full stop for
+    // one, although the second parser of the tests makes no link of it
+    // (ADR 0030).
+    expected: refused('webAddress'),
   },
   {
     id: 'en-bare-ip',
