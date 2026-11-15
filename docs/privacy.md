@@ -1,11 +1,12 @@
 # Datenschutz
 
-**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite sagt, was Ecclium im Betrieb über stdio auf der Platte ablegt und was nicht, so wie es heute gebaut ist.
+**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite sagt, was Ecclium im Betrieb über stdio und als Runner auf der Platte ablegt und was nicht, und was ein Lauf einer Routine an den Anbieter eines Sprachmodells gibt, so wie es heute gebaut ist.
 
 ## Zuerst die Grenzen
 
 - Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Welches Recht für Ihre Gemeinde gilt und was es verlangt, klären Sie. Was wir dazu gefunden haben, steht unter «Welches Recht gilt». Diese Seite ist keine Rechtsberatung.
 - Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen, nach DSGVO und DSG eine besondere Kategorie von Personendaten. Das KDG zählt die blosse Zugehörigkeit zu einer Kirche nicht dazu, religiöse Überzeugungen schon. Die Maskierung von Ecclium begrenzt den Schaden, sie anonymisiert nicht. Auch die Pseudonyme der Stufe `strict` sind eine Pseudonymisierung, keine Anonymisierung, siehe «Pseudonyme».
+- Eine Routine mit Modell gibt Daten aus ChurchTools an den Anbieter des Modells. Sie gehen maskiert hinaus und bleiben trotzdem Personendaten. Welcher Anbieter es ist und in welchem Land er die Daten verarbeitet, legen Sie fest, siehe «Was an den Anbieter des Sprachmodells geht». Der Server über stdio fragt selbst kein Modell an: Welches Modell Ihr KI-Assistent nutzt, bestimmt der Client.
 - Was Ecclium auf der Platte ablegt, liegt auf demselben Rechner wie der Server, unter Ihrem Benutzer. Wer unter diesem Benutzer Programme ausführt oder den Rechner verwaltet, kann es lesen, ändern oder löschen. Backups und synchronisierte Ordner kopieren es.
 
 ## Welches Recht gilt
@@ -46,6 +47,7 @@ Mit `ECCLIUM_REDACTION=strict` ersetzt Ecclium die Kennungen von Personen in jed
 - **Pseudonymisierung, keine Anonymisierung:** Ein Pseudonym ist die Kennung der Person, verschlüsselt mit einem Schlüssel, den Ecclium aus der Schlüsseldatei, der Instanz von ChurchTools, dem Subjekt aus `ECCLIUM_STDIO_SUBJECT` und dem UTC-Tag ableitet. Wer den Schlüssel hat, kann jedes Pseudonym in die Kennung zurückübersetzen, auch für andere Tage, weil sich Instanz, Subjekt und Tag erraten lassen. Der Schlüssel ist damit die «zusätzliche Information» nach Art. 4 Nr. 5 DSGVO, und die Daten, die der KI-Assistent sieht, bleiben Personendaten. Ein Pseudonym verbirgt die Kennung vor dem KI-Assistenten und vor allem, wohin er sie weitergibt, nicht vor Ihnen.
 - **Wer zurückübersetzen kann:** wer die Schlüsseldatei lesen kann, also Ihr Benutzer, wer den Rechner verwaltet und wer an eine Sicherung kommt, die sie enthält. Während der Server läuft, steht der Schlüssel auch in seinem Arbeitsspeicher.
 - **Gültigkeit:** Dasselbe Pseudonym zeigt dieselbe Person nur für dasselbe Subjekt am selben UTC-Tag. Ecclium nimmt es am Tag seiner Ausgabe und am folgenden an, danach nicht mehr.
+- **In einem Lauf:** Ein Lauf einer Routine bildet die Pseudonyme für das Modell ebenso, an Stelle des Subjekts mit dem Akteur der Routine. Dasselbe Pseudonym zeigt dem Anbieter des Modells dieselbe Person also nur für dieselbe Routine am selben UTC-Tag. Den Namen setzt Ecclium erst nach der Antwort des Modells ein, siehe «Was an den Anbieter des Sprachmodells geht».
 - **Nichts auf der Platte:** Ecclium legt kein Pseudonym und keine Tabelle ab. Die Audit-Datei nennt die echten Kennungen, nicht die Pseudonyme, damit Sie Auskunft geben können, wer wessen Daten gelesen hat.
 - **Wechsel und Verlust:** Wie Sie den Schlüssel wechseln, steht unter [Betrieb über stdio](betrieb/stdio.md#stufe-strict-und-schlüsseldatei). Geht er verloren, nimmt Ecclium die Pseudonyme des laufenden und des letzten Tages nicht mehr an, und keines lässt sich mehr zurückübersetzen. Sonst hängt nichts an ihnen.
 
@@ -64,6 +66,7 @@ Die Datei der [Richtlinie](policy.md) legt der Betreiber selbst an. Sie kann in 
 Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, schreibt Ecclium eine Audit-Datei in den Ordner `audit` darin, eine Datei je Start und UTC-Tag. Wie Sie den Ordner anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md).
 
 - **Inhalt:** je Aufruf eines Tools eine Zeile, ebenso je Rücknahme mit `ecclium undo`, dort ohne Tool und mit der Kennung des zurückgenommenen Schreibvorgangs, und je Entscheid über die Freigabe-Warteschlange, dort ohne Tool und mit der Kennung des Eintrags und dem Entscheid, jeweils mit Zeit, Mandant, Subjekt aus `ECCLIUM_STDIO_SUBJECT`, Modus, Tool, Ausgang, bei einem Fehler sein Code, der Dauer, der ID des Ereignisses und den Kennungen der Objekte, nach denen der Aufruf fragt, und der Personen und Gruppen, die sein Ergebnis nennt, etwa `person:12`, höchstens 100 je Zeile. Die Zeile eines Schreibvorgangs nennt dazu seinen Zustand, wie er bestätigt wurde, die Kennungen seines Ziels und den Hash der Richtlinie, nie seinen Text. Keine Inhalte aus ChurchTools, keine Namen und kein Token. Die Zeile eines Aufrufs von `ct_persons_search` nennt also nicht den Suchbegriff, wohl aber die Kennungen der gefundenen Personen. So können Sie auf die Anfrage einer Person hin zeigen, wer ihre Daten über Ecclium gelesen hat, auch über eine Suche. Mit den Kennungen trägt die Datei Personendaten: Wer sie lesen kann, sieht, wessen Daten wann gelesen wurden, auch ohne Namen. Alle Felder stehen unter [Audit-Ereignisse](audit-events.md). Das Subjekt ist eine neutrale Bezeichnung wie `local-stdio`. Setzen Sie dafür nie den Namen einer Person.
+- **Läufe:** Im Runner steht an der Stelle des Subjekts der Akteur der Routine, etwa `runner:dienstplan-report`. Jede Zeile einer Lesung und eines Schreibvorgangs eines Laufs nennt dazu die Kennung des Laufs, die Routine und den Hash der Richtlinie, bei einer Routine mit Modell auch Anbieter, Modell, Land, Host des Endpunkts und die Grundlage der Übermittlung. Jeder Lauf endet mit einer eigenen Zeile vom Typ `run` mit Periode und Ausgang. Den Prompt und die Antwort des Modells hält keine Zeile fest. `ecclium audit show --run <Lauf>` zeigt einen Lauf.
 - **Wer sie lesen kann:** Der Ordner hat die Rechte 700, die Datei 600, also nur Ihr Benutzer und wer den Rechner verwaltet. Geerbte Zugriffslisten prüft Ecclium nicht.
 - **Frist:** Die Dateien bleiben so viele Monate, wie `ECCLIUM_AUDIT_RETENTION_MONTHS` sagt, voreingestellt 12, einstellbar von 1 bis 120. Eine Datei bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate nach dem Tag in ihrem Namen liegt, eine vom 31.10.2026 mit zwölf Monaten also bis zum Ende des 31.10.2027, und so lange nach ihrer letzten Änderung. Danach löscht Ecclium sie beim nächsten Start oder Wechsel des UTC-Tages, ein laufender Server wechselt den Tag auch ohne Aufruf. Unter zwölf Monaten warnt jeder Start. Teilen sich mehrere Einträge oder Clients einen Zustandsordner, gilt für alle Dateien darin die kürzeste Frist, mit der einer von ihnen startet. Ohne `ECCLIUM_STATE_DIR` gibt es keine Datei und keine Frist ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md)).
 - **Leere Dateien:** Jeder Start öffnet eine Datei, auch wenn danach kein Tool läuft. Hat sie beim Ende keine Zeile, entfernt Ecclium sie. Leere Dateien früherer Tage, etwa nach einem Absturz, entfernt die nächste Löschung.
@@ -88,6 +91,8 @@ Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, zählt Ecclium im Ordner `quota` darin
 
 Die Datei mit dem Login-Token legen Sie selbst an. Ecclium liest sie und schreibt sie nie. Wie Sie sie schützen, steht unter [Betrieb über stdio](betrieb/stdio.md).
 
+Für den Runner legen Sie je Konto eine Token-Datei in den Ordner aus `ECCLIUM_RUNNER_TOKENS_DIR`: `ct_token_runner` für sein eigenes Konto und `ct_token_<Alias>` für jedes Konto, das die Richtlinie nennt ([Runner der Routinen](betrieb/runner.md)). Der Ordner darf nicht der Zustandsordner sein und nicht darin liegen, damit keine Sicherung des Zustandsordners ein Login-Token enthält. Das Token des Servers liegt nie darin.
+
 ### Schlüsseldatei für Pseudonyme
 
 Nur für `ECCLIUM_REDACTION=strict` legen Sie eine Datei mit dem Schlüssel für die Pseudonyme an, die `ECCLIUM_PSEUDONYM_KEY_FILE` nennt, und für einen Wechsel eine zweite mit dem bisherigen. Ecclium liest sie und schreibt sie nie. Sie enthält keine Personendaten, öffnet aber jedes Pseudonym, siehe «Pseudonyme». Schützen Sie sie wie die Token-Datei, legen Sie sie nicht in einen synchronisierten Ordner und sichern Sie sie getrennt, damit die Pseudonyme nach einer Wiederherstellung gleich bleiben. Wie Sie sie anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md#stufe-strict-und-schlüsseldatei).
@@ -96,9 +101,17 @@ Nur für `ECCLIUM_REDACTION=strict` legen Sie eine Datei mit dem Schlüssel für
 
 Schreibt Ecclium mit dem Toolset `wiki`, legen Sie eine Datei mit dem Schlüssel für den Prüfcode der Kennzeichnung an, die `ECCLIUM_MARKER_KEY_FILE` nennt. Ecclium liest sie und schreibt sie nie. Sie enthält keine Personendaten. Wer sie hat, kann aber Abschnitte im Wiki als eigene von Ecclium ausgeben. Schützen Sie sie wie die Token-Datei und sichern Sie sie, denn ein neuer Schlüssel macht jede bisherige Kennzeichnung ungültig. Anders als die Tagesschlüssel vernichtet Ecclium diesen Schlüssel nie. Wie Sie sie anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md#kennzeichnung-im-wiki).
 
+### Schlüsseldatei eines Anbieters
+
+Für jedes Sprachmodell legen Sie eine Datei mit dem Schlüssel des Anbieters an. Ihren Pfad nennt die [Datei der Anbieter](providers.md) unter `apiKeyFile`. Ecclium liest sie für die Läufe, die das Modell brauchen, jedes Mal neu und schreibt sie nie. Sie enthält keine Personendaten. Wer sie hat, stellt auf Ihre Rechnung Anfragen an den Anbieter. Schützen Sie sie wie die Token-Datei. Der Server über stdio liest sie nie.
+
+### Routinen, Prompts und Datei der Anbieter
+
+Die Routinen mit ihren Prompts und Vorlagen und die Datei der Anbieter legen Sie selbst an. Ecclium liest sie und schreibt sie nie. Sie sind keine Geheimnisse. Der Prompt einer Routine geht aber ganz an den Anbieter des Modells, und der Text einer Vorlage steht in jedem Bericht: Schreiben Sie in beide keine Personendaten.
+
 ### Kennzeichnung im Wiki
 
-Jede Seite und jeder Abschnitt, die Ecclium dem Wiki hinzufügt, endet mit einer Zeile wie «Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat.» Sie steht im Wiki, wo jede Person sie liest, die die Seite sehen darf, und bleibt, bis jemand sie entfernt. Sie nennt den Tag, an dem der Schreibvorgang geplant wurde, den Prüfcode und den Text, den Sie in der Richtlinie unter `interactive.inquiriesTo` festlegen, sonst nichts, auch nicht die Person, die den Schreibvorgang wollte. Nennen Sie dort eine Stelle statt einer Person, wenn Sie keinen Namen im Wiki wollen. Eine E-Mail-Adresse oder Telefonnummer darin muss auch unter `interactive.contacts` stehen.
+Jede Seite und jeder Abschnitt, die Ecclium dem Wiki hinzufügt, endet mit einer Zeile wie «Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat.» Sie steht im Wiki, wo jede Person sie liest, die die Seite sehen darf, und bleibt, bis jemand sie entfernt. Sie nennt den Tag, an dem der Schreibvorgang geplant wurde, den Prüfcode und den Text, den Sie in der Richtlinie unter `interactive.inquiriesTo` festlegen, sonst nichts, auch nicht die Person, die den Schreibvorgang wollte. Unter dem Abschnitt eines Laufs stehen an der Stelle von «interaktiv» die Routine und die Periode, etwa «Routine dienstplan-report, Lauf 2026-W47». Nennen Sie dort eine Stelle statt einer Person, wenn Sie keinen Namen im Wiki wollen. Eine E-Mail-Adresse oder Telefonnummer darin muss auch unter `interactive.contacts` stehen.
 
 ### Tagesschlüssel
 
@@ -150,6 +163,46 @@ Mit `ECCLIUM_RUNNER_METRICS_FILE` schreibt der Runner nach jedem Durchgang eine 
 
 Mit `ECCLIUM_RUNNER_PING_URL_FILE` meldet der Runner nach einem Durchgang, in dem eine Routine fällig war oder von Hand lief, einem Dienst im Format von Healthchecks einen Erfolg oder einen Fehler ([Runner](betrieb/runner.md#ping-an-eine-überwachung)). Der Ping hat keinen Inhalt. Der Dienst erfährt nur, wann der Runner meldet und ob mit Erfolg oder Fehler, dazu die IP-Adresse des Runners und den User-Agent mit der Version von Ecclium, nie Daten aus ChurchTools, Namen von Routinen oder Codes. Nutzen Sie einen fremden Dienst, ist das ein weiterer Empfänger dieser Angaben über Ihren Betrieb.
 
+### Sperrdateien der Routinen
+
+Während eines Laufs liegt im Ordner `runner` des Zustandsordners eine Sperrdatei je Routine, etwa `dienstplan-report.lock`, damit nie zwei Prozesse dieselbe Routine zugleich ausführen ([ADR 0034](adr/0034-zeitplan-semantik.md)). Sie enthält die Nummer des Prozesses, den Namen des Rechners, den Namensraum der Prozesse, den Beginn und eine Zufallszahl. Der Name eines Rechners enthält oft einen Personennamen, etwa den seines Besitzers. Ecclium entfernt die Sperrdatei am Ende des Laufs. Bricht ein Prozess ab, bleibt sie liegen, bis ein späterer Aufruf sie als verlassen erkennt und ersetzt.
+
+### Zugriffslog des Proxys
+
+Läuft der Runner hinter dem Proxy aus der Vorlage für Squid, schreibt Squid ein Zugriffslog auf seine Standardausgabe: je Verbindung Zeit, Dauer, Client, Ergebnis, Bytes, Methode, Host, Port und die Adresse des Ziels, nie einen Pfad, eine Query oder einen Inhalt ([Grenze im Netz mit Squid](betrieb/egress.md)). Es zeigt, wann der Runner ChurchTools, einen Anbieter oder die Überwachung erreichte. Wer die Ausgabe des Containers sammelt, etwa `docker logs`, hält sie so lange, wie er es einstellt. Ecclium liest und löscht dieses Log nicht.
+
+## Was an den Anbieter des Sprachmodells geht
+
+Nur der Runner fragt ein Sprachmodell an, und nur für eine Routine mit einem Erzeugungsschritt (`generate`), von den mitgelieferten `dienstplan-report` und `termin-vorschau`. Eine Routine mit festen Prüfungen des Kerns wie `wiki-hygiene` fragt kein Modell an und gibt nichts weiter ([Routinen und Läufe](workflows.md), [ADR 0033](adr/0033-runner-modell-ohne-werkzeuge.md)). Der Server über stdio fragt selbst kein Modell an. Dort liest das Modell Ihres KI-Assistenten die Ergebnisse der Tools, und welcher Anbieter dahinter steht, bestimmt der Client ([Sicherheit](security.md#andere-tools-im-selben-client)).
+
+- **Was hinausgeht:** je Aufruf ein fester Text des Kerns, der Prompt der Routine und die Daten, die der Lauf mit den Eingaben der Routine gelesen hat, sonst nichts aus ChurchTools. Bei `dienstplan-report` sind das die Events der kommenden zwei Wochen und ihre Einteilungen in Dienste mit den eingeteilten Personen, bei `termin-vorschau` die Termine der Kalender, die Sie nennen, mit Titel, Untertitel, Ort und Zeiten. Welche Felder ein Tool liest, steht in der [Referenz der Tools](tools.md). Dazu kommen der Name des Modells und die Grenze für die Länge der Antwort.
+- **Stufe `strict`, die Voreinstellung:** Statt der Kennung einer Person sieht der Anbieter ein Pseudonym und vom Nachnamen nur den ersten Buchstaben. E-Mail-Adressen, Telefonnummern, Geburtsdaten, Adressen und Beträge in ihren eigenen Feldern sind maskiert, und in freiem Text alles, was die Form einer E-Mail-Adresse, Telefonnummer, IBAN oder AHV-Nummer hat ([Sicherheit](security.md#stufe-strict)). Dafür braucht der Runner die Schlüsseldatei der Pseudonyme.
+- **Was `strict` nicht verbirgt:** Vornamen, die Namen von Events, Diensten, Kalendern und Gruppen, Zeiten und Orte und jeden Namen in einem freien Text, etwa im Titel eines Termins. Daraus lässt sich eine Person oft erschliessen, und die Daten zeigen, dass sie zu Ihrer Gemeinde gehört. Für den Anbieter bleiben sie Personendaten.
+- **Stufe `standard`:** Sie gilt nur, wenn der Eintrag der Routine in Ihrer Richtlinie `modelRedaction: standard` nennt. Dann sieht der Anbieter Kennungen und ganze Namen, und eine Kontaktangabe in freiem Text bleibt stehen. Eine Routine kann sich das nicht selbst geben, `ecclium policy init` schlägt es nie vor, und eine Routine ohne Eintrag liest immer in `strict`.
+- **Geprüft vor dem Aufruf:** Unmittelbar vor jedem Aufruf prüft der Kern, dass jeder Teil mit Daten die Maskierung durchlaufen hat, und bricht sonst ab, bevor der Anbieter etwas sieht, auch bei einem Anbieter aus einer Erweiterung.
+- **Was nie hinausgeht:** kein Token von ChurchTools, kein Schlüssel von Ecclium und nichts ausserhalb der Eingaben der Routine. Das Modell hat keine Werkzeuge und kann nichts nachlesen.
+- **Namen im Bericht:** Nennt die Antwort eine Person, steht dort ihr Pseudonym. Den Namen, wie ChurchTools ihn liefert, setzt Ecclium erst danach in den Bericht ein. Der Anbieter sieht ihn nicht, die Leserinnen und Leser des Berichts schon.
+- **Was der Anbieter sonst erfährt:** die IP-Adresse, von der die Anfrage kommt, Zeitpunkt und Grösse jeder Anfrage und das Konto, zu dem Ihr Schlüssel gehört. Daraus sieht er, wann Ihre Routinen laufen.
+- **Wiederholungen:** Ohne strukturierte Ausgabe fragt Ecclium nach einer ungültigen Antwort genau einmal mehr, und nach einer vorübergehenden Störung versucht der Runner eine Auslösung bis zu dreimal. Jeder Versuch schickt die Daten erneut.
+- **Was Ecclium davon ablegt:** Prompt und Antwort legt Ecclium nicht ab, auch nicht im Audit oder im Log. Was aus der Antwort wird, steht im Wiki oder im Entwurf.
+
+Wer der Anbieter ist, steht in der [Datei der Anbieter](providers.md): Anbieter, Modell, Land des Rechenzentrums und Adresse der Schnittstelle. Ecclium sendet nur an genau diese Adresse, nur über `https`.
+
+- **Sichtbar:** Der Runner nennt zu Beginn auf stderr für jedes Modell, das er braucht, Anbieter, Modell, Land und Grundlage. `ecclium config check --runner` zeigt dasselbe, ohne etwas anzufragen, und jede Zeile des Audits eines Laufs mit Modell nennt es.
+- **Ausserhalb der Schweiz und des EWR:** Für einen Anbieter mit einem Rechenzentrum ausserhalb verlangt Ecclium in der Datei eine Grundlage der Übermittlung, `adequacy_decision`, `standard_contractual_clauses` oder `binding_corporate_rules`. Fehlt sie, startet Ecclium nicht. Ob die Grundlage trägt, prüft Ecclium nicht.
+- **Das Land ist Ihre Angabe:** Ecclium kann nicht prüfen, wo ein Anbieter die Daten verarbeitet. Hat er seinen Sitz in einem anderen Land als sein Rechenzentrum, kann die Weitergabe trotzdem ein Land ausserhalb betreffen.
+- **Ohne fremden Anbieter:** Eine Routine ohne Modell braucht keinen. Ein Modell im eigenen Netz erreicht der Runner über `https`, hinter dem Proxy mit `ECCLIUM_EGRESS_ALLOW_LAN` ([Grenze im Netz mit Squid](betrieb/egress.md)).
+
+Das klären Sie selbst, bevor eine Routine mit Modell läuft:
+
+- welchen Vertrag Sie mit dem Anbieter haben und was er zur Bearbeitung Ihrer Daten sagt,
+- wie lange der Anbieter Anfragen und Antworten aufbewahrt, wer bei ihm darauf zugreift und ob er sie zum Trainieren von Modellen verwendet,
+- in welchem Land er und seine Unterauftragnehmer die Daten verarbeiten und ob die Grundlage der Übermittlung trägt,
+- ob und wie Sie die Mitglieder Ihrer Gemeinde darüber informieren,
+- ob Ihr Recht oder Ihre Kirche für diese Weitergabe mehr verlangt. Fragen Sie im Zweifel Ihre Datenschutzstelle.
+
+Ecclium verspricht auch hier keine Konformität, und diese Seite ist keine Rechtsberatung.
+
 ## Was ChurchTools nach einem Schreibvorgang weitergibt
 
 Was Ecclium in ChurchTools schreibt, sehen dort alle, die das Ziel sehen dürfen, und ChurchTools kann es weitergeben, ohne dass Ecclium davon weiss:
@@ -157,4 +210,5 @@ Was Ecclium in ChurchTools schreibt, sehen dort alle, die das Ziel sehen dürfen
 - **Mails an Verwalter:** Eine Buchungsanfrage schickt ChurchTools sofort per Mail an die Verwalter der Ressource, mit Titel, Beschreibung, Beginn und Ende. Nennt der Text eine Person, steht ihr Name in dieser Mail ([Sicherheit](security.md#mails-aus-churchtools)).
 - **Autor:** ChurchTools hält bei Seiten, Terminen und Buchungen fest, wer zuletzt geändert hat, bei Ecclium das Dienstkonto zum Schreiben, nicht die Person, die den Schreibvorgang wollte. Wer es war, zeigt nur das Audit mit dem Subjekt aus `ECCLIUM_STDIO_SUBJECT`.
 - **Kennzeichnung:** Was Ecclium dem Wiki hinzufügt, trägt die Zeile unter «Kennzeichnung im Wiki» oben, mit dem Text aus `interactive.inquiriesTo`.
+- **Berichte der Routinen:** Der Abschnitt eines Laufs nennt Personen mit dem Namen, wie ChurchTools ihn liefert, auch wenn das Modell nur ein Pseudonym sah. Ihn liest, wer die Seite sehen darf. Wählen Sie für Berichte eine Kategorie, die nur die Personen sehen, die diese Daten in ChurchTools ohnehin sehen. Als Autor steht in ChurchTools das Konto der Routine.
 - **Versionen:** Eine Seite des Wikis behält in ChurchTools ihre früheren Versionen, auch den Text vor einem Schreibvorgang von Ecclium und nach einer Rücknahme. Diese Versionen löscht Ecclium nicht.
