@@ -28,4 +28,4 @@ Entwurf: Vorgesehen ist die dritte Option.
 
 - Beide Images haben dieselbe Stückliste und werden gemeinsam geprüft. Ein Fund betrifft immer beide.
 - Restrisiken: Der Code des Runners liegt auch im Image des Servers. Wer den Server-Container übernimmt, hat diesen Code, aber nicht die Zugangsdaten des Runners und nicht dessen Netz.
-- Offen: Der Entwurf wird vor Phase 7 zusammen mit ADR 0038 zur Bestätigung vorgelegt. Der Runner-Container-Vertrag ist seit dem 13.11.2026 als ADR 0036 vorgeschlagen.
+- Offen: Der Entwurf wird vor Phase 7 zusammen mit ADR 0038 zur Bestätigung vorgelegt. Der Runner-Container-Vertrag ist seit dem 13.11.2026 als ADR 0036 vorgeschlagen und seit dem 15.11.2026 angenommen.

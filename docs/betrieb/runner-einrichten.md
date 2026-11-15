@@ -9,7 +9,7 @@ Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Herstel
 - Der Runner schreibt, ohne dass eine Person bestätigt. Gehen Sie die Schritte in dieser Reihenfolge: erst prüfen, dann der Eintrag der Richtlinie und die Vorschau, dann ein Lauf von Hand, zuletzt der Zeitplan.
 - Eine Routine mit Modell gibt Daten Ihrer Gemeinde an den Anbieter des Modells, maskiert, aber nicht anonym. Klären Sie vor Schritt 5, was unter [Datenschutz](../privacy.md#was-an-den-anbieter-des-sprachmodells-geht) steht.
 - Direkt auf einem Rechner hat der Runner keine Grenze im Netz. Die gibt es erst in einem Container an einem internen Netz hinter dem Proxy (Schritt 12).
-- Die Schritte 1 bis 10 liefen an einer Testinstanz mit synthetischen Daten und einem echten Modell, direkt auf einem Rechner. Zeitplan, Daemon und die Grenze im Netz mit Container und Proxy (Schritte 11 und 12) sind nur an Stellvertretern geprüft.
+- Die Schritte 1 bis 10 liefen an einer Testinstanz mit synthetischen Daten und einem echten Modell, direkt auf einem Rechner. Zeitplan, Daemon, die Grenze im Netz mit Container und Proxy und die Überwachung (Schritte 11 bis 13) sind nur an Stellvertretern geprüft.
 
 ## Was Sie brauchen
 
