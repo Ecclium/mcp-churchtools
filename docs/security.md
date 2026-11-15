@@ -9,6 +9,7 @@
 - ChurchTools setzt die Rechte durch. Ecclium liest mit den Rechten seines Dienstkontos und nur mit ihnen. Je enger Sie das Konto halten, desto weniger kann Ecclium herausgeben ([Dienstkonto](betrieb/dienstkonto.md)).
 - Die Tools der Bereiche geben nur feste Felder weiter. Mit dem Toolset `api` gibt Ecclium dagegen ganze Antworten von ChurchTools weiter, mit allem, was die Rechte des Kontos öffnen (unten, «Lesender Zugriff auf die API»).
 - Mit der Voreinstellung `ECCLIUM_READ_ONLY=true` liest Ecclium nur. Mit `false` und dem Toolset `wiki` bietet der Server `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section` an, mit dem Toolset `calendars` `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Jedes schreibt erst nach einer Bestätigung: einer Rückfrage im Client, dem Echo oder einer Freigabe aus der Warteschlange (ADR 0029). Das Ändern eines Termins und eine Buchungsanfrage bestätigt das Echo nie, weil ChurchTools dabei Menschen ausserhalb des Clients benachrichtigt oder benachrichtigen kann, bei einer Buchungsanfrage die Verwalter der Ressource sofort per Mail. Was die Bestätigung beweist und was nicht, steht unten unter «Bestätigung vor dem Schreiben», wie Sie das Schreiben einschalten, unter [Betrieb über stdio](betrieb/stdio.md#schreiben-einschalten).
+- Der Runner führt Routinen aus, ohne dass eine Person zusieht. An die Stelle der Bestätigung tritt dort die Richtlinie, die Sie vorher schreiben, und ein Sprachmodell ohne Werkzeuge füllt nur vorgegebene Felder. Ob der Inhalt eines Berichts stimmt, prüft Ecclium nicht (unten, «Läufe ohne Menschen»).
 
 ## Andere Tools im selben Client
 
@@ -183,9 +184,49 @@ Jeder Text, den ein Schreib-Tool ins Wiki schreiben will, geht durch die Content
 - **Grenzen:** Ein Feld hat höchstens 64 KiB und höchstens 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen, damit auch ein bösartiger Text schnell geprüft ist.
 - **Was bleibt:** Welche Bibliothek ChurchTools zum Darstellen nutzt, ist nicht bekannt. Eine nackte IP-Adresse oder eine Kontaktangabe in einer Form, die die Prüfung nicht kennt, kann durchgehen. Ein Text, den ein Mensch danach im Web-Editor speichert, kann der Editor umschreiben.
 
-## Schreiben aus einem Lauf
+## Läufe ohne Menschen
 
-Läufe startet erst der Runner, der mit einem späteren Schritt dieser Phase kommt. Was hier steht, gilt für jeden Lauf, sobald es ihn gibt.
+Der Runner führt Routinen nach ihrem Zeitplan aus, ohne dass eine Person zusieht ([Routinen und Läufe](workflows.md)). Ein solcher Lauf liest fremde Texte, hat Zugriff auf geschützte Daten und schreibt danach. Die «Rule of Two», eine Faustregel für KI-Agenten, rät, in einem Ablauf ohne Menschen höchstens zwei dieser drei Dinge zu verbinden, weil ein Text in den Daten ein Sprachmodell dazu bringen kann, ihm zu folgen. Ein Bericht braucht alle drei. Ecclium begrenzt deshalb jedes so, dass die Grenzen auch für ein Modell gelten, das jeder Anweisung in seinen Daten folgt ([ADR 0033](adr/0033-runner-modell-ohne-werkzeuge.md)):
+
+- **Fremde Texte:** Das Modell eines Laufs hat keine Werkzeuge. Ziel, Tool und Aufbau des Berichts stehen fest, bevor es etwas sieht (unten, «Modell eines Laufs»).
+- **Geschützte Daten:** Ein Lauf liest nur die Eingaben seiner Routine, jede mit Obergrenze und mit einem eigenen Konto, und gibt sie maskiert an das Modell.
+- **Schreiben und Senden:** Ein Lauf schreibt nur, was die Richtlinie erlaubt (unten, «Schreiben aus einem Lauf»), und erreicht hinter dem Proxy nur die Ziele seiner Konfiguration (unten, «Grenze im Netz für den Runner»).
+
+Was bei einem interaktiven Schreibvorgang eine Person bestätigt, entscheidet hier die [Richtlinie](policy.md), die Sie vorher schreiben. Ob der Inhalt eines Berichts stimmt, prüft Ecclium nicht: Ein Modell kann falsch zählen, etwas weglassen oder einem Text in seinen Daten folgen.
+
+## Modell eines Laufs
+
+- **Keine Werkzeuge:** Das Modell bekommt Daten und ein Ausgabeschema, nie ein Tool. Es kann nichts nachlesen, nichts aufrufen und nichts senden. Einen Lauf beginnt der Zeitplan oder Sie, nie ein Modell und nie ein Text in den Daten.
+- **Feste Felder:** Die Routine legt Blöcke mit Feldern fest, jedes mit Art und Grenze: Text bis zu einer Länge, Zahl in einem Bereich, Datum oder Verweis auf eine Person. Ein unbekanntes Feld, ein Wert über seiner Grenze oder eine Person, die nicht in den Daten des Laufs stand, macht die Antwort ungültig, und der Lauf schreibt nichts.
+- **Reiner Text:** Der Kern setzt jedes Feld als reinen Text in die Vorlage der Routine. Zeichen von Markdown zeichnen darin nichts aus, und eine Vorlage kennt keine Bedingungen und keinen Code. Jedes Textfeld und danach der ganze Abschnitt gehen durch die ContentPolicy (oben, «Was Ecclium ins Wiki schreibt»), auch ein Entwurf als Datei. Der Name einer Person geht ebenso hindurch, weil eine Person ihren Namen in ChurchTools selbst ändern kann.
+- **Fester Prompt:** Zuerst kommt ein Text des Kerns, dass Daten keine Anweisungen sind, dann der Prompt der Routine, dann die Daten, jede Eingabe in einem Block mit einer zufälligen Grenze, die kein Text der Daten enthält.
+- **Maskiert:** Die Daten gehen in der Stufe `strict` zum Modell, ausser der Eintrag der Routine in der Richtlinie erlaubt `standard`. Unmittelbar vor dem Aufruf prüft der Kern, dass jeder Teil mit Daten die Maskierung durchlaufen hat, und bricht sonst ab. Was der Anbieter sieht und was `strict` nicht verbirgt, steht unter [Datenschutz](privacy.md#was-an-den-anbieter-des-sprachmodells-geht).
+- **Ein Weg je Anbieter:** Ecclium sendet nur `POST` über `https` an genau die Adresse aus der [Datei der Anbieter](providers.md), mit dem Schlüssel nur in der Kopfzeile, und folgt keiner Weiterleitung. Kein Text des Anbieters erscheint in einer Meldung, im Log oder im Audit.
+- **Ohne Modell:** Eine Routine mit festen Prüfungen des Kerns wie `wiki-hygiene` fragt kein Modell an. Ihr Bericht geht durch dieselben Prüfungen.
+
+## Was eine Injection in einem Lauf erreichen kann
+
+Ein Korpus von 19 Angriffen auf Deutsch und Englisch läuft bei jeder Änderung am Code gegen die drei mitgelieferten Routinen und gegen eine Routine, die Text des Wikis einem Modell gibt, mit einem Stellvertreter für ein Modell, der jeder Anweisung in seinen Daten folgt ([Routinen und Läufe](workflows.md#was-ein-angriff-erreichen-kann-und-was-nicht)).
+
+- **Erreichen kann sie** den Inhalt der Felder innerhalb ihrer Grenzen, etwa den Satz «Alle Dienste sind besetzt.», obwohl Plätze offen sind, und dass ein Bericht ausbleibt, weil die Prüfung die Antwort abweist.
+- **Nicht erreicht hat sie** in diesen Tests ein anderes Ziel, ein anderes Tool, mehr oder längere Felder, einen anderen Aufbau, einen Link, ein Bild, HTML, eine Webadresse, eine Erwähnung und keine Person oder Kontaktangabe, die in den Daten des Laufs nicht stand.
+- **Gefälschte Kennzeichnung:** Einen Abschnitt mit einer Zeile, die eine Person für die Kennzeichnung von Ecclium hält, weist der Kern ab, auch mit Zeichen anderer Schriften oder einem Braille-Leerzeichen in den festen Wörtern. Ähnliche Buchstaben des lateinischen Alphabets erkennt er nicht, etwa ein grosses «I» für ein kleines «l» oder «rn» für «m». Für einen eigenen Abschnitt hält Ecclium eine solche Zeile nie, eine Person sieht aber eine zweite Zeile, die wie die Kennzeichnung aussieht.
+- **Text, der kein Link ist:** Eine nackte IPv4-Adresse, `@Name` und `javascript:` ohne Link bleiben als Text stehen. Wie ChurchTools solche Texte zeigt, ist nicht geprüft.
+- **Nicht geprüft** ist auch, ob ChurchTools HTML-Kommentare und Tag-Zeichen von Unicode im Text einer Seite unverändert speichert und wie es sie zeigt. Tag-Zeichen entfernt die Pipeline, bevor das Modell sie sieht.
+- **Noch ohne echtes Modell:** Die Tests laufen mit Stellvertretern für ChurchTools und das Modell. Ein Lauf mit einem echten Modell an einer Testinstanz mit synthetischen Daten steht noch aus.
+
+## Grenze im Netz für den Runner
+
+Der Runner startet nur mit einem Proxy in `ECCLIUM_EGRESS_PROXY` oder mit `ECCLIUM_EGRESS=off` ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md), [Grenze im Netz mit Squid](betrieb/egress.md)).
+
+- **Im Code:** Jeder ausgehende Weg von Ecclium kennt genau eine Adresse und folgt keiner Weiterleitung. Beim Runner sind das ChurchTools, je Anbieter seine Schnittstelle und, wenn Sie sie setzen, die Ping-URL ([ADR 0009](adr/0009-positivliste-ausgehend.md)).
+- **Im Netz:** Im Self-Hosting hängt der Runner nur an einem internen Netz, und nur der Proxy verbindet nach aussen. Die Vorlage für Squid lässt nur Tunnel zu den Zielen der Liste aus `ecclium init egress` durch, ausserhalb des lokalen Netzes nur auf Port 443 und nie an eine private Adresse. Das hält auch Code auf, der am Kern vorbei eine Verbindung öffnet, etwa in einer Abhängigkeit.
+- **Was der Proxy sieht:** Host und Port jedes Ziels, Zeitpunkte und Grössen, nie Inhalte oder ein Token. TLS mit geprüftem Zertifikat läuft durch den Tunnel bis zum Ziel.
+- **Prüfen:** Der Runner bittet bei jedem Start um einen Tunnel zu ChurchTools und endet mit 69, wenn der Proxy ihn nicht gibt. `ecclium doctor` prüft im Netz des Runners den Weg zu jedem Ziel der Liste, dass ein Name ausserhalb mit 403 endet und dass kein direkter Weg zu ChurchTools führt ([Prüfen mit `ecclium doctor`](betrieb/doctor.md)).
+- **Ohne Grenze:** Mit `ECCLIUM_EGRESS=off` läuft der Runner ohne Proxy. Jeder Start warnt dann, und jede Zeile vom Typ `run` im Audit trägt `egressOff`. Für den dauernden Betrieb empfehlen wir den Proxy.
+- **Was bleibt:** Der Server über stdio hat keine Grenze im Netz, für ihn gilt nur die Positivliste im Code. `HTTP_PROXY` und `HTTPS_PROXY` nutzt Ecclium nicht. Was die Vorlage für Squid nicht leistet, etwa bei einem Ziel hinter einem geteilten CDN, steht unter [Grenze im Netz mit Squid](betrieb/egress.md#grenzen).
+
+## Schreiben aus einem Lauf
 
 Ein Lauf einer Routine schreibt ohne eine Person, die bestätigt. An die Stelle der Bestätigung tritt die [Richtlinie](policy.md): Der Kern stellt den Nachweis für einen Schreibvorgang eines Laufs nur aus, wenn ein Eintrag der Routine im Teil `unattended` Tool und Ziel deckt, innerhalb der Grenzen je Lauf und je Tag ([ADR 0032](adr/0032-richtlinie-und-pruefcode.md)). Was die Richtlinie nicht deckt, legt er in die Freigabe-Warteschlange, statt zu schreiben.
 
@@ -217,6 +258,5 @@ Ein Schreibvorgang des Kerns lässt sich 30 Tage lang mit `ecclium undo` zurück
 
 ## Was später kommt
 
-- Phase 6: der Runner, der Routinen nach ihrem Zeitplan startet, mit einem Modell ohne Werkzeuge, und eine Positivliste für ausgehende Verbindungen.
 - Phase 7: der Betrieb über HTTP, voreingestellt mit `elicitation-or-queue` und damit ohne Echo. Setzen Sie dort `ECCLIUM_WRITE_CONFIRMATION=echo-allowed` ausdrücklich, gilt das Echo, und jeder Start warnt.
 - Phase 8: eine Anleitung, wie Sie Pakete und Images vor der Installation prüfen.
