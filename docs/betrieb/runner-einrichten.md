@@ -14,7 +14,7 @@ Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Herstel
 ## Was Sie brauchen
 
 - Den gebauten Checkout und den Pfad von Node.js, wie unter [Betrieb über stdio](stdio.md#bauen). Der Runner ist derselbe Einstieg `packages/cli/dist/bin.js` mit anderen Befehlen.
-- Einen Rechner, der zu den Zeiten der Routinen läuft, mit einem lokalen Dateisystem, kein Netzlaufwerk und kein synchronisierter Ordner.
+- Einen Rechner, der zu den Zeiten der Routinen läuft, mit einem lokalen Dateisystem, also ohne Netzlaufwerk und ohne synchronisierten Ordner.
 - In ChurchTools das Recht, Dienstkonten anzulegen und ihnen Rechte zu geben.
 - Für eine Routine mit Modell einen Anbieter mit einer Chat-Schnittstelle nach dem Vorbild von OpenAI über `https` und einen Schlüssel dafür ([Anbieter](../providers.md)).
 
@@ -43,7 +43,7 @@ mkdir -m 755 /pfad/zum/runner/config /pfad/zum/runner/config/routines /pfad/zum/
 - `config` hält die Richtlinie, die Datei der Anbieter, die Routinen und in `stop` die Kill-Switches. Nichts darin ist ein Geheimnis. Jede Datei gehört Ihrem Benutzer, und weder Gruppe noch andere dürfen darin schreiben.
 - `secrets` hält die Token-Dateien und Schlüssel. Der Ordner liegt nie im Zustandsordner, damit keine Sicherung des Zustandsordners ein Token enthält.
 - `data` ist der Zustandsordner mit Audit, Zählern, Snapshots, Freigabe-Warteschlange und Sperrdateien. Er muss zwischen zwei Läufen erhalten bleiben: Ohne ihn gelten die Grenzen je Tag nicht, und eine Routine läuft für eine erledigte Periode noch einmal.
-- `keys` hält die Tagesschlüssel der Snapshots und der Warteschlange. Sichern Sie diesen Ordner nie ([Datenschutz](../privacy.md#tagesschlüssel)).
+- `keys` hält die Tagesschlüssel der Snapshots und der Freigabe-Warteschlange. Sichern Sie diesen Ordner nie ([Datenschutz](../privacy.md#tagesschlüssel)).
 - `log` nimmt die Ausgabe des Runners auf, wenn cron ihn startet (Schritt 11).
 
 Die Aufteilung entspricht den Pfaden `/config`, `/run/secrets`, `/data` und `/keys` im Container ([Runner der Routinen](runner.md#container)).
@@ -52,7 +52,7 @@ Die Aufteilung entspricht den Pfaden `/config`, `/run/secrets`, `/data` und `/ke
 
 Der Runner arbeitet nie mit dem Konto des Servers. Legen Sie eigene Dienstkonten an, wie unter [Dienstkonto in ChurchTools](dienstkonto.md) beschrieben, jedes mit eigenem Status ohne Rechte und ohne Mitgliedschaft in einer Gruppe:
 
-- **Das eigene Konto des Runners,** hier mit dem Alias `runner`. Mit ihm liest jede Routine, die keinen Eintrag in der Richtlinie hat, von den mitgelieferten `termin-vorschau`. Es schreibt nie, und kein Eintrag der Richtlinie darf es nennen. Der Runner verlangt seine Token-Datei bei jedem Start, auch wenn noch keine Routine damit liest.
+- **Das eigene Konto des Runners.** Sein Alias ist fest `runner`, seine Token-Datei heisst `ct_token_runner`. Mit ihm liest jede Routine, die keinen Eintrag in der Richtlinie hat, von den mitgelieferten `termin-vorschau`. Es schreibt nie, und kein Eintrag der Richtlinie darf es nennen. Der Runner verlangt seine Token-Datei bei jedem Start, auch wenn noch keine Routine damit liest.
 - **Je ein Konto für Routinen, die ins Wiki schreiben,** mit einem Alias Ihrer Wahl, etwa `berichte`. Den Alias nennt der Eintrag der Routine in der Richtlinie als `credential`.
 
 Geben Sie jedem Konto genau die Rechte seiner Routinen. Welche das sind, steht je Routine unter [Mitgelieferte Routinen](../../routines/README.md). Hat ein Konto mehr, schreibt ein Lauf nicht, sondern legt seinen Abschnitt in die Freigabe-Warteschlange.
@@ -79,11 +79,11 @@ Legen Sie je Konto eine Datei an, wie unter [Betrieb über stdio](stdio.md#token
 - `pseudonym_key` braucht jede Routine mit Modell, auch für eine Vorschau, weil ihre Daten in der Stufe `strict` zum Modell gehen ([Betrieb über stdio](stdio.md#schlüsseldatei-anlegen)). `wiki-hygiene` braucht ihn nicht.
 - `runner_mac_key` ist der Schlüssel des Prüfcodes der Kennzeichnung. Ihn braucht jede Routine, die ins Wiki schreibt. Sichern Sie ihn: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig ([Sicherheit](../security.md#schlüssel-des-prüfcodes)).
 
-Beide Dateien enthalten verschiedene Schlüssel, sonst startet Ecclium nicht.
+Die beiden Dateien müssen verschiedene Schlüssel enthalten, sonst startet Ecclium nicht.
 
 ## 5. Anbieter des Modells
 
-Für eine Routine mit Modell legen Sie die Datei der Anbieter an und daneben, in `secrets`, die Datei mit dem Schlüssel des Anbieters, wie eine Token-Datei. `wiki-hygiene` braucht beides nicht.
+Für eine Routine mit Modell legen Sie die Datei der Anbieter an und zusätzlich in `secrets` die Datei mit dem Schlüssel des Anbieters, angelegt wie eine Token-Datei. `wiki-hygiene` braucht beides nicht.
 
 ```yaml
 # /pfad/zum/runner/config/providers.yaml
@@ -178,9 +178,9 @@ Sehen Sie sich dann an, was ein Lauf schreiben würde:
 /pfad/zum/runner/ecclium-runner run-once dienstplan-report --preview
 ```
 
-Die Vorschau liest mit dem Konto aus dem Eintrag, fragt das Modell und zeigt den Abschnitt auf stdout, ohne die Zeile der Kennzeichnung. Sie schreibt nichts. Lesen und Modell kosten wie bei einem Lauf. Stimmt der Abschnitt nicht, ändern Sie Prompt, Vorlage oder Routine und sehen Sie ihn sich erneut an.
+Die Vorschau liest mit dem Konto aus dem Eintrag, fragt das Modell und zeigt den Abschnitt auf stdout, ohne die Zeile der Kennzeichnung. Sie schreibt nichts, und auch der Eintrag allein lässt den Runner noch nicht schreiben, solange `ECCLIUM_READ_ONLY` nicht auf `false` steht. Lesen und Modell kosten wie bei einem Lauf. Stimmt der Abschnitt nicht, ändern Sie Prompt, Vorlage oder Routine und sehen Sie ihn sich erneut an.
 
-Hat eine Routine keinen Eintrag, liest die Vorschau mit dem eigenen Konto des Runners. So sehen Sie `termin-vorschau`, die nie einen Eintrag braucht.
+Hat eine Routine keinen Eintrag, liest die Vorschau mit dem eigenen Konto des Runners. So sehen Sie `termin-vorschau`, die nie einen Eintrag braucht. Eine Routine fürs Wiki liesse sich so auch vor ihrem Eintrag ansehen, das eigene Konto des Runners bräuchte dafür aber ihre Leserechte. Diese Anleitung nimmt deshalb zuerst den Eintrag.
 
 ## 10. Schreiben einschalten und ein Lauf von Hand
 
@@ -204,11 +204,11 @@ Der Lauf zählt gegen die Grenzen der Richtlinie wie jeder andere. Danach steht 
 /pfad/zum/runner/ecclium-runner audit show --run <Lauf>
 ```
 
-Der Befehl zeigt, was der Lauf gelesen und geschrieben hat. Starten Sie den Lauf ein zweites Mal: Er ändert den Abschnitt der Periode oder lässt ihn stehen, er hängt keinen zweiten an. Endet ein Lauf mit einem anderen Code als 0, sagt die Tabelle der [Exit-Codes](runner.md#exit-codes), was zu tun ist. Legt er seinen Abschnitt in die Freigabe-Warteschlange, nennt `ecclium queue list --runner` den Grund, meist zu weite Rechte des Kontos oder ein anderer Name des Ziels.
+Der Befehl zeigt, was der Lauf gelesen und geschrieben hat. Starten Sie den Lauf ein zweites Mal: Er ändert den Abschnitt der Periode oder lässt ihn stehen, er hängt keinen zweiten an. Endet ein Lauf mit einem anderen Code als 0, sagt die Tabelle der [Exit-Codes](runner.md#exit-codes), was zu tun ist. Legt er seinen Abschnitt in die Freigabe-Warteschlange, nennt `ecclium-runner queue list --runner` den Grund, meist zu weite Rechte des Kontos oder ein anderer Name des Ziels.
 
 ## 11. Zeitplan
 
-Am einfachsten ruft cron alle 15 Minuten den Einzellauf auf. Er führt jede Routine aus, die fällig ist, und endet:
+Für den Zeitplan genügt cron: Es ruft alle 15 Minuten den Einzellauf auf, der jede Routine ausführt, die fällig ist, und dann endet:
 
 ```text
 */15 * * * * /pfad/zum/runner/ecclium-runner run-once --due >> /pfad/zum/runner/log/runner.log 2>&1
@@ -228,7 +228,7 @@ Mit `ECCLIUM_EGRESS=off` begrenzt nur die Positivliste im Code, wohin der Runner
 
 Die Compose-Datei, die beides zusammenstellt, kommt mit dem Bundle für das Self-Hosting. Bis dahin bauen Sie den Aufbau selbst nach diesen beiden Seiten. Der Job `e2e` in CI startet ihn bei jedem Pull Request mit `scripts/e2e/compose.yaml`. Diese Datei ist für Tests gemacht, nicht für den Betrieb, zeigt aber die Netze und Einbindungen.
 
-Ob der Weg steht, prüft `ecclium-runner doctor` dort, wo der Runner läuft: einen Tunnel zu jedem Ziel der Liste, 403 für einen Namen ausserhalb und keinen direkten Weg zu ChurchTools. Er liest dazu die Rechte jedes Kontos des Runners und meldet zu weite und fehlende ([Prüfen mit `ecclium doctor`](doctor.md)). Mit `ECCLIUM_EGRESS=off` prüft er den Weg nicht und meldet das als Befund.
+Ob der Weg steht, prüft `ecclium-runner doctor` dort, wo der Runner läuft: einen Tunnel zu jedem Ziel der Liste, 403 für einen Namen ausserhalb und keinen direkten Weg zu ChurchTools. Ausserdem liest er die Rechte jedes Kontos des Runners und meldet zu weite und fehlende ([Prüfen mit `ecclium doctor`](doctor.md)). Mit `ECCLIUM_EGRESS=off` prüft er den Weg nicht und meldet das als Befund.
 
 ## 13. Überwachen
 
@@ -241,7 +241,7 @@ Ob der Weg steht, prüft `ecclium-runner doctor` dort, wo der Runner läuft: ein
 
 - **Anhalten:** Eine leere Datei `writes-off` im Ordner `config/stop` hält jeden Lauf an, `writes-off-routine-<Routine>` die Läufe einer Routine, ohne Neustart ([Runner der Routinen](runner.md#anhalten)).
 - **Freigabe-Warteschlange:** `ecclium-runner queue list --runner` zeigt, was wartet und warum, `queue show --runner <Kennung>` den ganzen Unterschied, `queue approve --runner <Kennung>` gibt frei, `queue reject --runner <Kennung>` weist ab. Ein Eintrag verfällt nach 14 Tagen.
-- **Rücknahme:** `ecclium-runner undo --run <Lauf>` nimmt zurück, was ein Lauf ins Wiki geschrieben hat, in der Voreinstellung 30 Tage lang ([Runner der Routinen](runner.md#rücknahme)).
+- **Rücknahme:** `ecclium-runner undo --run <Lauf>` nimmt zurück, was ein Lauf ins Wiki geschrieben hat, 30 Tage lang und nur, solange `ECCLIUM_SNAPSHOTS` nicht auf `off` steht ([Runner der Routinen](runner.md#rücknahme)).
 - **Neues Token:** Ersetzen Sie die Token-Datei durch Umbenennen. Nach einem Vorfall ändern Sie zuerst das Passwort des Kontos ([Dienstkonto in ChurchTools](dienstkonto.md#nach-einem-vorfall)).
 - **Sicherung:** Sichern Sie `config` und `data`, Entwürfe in `data/output` nur so lange wie nötig. Die Dateien aus `secrets` sichern Sie getrennt wie andere Zugangsdaten, vor allem `runner_mac_key`. `keys` sichern Sie nie.
 - **Nach einer Änderung** an Routinen, Richtlinie, Anbietern oder Rechten: `config check --runner`, dann `doctor`, dann eine Vorschau.
