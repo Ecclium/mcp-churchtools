@@ -9,7 +9,7 @@ Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Herstel
 - Ein Lauf schreibt, ohne dass eine Person zusieht. Ecclium legt vorher fest, wohin er schreibt, womit und wie viel. Ob der Inhalt stimmt, prüft es nicht: Ein Sprachmodell kann falsch zählen, etwas weglassen oder einem Text in seinen Daten folgen. Lesen Sie einen Bericht deshalb wie einen Entwurf. Die Kennzeichnung am Ende sagt jeder Leserin und jedem Leser, dass er automatisch entstanden ist.
 - Eine Routine mit Modell gibt Daten Ihrer Gemeinde an den Anbieter des Modells, maskiert, aber nicht anonym ([Datenschutz](privacy.md#was-an-den-anbieter-des-sprachmodells-geht)).
 - Ecclium verschickt nichts. Ein Entwurf ist eine Datei, die eine Person liest und weitergibt.
-- Was hier steht, belegen Tests mit Stellvertretern für ChurchTools und für das Modell. Ein Lauf mit einem echten Modell an einer Testinstanz mit synthetischen Daten steht noch aus.
+- Was hier steht, belegen Tests mit Stellvertretern für ChurchTools und für das Modell und Läufe mit einem echten Modell an einer Testinstanz mit synthetischen Daten. Dort nannten zwei Berichte aus denselben Daten verschieden viele offene Anfragen, und ein Entwurf nannte jedes Datum mit einem falschen Jahr.
 
 ## Was eine Routine ist
 

@@ -213,7 +213,7 @@ Ein Korpus von 19 Angriffen auf Deutsch und Englisch läuft bei jeder Änderung 
 - **Gefälschte Kennzeichnung:** Einen Abschnitt mit einer Zeile, die sich als Kennzeichnung von Ecclium liest, weist der Kern ab, auch mit Zeichen anderer Schriften oder einem Braille-Leerzeichen in den festen Wörtern. Ähnliche Buchstaben des lateinischen Alphabets erkennt er nicht, etwa ein grosses «I» für ein kleines «l» oder «rn» für «m». Für eine eigene Kennzeichnung hält Ecclium eine solche Zeile nie, eine Person sieht aber eine zweite Zeile, die wie die Kennzeichnung aussieht.
 - **Text, der kein Link ist:** Eine nackte IPv4-Adresse, `@Name` ohne Link auf eine Person und `javascript:` ohne Link bleiben als Text stehen. Wie ChurchTools solche Texte zeigt, ist nicht geprüft.
 - **Nicht geprüft** ist auch, ob ChurchTools HTML-Kommentare und Tag-Zeichen von Unicode im Text einer Seite unverändert speichert und wie es sie zeigt. Tag-Zeichen entfernt die Pipeline, bevor das Modell sie sieht.
-- **Noch ohne echtes Modell:** Die Tests laufen mit Stellvertretern für ChurchTools und das Modell. Ein Lauf mit einem echten Modell an einer Testinstanz mit synthetischen Daten steht noch aus.
+- **Mit einem echten Modell:** An einer Testinstanz mit synthetischen Daten schrieb ein echtes Modell im Bericht den Titel eines Events mit einer Anweisung nur ab und folgte ihr nicht. In einem Entwurf trug ein Termin mit einer solchen Anweisung im Titel als Titel nur noch den Satz, den sie verlangt. Ziel, Tool und Aufbau blieben in jedem Lauf, wie oben beschrieben.
 
 ## Grenze im Netz für den Runner
 
