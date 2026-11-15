@@ -10,12 +10,18 @@
  * one did in a draft of appointments at a test instance, while a field of
  * the kind date was only checked to be a day that exists. The days of a
  * run are those its routine names in the parameters of its inputs, such
- * as `+7d` and `+35d`, and every day that stands in the data as a value
- * of its own, such as the start of an appointment of several days that
- * began before the first of them. Text people write stands in the data
- * envelope and never counts, so that a title such as «1800-01-01» cannot
- * widen the days. One day more on each side, because ChurchTools gives
- * moments in UTC and the model writes the day in the zone of the parish.
+ * as `+7d` and `+35d`, and every day in a field of the data whose name
+ * ends in `Date`, such as the start of an appointment of several days
+ * that began before the first of them. A title stands in the data
+ * envelope and a name of a person in a field of its own, so neither
+ * widens the days, also not when it reads «1800-01-01». One day more on
+ * each side, because ChurchTools gives moments in UTC and the model
+ * writes the day in the zone of the parish.
+ *
+ * What it is not: a check against an attack. The start and the end of an
+ * appointment are set by people, and one from 1800 to 2100 widens the
+ * days of every run that reads it. It catches a model that writes a wrong
+ * year, as the one at the test instance did.
  *
  * @packageDocumentation
  */
@@ -62,16 +68,20 @@ export function isDay(value: string): boolean {
   );
 }
 
-// The day so many days after another, as YYYY-MM-DD.
+// The last day of the form YYYY-MM-DD.
+const lastDay = Date.UTC(9999, 11, 31);
+
+// The day so many days after another, as YYYY-MM-DD, at most the last day
+// of the form, so that a day set to 9999-12-31 in the data does not give a
+// day of six digits that no answer could reach.
 const shift = (day: string, days: number): string => {
   const [year, month, date] = day.split('-').map(Number) as [
     number,
     number,
     number,
   ];
-  return new Date(Date.UTC(year, month - 1, date) + days * dayMs)
-    .toISOString()
-    .slice(0, 10);
+  const at = Math.min(Date.UTC(year, month - 1, date) + days * dayMs, lastDay);
+  return new Date(at).toISOString().slice(0, 10);
 };
 
 /**
@@ -133,20 +143,30 @@ export function runDaysOf(
     }
   }
 
-  // A day in the data: a value of its own that is a day or a moment, read
-  // through own data properties, never through a getter. A text of people
-  // starts with the mark of its envelope and is never one.
-  const stack: unknown[] = inputs.flatMap((input) => input.values);
+  // A day in the data: the whole value of a field whose name ends in
+  // `Date`, as the read tools name a start, an end or a change, that is a
+  // day or a moment. Read through own data properties, never through a
+  // getter. A name of a person is no such field, even when it reads like a
+  // day, and a text starts with the mark of its envelope.
+  const stack: [string, unknown][] = inputs.flatMap((input) =>
+    input.values.map((value): [string, unknown] => ['', value]),
+  );
   while (stack.length > 0) {
-    const value = stack.pop();
+    const [name, value] = stack.pop() as [string, unknown];
     if (typeof value === 'string') {
       const day = value.slice(0, 10);
-      if (dateOrDateTimePattern.test(value) && isDay(day)) take(day);
+      if (
+        name.endsWith('Date') &&
+        dateOrDateTimePattern.test(value) &&
+        isDay(day)
+      ) {
+        take(day);
+      }
     } else if (typeof value === 'object' && value !== null) {
       for (const key of Object.keys(value)) {
         const property = Object.getOwnPropertyDescriptor(value, key);
         if (property !== undefined && 'value' in property) {
-          stack.push(property.value);
+          stack.push([key, property.value]);
         }
       }
     }

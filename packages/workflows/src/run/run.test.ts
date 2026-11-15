@@ -1138,7 +1138,7 @@ describe('the days of a run', () => {
     ).toEqual({ first: '2026-09-30', last: '2026-11-08' });
   });
 
-  it('counts a day or a moment of its own in the data, never one in a text or behind a getter', () => {
+  it('counts a day or a moment in a field of the data named for a date, never a name, a text or a getter', () => {
     const behind = {};
     Object.defineProperty(behind, 'startDate', {
       enumerable: true,
@@ -1152,18 +1152,31 @@ describe('the days of a run', () => {
             startDate: '2026-12-31T19:00:00Z',
             endDate: '2026-12-31T23:30:00Z',
           },
+          { startDate: '2026-02-30T10:00:00Z', endDate: '1800-01-01 Fest' },
+        ],
+        assignments: [
+          { person: { firstName: '1800-01-01', lastName: '1800-01-02' } },
         ],
         notes: [
           '<<data-abababababababab>>1800-01-01<</data-abababababababab>>',
-          '1800-01-01 Jubiläum',
-          '2026-02-30T10:00:00Z',
+          '1800-01-01',
         ],
+        title: '1800-01-01',
+        date: '1800-01-01',
         behind,
       },
     ];
     expect(
       runDaysOf(runOf({ from: '+0d', to: '+14d' }), trigger, [{ values }]),
     ).toEqual({ first: '2026-10-31', last: '2027-01-01' });
+  });
+
+  it('ends the days at the last day of the form', () => {
+    expect(
+      runDaysOf(runOf({ from: '+0d' }), trigger, [
+        { values: [{ events: [{ endDate: '9999-12-31' }] }] },
+      ]),
+    ).toEqual({ first: '2026-11-08', last: '9999-12-31' });
   });
 
   it('names no days when neither the parameters nor the data name one', () => {
