@@ -29,7 +29,7 @@ import {
 
 // The probe of the protocol version (ADR 0073): a recorder in front of the
 // MCP SDK. These tests drive it in the process with requests as clients
-// send them, without a socket; two tests bind to 127.0.0.1, which the
+// send them, without a socket; one test binds to 127.0.0.1, which the
 // network guard of the tests allows (ADR 0052).
 
 type Line = Record<string, unknown>;
@@ -290,6 +290,46 @@ describe('refusals the prepared rule does not cover', () => {
       streng: { status: 400, fehler: -32020 },
     });
     expect(line).not.toHaveProperty('angeglichen');
+  });
+
+  it('a request of 2026 with another method in Mcp-Method', async () => {
+    const h = harness();
+    const line = await send(
+      h,
+      post(modern('tools/list'), headersFor('prompts/list')),
+    );
+    expect(line).toMatchObject({
+      mcpMethod: 'anders',
+      streng: { status: 400, fehler: -32020 },
+    });
+    expect(line).not.toHaveProperty('angeglichen');
+  });
+
+  it('an envelope of 2026 without the header of the version', async () => {
+    const h = harness();
+    const line = await send(
+      h,
+      post(modern('tools/list'), { 'mcp-method': 'tools/list' }),
+    );
+    expect(line).toMatchObject({
+      kopfzeile: 'fehlt',
+      koerper: '2026-07-28',
+      streng: { status: 400, fehler: -32020 },
+    });
+    expect(line).not.toHaveProperty('angeglichen');
+  });
+
+  it('a request of 2025 with a version in the header the SDK does not know', async () => {
+    const h = harness();
+    const line = await send(
+      h,
+      post(legacy('tools/list'), { 'mcp-protocol-version': '2099-01-01' }),
+    );
+    expect(line).toMatchObject({
+      kopfzeile: '2099-01-01',
+      umschlag: 'nein',
+      streng: { status: 400 },
+    });
   });
 
   it('a call of 2026 without Mcp-Name', async () => {
