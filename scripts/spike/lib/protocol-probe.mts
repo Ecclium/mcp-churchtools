@@ -898,10 +898,7 @@ export function blockRequest(
     // each address or value counts on its own. The scheme words are left
     // out, they would block the fixed origins of the clients.
     for (const piece of value.split(/[,;]/)) {
-      const part = piece
-        .slice(piece.indexOf('=') + 1)
-        .trim()
-        .replace(/^"|"$/g, '');
+      const part = stripQuotes(piece.slice(piece.indexOf('=') + 1).trim());
       if (part !== '' && !['http', 'https'].includes(part.toLowerCase())) {
         guard.block(part);
       }
@@ -917,6 +914,15 @@ export function blockRequest(
   if (address !== undefined) {
     guard.block(address);
   }
+}
+
+// A double quote at either end, as Forwarded may quote an address. Plain
+// string checks, so no anchor of a regular expression applies to only one
+// side of an alternative.
+function stripQuotes(value: string): string {
+  const start = value.startsWith('"') ? 1 : 0;
+  const end = value.length > start && value.endsWith('"') ? -1 : undefined;
+  return value.slice(start, end);
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

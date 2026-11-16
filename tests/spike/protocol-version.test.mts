@@ -921,7 +921,10 @@ describe('the code behind the probe', () => {
       );
       expect(sources.length).toBeGreaterThan(0);
       for (const source of sources) {
-        expect(source, file).not.toMatch(/^@ecclium\/|packages\//);
+        expect(source.startsWith('@ecclium/'), `${file}: ${source}`).toBe(
+          false,
+        );
+        expect(source.includes('packages/'), `${file}: ${source}`).toBe(false);
       }
     }
   });
