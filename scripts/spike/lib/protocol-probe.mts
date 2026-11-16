@@ -24,6 +24,12 @@ export const protocolVersionMetaKey = 'io.modelcontextprotocol/protocolVersion';
 export const clientInfoMetaKey = 'io.modelcontextprotocol/clientInfo';
 
 /**
+ * U+FEFF, the byte order mark, built from its code so that no editor drops
+ * or hides it in the source.
+ */
+export const byteOrderMark = String.fromCharCode(0xfeff);
+
+/**
  * Versions the SDK 2.3.1 serves, as its sources list them: five of the era
  * 2025 and one of the era 2026.
  */
@@ -35,6 +41,9 @@ export const supportedVersions = [
   '2024-11-05',
   '2024-10-07',
 ] as const;
+
+/** The one version of the era 2026 the SDK 2.3.1 serves. */
+export const modernVersion = '2026-07-28';
 
 /** Methods recorded by name. Any other method is «andere Methode». */
 export const knownMethods = [
@@ -93,10 +102,13 @@ function nameField(method: string | undefined): string | undefined {
 }
 
 const versionForm = /^\d{4}-\d{2}-\d{2}$/;
-const clientNameForm = /^[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/;
-// A version starts with a digit, so a client cannot put a word of its
-// choice there.
-const clientVersionForm = /^\d[0-9A-Za-z.+-]{0,31}$/;
+// A name without dots, so it cannot be a host name; a client chooses it, so
+// it is short.
+const clientNameForm = /^[A-Za-z0-9][A-Za-z0-9_ -]{0,47}$/;
+// A version of at most three numbers with an optional suffix, so a client
+// cannot put a word of its choice or an IPv4 address there.
+const clientVersionForm =
+  /^\d{1,9}(?:\.\d{1,9}){0,2}(?:[-+][0-9A-Za-z.]{1,16})?$/;
 const base64Prefix = '=?base64?';
 const base64Suffix = '?=';
 const base64Canonical =
@@ -145,6 +157,12 @@ export const outputWords = [
   'von',
   'fremd',
   'wellKnown',
+  'ohneAufzeichnung',
+  'kopfzeilenZuGross',
+  'ungueltigeAnfrage',
+  'frist',
+  'expect',
+  'verbindungenAbgewiesen',
   // values
   '14-protocol-version',
   'nachsichtig',
@@ -290,7 +308,10 @@ export function parseBody(
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(body);
+    // The SDK decodes the body with a TextDecoder, which drops a leading
+    // byte order mark; read it the same way, or a request it serves would
+    // count as invalid here.
+    parsed = JSON.parse(body.startsWith(byteOrderMark) ? body.slice(1) : body);
   } catch {
     // Also a body nested too deep for the parser.
     return { nachricht: 'ungültig' };
@@ -342,7 +363,9 @@ export function observe(request: ProbeRequest, path: PathClass): Observation {
     : method === 'initialize'
       ? params?.['clientInfo']
       : undefined;
-  const client = describeClient(clientInfo);
+  // The name of a client is text it chooses. Only a request on the path of
+  // a client keeps it, not one from whoever finds the address.
+  const client = path.mcp ? describeClient(clientInfo) : undefined;
   const base: Observation = {
     pfad: path.pfad,
     httpMethode: ['POST', 'GET', 'DELETE'].includes(request.method)
@@ -426,31 +449,47 @@ function nameHeader(
   method: string | undefined,
   params: Readonly<Record<string, unknown>> | undefined,
 ): string {
+  // The same steps as validateStandardRequestHeaders of the SDK 2.3.1: a
+  // header is needed only when the body carries the field as text, a
+  // header in Base64 is decoded first, and a header without a field in the
+  // body passes if it decodes.
   const field = nameField(method);
   if (field === undefined) {
     return header === null ? 'nicht verlangt' : 'vorhanden';
   }
-  if (header === null) {
-    return 'fehlt';
-  }
   const expected = params?.[field];
+  const bodyValue = typeof expected === 'string' ? expected : undefined;
+  if (header === null) {
+    return bodyValue === undefined ? 'nicht verlangt' : 'fehlt';
+  }
   const value = stripSpace(header);
-  if (typeof expected !== 'string') {
+  const encoded =
+    value.startsWith(base64Prefix) && value.endsWith(base64Suffix);
+  const decoded = encoded ? decodeBase64(value) : value;
+  if (decoded === undefined) {
+    return 'ungültig';
+  }
+  if (bodyValue === undefined) {
+    return 'vorhanden';
+  }
+  if (decoded !== bodyValue) {
     return 'anders';
   }
-  if (value === expected) {
-    return 'gleich';
+  return encoded ? 'gleich (Base64)' : 'gleich';
+}
+
+function decodeBase64(value: string): string | undefined {
+  const text = value.slice(base64Prefix.length, -base64Suffix.length);
+  if (!base64Canonical.test(text)) {
+    return undefined;
   }
-  if (value.startsWith(base64Prefix) && value.endsWith(base64Suffix)) {
-    const encoded = value.slice(base64Prefix.length, -base64Suffix.length);
-    if (
-      base64Canonical.test(encoded) &&
-      Buffer.from(encoded, 'base64').toString('utf8') === expected
-    ) {
-      return 'gleich (Base64)';
-    }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(
+      Buffer.from(text, 'base64'),
+    );
+  } catch {
+    return undefined;
   }
-  return 'anders';
 }
 
 function originWord(value: string | null): string {
@@ -478,9 +517,19 @@ function acceptWord(value: string | null): string {
         : 'andere';
 }
 
-// Spaces and tabs at both ends, as HTTP allows around a header value.
+// Spaces and tabs at both ends, as HTTP allows around a header value. A
+// loop, not a regular expression, which would take quadratic time on a
+// long run of spaces inside the value.
 function stripSpace(value: string): string {
-  return value.replace(/^[ \t]+/, '').replace(/[ \t]+$/, '');
+  let start = 0;
+  let end = value.length;
+  while (start < end && (value[start] === ' ' || value[start] === '\t')) {
+    start += 1;
+  }
+  while (end > start && (value[end - 1] === ' ' || value[end - 1] === '\t')) {
+    end -= 1;
+  }
+  return value.slice(start, end);
 }
 
 /** What an answer shows. */
@@ -566,9 +615,11 @@ function versionList(value: unknown): readonly string[] | undefined {
 }
 
 /**
- * Tells whether the prepared rule of ADR 0073 applies: the header names a
- * supported version, the body claims another supported version in its
- * envelope, and the SDK refused exactly that with 400 and -32020.
+ * Tells whether the prepared rule of ADR 0073 applies: a request other than
+ * `initialize` claims the version 2026-07-28 in its envelope, the header
+ * names another supported version, and the SDK refused exactly that with
+ * 400 and -32020. `initialize` with a header of 2026 is another refusal of
+ * the SDK, which the rule does not cover.
  *
  * @param observation - What the request showed.
  * @param strict - The answer of the SDK to the request as sent.
@@ -581,9 +632,10 @@ export function adjustment(
   const supported = supportedVersions as readonly string[];
   if (
     observation.umschlag === 'ja' &&
+    observation.methode !== 'initialize' &&
+    observation.koerper === modernVersion &&
     supported.includes(observation.kopfzeile) &&
-    supported.includes(observation.koerper) &&
-    observation.kopfzeile !== observation.koerper &&
+    observation.kopfzeile !== modernVersion &&
     strict.status === 400 &&
     strict.fehler === -32020
   ) {
@@ -647,7 +699,11 @@ export interface RunFacts {
   readonly modus: 'nachsichtig' | 'streng';
   readonly sdk: string;
   readonly ende: Ending;
+  /** Every recorded request, held-back lines included. */
+  readonly anfragen: number;
   readonly zurueckgehalten: number;
+  /** Requests Node.js answered itself, by kind, with their count. */
+  readonly ohneAufzeichnung: Readonly<Record<string, number>>;
 }
 
 /**
@@ -701,9 +757,56 @@ export function summarize(entries: readonly Entry[], facts: RunFacts): Json {
     modus: facts.modus,
     sdk: facts.sdk,
     ende: facts.ende,
-    anfragen: entries.length,
+    anfragen: facts.anfragen,
     zurueckgehalten: facts.zurueckgehalten,
+    ohneAufzeichnung: { ...facts.ohneAufzeichnung },
     pfade,
+  };
+}
+
+/**
+ * Replaces each value in a fixed form that the block list of the request
+ * stops by «anderer Wert»: the versions, the name and version of the client,
+ * the negotiated and the offered versions. A client name equal to a part of
+ * the host, or a version made of a number from a forwarded address, then
+ * costs only that value, not the line.
+ *
+ * @param guard - The guard of the request.
+ * @param entry - The entry as recorded.
+ * @returns The entry with every stopped value replaced.
+ */
+export function sanitizeEntry(guard: Guard, entry: Entry): Entry {
+  const keep = (value: string): string =>
+    guard.passesBlockList(value) ? value : 'anderer Wert';
+  const keepVerdict = (verdict: Verdict): Verdict => ({
+    ...verdict,
+    ...(verdict.ausgehandelt === undefined
+      ? {}
+      : { ausgehandelt: keep(verdict.ausgehandelt) }),
+    ...(verdict.angeboten === undefined
+      ? {}
+      : { angeboten: verdict.angeboten.map(keep) }),
+  });
+  const { observation } = entry;
+  return {
+    ...entry,
+    observation: {
+      ...observation,
+      kopfzeile: keep(observation.kopfzeile),
+      koerper: keep(observation.koerper),
+      ...(observation.client === undefined
+        ? {}
+        : {
+            client: {
+              name: keep(observation.client.name),
+              version: keep(observation.client.version),
+            },
+          }),
+    },
+    streng: keepVerdict(entry.streng),
+    ...(entry.angeglichen === undefined
+      ? {}
+      : { angeglichen: keepVerdict(entry.angeglichen) }),
   };
 }
 
@@ -777,8 +880,14 @@ export function blockRequest(
       continue;
     }
     guard.block(value.trim());
-    if (name === 'host') {
-      guard.block(value.trim().replace(/:\d+$/, ''));
+    if (name === 'host' || name === 'x-forwarded-host') {
+      // The name and each of its labels, as the other probes block the
+      // host of an instance.
+      const host = value.trim().replace(/:\d+$/, '');
+      guard.block(host);
+      for (const label of host.split('.')) {
+        guard.block(label);
+      }
     }
     // Lists such as X-Forwarded-For and pairs such as Forwarded or Cookie:
     // each address or value counts on its own. The scheme words are left

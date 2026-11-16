@@ -19,6 +19,7 @@ import {
 } from '../../scripts/spike/14-protocol-version.mts';
 import { Guard } from '../../scripts/spike/lib/guard.mts';
 import {
+  byteOrderMark,
   clientInfoMetaKey,
   outputWords,
   protocolVersionMetaKey,
@@ -111,16 +112,19 @@ afterEach(async () => {
 
 function harness(strict = false): Harness {
   const output: string[] = [];
-  const guard = new Guard();
-  guard.allowFixed(...outputWords);
-  for (const path of paths) {
-    guard.block(path.slice(1));
-  }
+  const makeGuard = (): Guard => {
+    const guard = new Guard();
+    guard.allowFixed(...outputWords);
+    for (const path of paths) {
+      guard.block(path.slice(1));
+    }
+    return guard;
+  };
   let limits = 0;
   const app = createProbeApp({
     strict,
     paths,
-    guard,
+    makeGuard,
     io: {
       stdout: (text) => output.push(text),
       stderr: () => undefined,
@@ -319,16 +323,92 @@ describe('refusals the prepared rule does not cover', () => {
     expect(line).not.toHaveProperty('angeglichen');
   });
 
-  it('a request of 2025 with a version in the header the SDK does not know', async () => {
+  it('a request of 2025 with a version of 2025 in the header the SDK does not know', async () => {
     const h = harness();
     const line = await send(
       h,
-      post(legacy('tools/list'), { 'mcp-protocol-version': '2099-01-01' }),
+      post(legacy('tools/list'), { 'mcp-protocol-version': '2025-01-01' }),
     );
     expect(line).toMatchObject({
-      kopfzeile: '2099-01-01',
+      kopfzeile: '2025-01-01',
       umschlag: 'nein',
-      streng: { status: 400 },
+      streng: { status: 400, von: 'SDK', fehler: -32000 },
+    });
+    expect(line).not.toHaveProperty('angeglichen');
+  });
+
+  it('initialize with an envelope of 2025 and the header of 2026, which the rule does not cover', async () => {
+    const h = harness();
+    const line = await send(
+      h,
+      post(
+        {
+          ...initialize(),
+          params: {
+            ...(initialize()['params'] as Line),
+            _meta: { ...envelope, [PROTOCOL_VERSION_META_KEY]: '2025-11-25' },
+          },
+        },
+        headersFor('initialize'),
+      ),
+    );
+    expect(line).toMatchObject({
+      umschlag: 'ja',
+      kopfzeile: '2026-07-28',
+      koerper: '2025-11-25',
+      streng: { status: 400, fehler: -32020 },
+    });
+    expect(line).not.toHaveProperty('angeglichen');
+  });
+
+  it('initialize with an envelope of 2026 and the header of 2025, which the rule leaves alone', async () => {
+    const h = harness();
+    const line = await send(
+      h,
+      post(
+        {
+          ...initialize(),
+          params: { ...(initialize()['params'] as Line), _meta: envelope },
+        },
+        headersFor('initialize', { 'mcp-protocol-version': '2025-11-25' }),
+      ),
+    );
+    expect(line).toMatchObject({
+      methode: 'initialize',
+      umschlag: 'ja',
+      kopfzeile: '2025-11-25',
+      koerper: '2026-07-28',
+      streng: { status: 400, fehler: -32020 },
+    });
+    expect(line).not.toHaveProperty('angeglichen');
+  });
+
+  it('a body with a byte order mark, read as the SDK reads it', async () => {
+    const h = harness();
+    const request = post(modern('tools/list'), headersFor('tools/list'));
+    const line = await send(h, {
+      ...request,
+      body: `${byteOrderMark}${request.body ?? ''}`,
+    });
+    expect(line).toMatchObject({
+      nachricht: 'Anfrage',
+      methode: 'tools/list',
+      umschlag: 'ja',
+      mcpMethod: 'gleich',
+      streng: { status: 200, von: 'SDK' },
+    });
+    const listen = post(
+      modern('subscriptions/listen'),
+      headersFor('subscriptions/listen'),
+    );
+    expect(
+      await send(h, {
+        ...listen,
+        body: `${byteOrderMark}${listen.body ?? ''}`,
+      }),
+    ).toMatchObject({
+      methode: 'subscriptions/listen',
+      streng: { von: 'Attrappe', fehler: -32601 },
     });
   });
 
@@ -512,7 +592,6 @@ describe('the output', () => {
           arguments: { q: 'canaryargument' },
         }),
         headersFor('tools/call', { 'mcp-name': 'empty' }),
-        `${paths[0] ?? ''}?q=querycanary`,
       ),
       undefined,
     );
@@ -525,7 +604,66 @@ describe('the output', () => {
       origin: 'anderer Wert',
       client: { name: 'anderer Wert', version: 'anderer Wert' },
     });
-    expect(h.lines()[1]).toMatchObject({ pfad: 'fremd' });
+    expect(h.lines()[1]).toMatchObject({ pfad: 'k1', streng: { status: 200 } });
+  });
+
+  it('keeps no client name from a path of no client', async () => {
+    const h = harness();
+    const line = await send(h, post(initialize(), {}, '/'));
+    expect(line).toMatchObject({ pfad: 'fremd', methode: 'initialize' });
+    expect(line).not.toHaveProperty('client');
+  });
+
+  it('takes no dotted name and no address as a version of a client', async () => {
+    const h = harness();
+    const line = await send(
+      h,
+      post({
+        ...initialize(),
+        params: {
+          ...(initialize()['params'] as Line),
+          clientInfo: { name: 'abc.example.net', version: '203.0.113.5' },
+        },
+      }),
+    );
+    expect(line).toMatchObject({
+      client: { name: 'anderer Wert', version: 'anderer Wert' },
+    });
+    // Counter-check: versions of real clients pass.
+    for (const version of ['2.1.319', '1.49585.0', '0.1.0', '1.0.0-beta.2']) {
+      const shown = await send(
+        h,
+        post({
+          ...initialize(),
+          params: {
+            ...(initialize()['params'] as Line),
+            clientInfo: { name: 'claude-ai', version },
+          },
+        }),
+      );
+      expect(shown).toMatchObject({ client: { name: 'claude-ai', version } });
+    }
+  });
+
+  it('reads Mcp-Name in the edge cases as the SDK does', async () => {
+    const h = harness();
+    const call = (params: Line, name?: string): ProbeRequest =>
+      post(
+        modern('tools/call', params),
+        headersFor(
+          'tools/call',
+          name === undefined ? {} : { 'mcp-name': name },
+        ),
+      );
+    expect(await send(h, call({ arguments: {} }))).toMatchObject({
+      mcpName: 'nicht verlangt',
+    });
+    expect(await send(h, call({ arguments: {} }, 'empty'))).toMatchObject({
+      mcpName: 'vorhanden',
+    });
+    expect(
+      await send(h, call({ name: 'empty', arguments: {} }, '=?base64?***?=')),
+    ).toMatchObject({ mcpName: 'ungültig', streng: { status: 400 } });
   });
 
   it('records the origin of a known client as it is', async () => {
@@ -537,9 +675,10 @@ describe('the output', () => {
     expect(line).toMatchObject({ origin: 'https://claude.ai' });
   });
 
-  it('withholds a line whose client name equals the host', async () => {
+  it('drops a client name equal to a label of the host, and keeps the line', async () => {
     const h = harness();
-    await h.app.handle(
+    const line = await send(
+      h,
       post(
         {
           ...initialize(),
@@ -548,13 +687,34 @@ describe('the output', () => {
             clientInfo: { name: 'hostcanary', version: '1' },
           },
         },
-        { host: 'hostcanary' },
+        { host: 'hostcanary.example.net:8443' },
       ),
-      undefined,
     );
-    expect(h.lines().at(-1)).toMatchObject({ nr: 1, zurueckgehalten: true });
+    expect(line).toMatchObject({
+      nr: 1,
+      methode: 'initialize',
+      client: { name: 'anderer Wert', version: '1' },
+    });
     expect(h.output.join('')).not.toContain('hostcanary');
-    expect(h.app.withheld()).toBe(1);
+    expect(h.app.withheld()).toBe(0);
+  });
+
+  it("lets no stranger's request hold back the lines of a client", async () => {
+    const h = harness();
+    await send(
+      h,
+      post(
+        {},
+        { cookie: 'a=test-client; b=1.0.0', 'x-forwarded-for': 'test-client' },
+        '/',
+      ),
+    );
+    const line = await send(h, post(initialize()));
+    expect(line).toMatchObject({
+      client: { name: 'test-client', version: '1.0.0' },
+    });
+    expect(h.app.withheld()).toBe(0);
+    expect(h.app.entries()).toHaveLength(2);
   });
 
   it('shows the same client name under another host (counter-check)', async () => {
@@ -603,9 +763,16 @@ describe('the output', () => {
       modus: 'nachsichtig',
       sdk: sdkVersion,
       ende: 'Frist',
-      zurueckgehalten: 0,
+      anfragen: 3,
+      zurueckgehalten: 1,
+      ohneAufzeichnung: { kopfzeilenZuGross: 1 },
     }) as Line;
-    expect(summary).toMatchObject({ anfragen: 2, ende: 'Frist' });
+    expect(summary).toMatchObject({
+      anfragen: 3,
+      zurueckgehalten: 1,
+      ende: 'Frist',
+      ohneAufzeichnung: { kopfzeilenZuGross: 1 },
+    });
     const k1 = (summary['pfade'] as Record<string, Line>)['k1'];
     expect(k1).toMatchObject({ anfragen: 2 });
     expect(k1?.['formen']).toEqual([
@@ -626,43 +793,72 @@ describe('the limits', () => {
     expect(h.app.entries()).toHaveLength(maxEntries);
   });
 
-  it('binds to 127.0.0.1, ends itself at the deadline and refuses a large body', async () => {
+  it('binds to 127.0.0.1, keeps no query, limits the body and the headers and ends itself at the deadline', async () => {
     const output: string[] = [];
+    const errors: string[] = [];
     const probe = await startProbe({
       port: 0,
       strict: false,
-      durationMs: 1500,
-      io: { stdout: (text) => output.push(text), stderr: () => undefined },
+      durationMs: 3000,
+      io: {
+        stdout: (text) => output.push(text),
+        stderr: (text) => errors.push(text),
+      },
     });
     expect(bindAddress).toBe('127.0.0.1');
     expect(probe.address).toBe('127.0.0.1');
+    expect(probe.port).toBeGreaterThan(0);
     const base = `http://127.0.0.1:${String(probe.port)}${probe.paths[0] ?? ''}`;
-    const init = await fetch(base, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-      },
-      body: JSON.stringify(initialize()),
-    });
-    expect(init.status).toBe(200);
-    await init.arrayBuffer();
-    const large = await fetch(base, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: 'x'.repeat(1024 * 1024 + 1),
-    });
-    expect(large.status).toBe(413);
-    await large.arrayBuffer();
+    const send = async (
+      body: string,
+      extra: Record<string, string> = {},
+      url = base,
+    ): Promise<number> => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...extra,
+        },
+        body,
+      });
+      await response.arrayBuffer();
+      return response.status;
+    };
+    expect(
+      await send(JSON.stringify(initialize()), {}, `${base}?q=querycanary`),
+    ).toBe(200);
+    // Exactly 1 MiB passes the recorder and reaches the SDK.
+    expect(await send('x'.repeat(1024 * 1024))).toBe(400);
+    expect(await send('x'.repeat(1024 * 1024 + 1))).toBe(413);
+    await expect(send('x'.repeat(4 * 1024 * 1024 + 1))).rejects.toThrow();
+    expect(await send('{}', { 'x-long': 'a'.repeat(17 * 1024) })).toBe(431);
     expect(await probe.finished).toBe(0);
     const lines = output.map((text) => JSON.parse(text) as Line);
+    expect(lines[0]).toMatchObject({ pfad: 'k1', methode: 'initialize' });
+    expect(lines[1]).toMatchObject({
+      nachricht: 'ungültig',
+      streng: { von: 'SDK' },
+    });
+    // Over 1 MiB the recorder answers 413 itself; over 4 MiB it drops the
+    // connection, and the request is recorded all the same.
+    for (const line of [lines[2], lines[3]]) {
+      expect(line).toMatchObject({
+        nachricht: 'zu gross',
+        streng: { status: 413, von: 'Attrappe' },
+      });
+    }
     expect(lines.at(-1)).toMatchObject({
       probe: '14-protocol-version',
       ende: 'Frist',
-      anfragen: 2,
+      anfragen: 4,
       modus: 'nachsichtig',
       sdk: sdkVersion,
+      ohneAufzeichnung: { kopfzeilenZuGross: 1 },
     });
+    expect(output.join('')).not.toContain('querycanary');
+    expect(errors.join('')).toContain('Beenden Sie jetzt auch den Tunnel');
     await expect(fetch(base, { method: 'POST' })).rejects.toThrow();
   });
 });

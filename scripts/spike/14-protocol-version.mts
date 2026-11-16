@@ -7,20 +7,25 @@
  * see which headers of the protocol and which version in the body these
  * clients send, and whether the MCP SDK accepts them.
  *
- * Every request passes a recorder first. It notes what the request shows
- * (see `lib/protocol-probe.mts`) and only then hands the request to
- * `createMcpHandler` of the SDK, the entry Ecclium will use over HTTP. So a
- * request the SDK refuses is recorded as well, with the refusal. Without
- * the switch `ECCLIUM_SPIKE_PROTOCOL_STRICT=ja` the probe is lenient in one
- * case only, the one the prepared rule of ADR 0073 covers: the header names
- * one supported version and the body another. Then it asks the SDK a second
- * time with the header of the body and records both answers.
+ * Every request Node.js passes on goes to a recorder first. It notes what
+ * the request shows (see `lib/protocol-probe.mts`) and only then hands the
+ * request to `createMcpHandler` of the SDK, the entry Ecclium will use over
+ * HTTP. So a request the SDK refuses is recorded as well, with the refusal.
+ * What Node.js answers itself, such as headers over 16 KiB, is counted in
+ * the summary. Without the switch `ECCLIUM_SPIKE_PROTOCOL_STRICT=ja` the
+ * probe is lenient in one case only, the one the prepared rule of ADR 0073
+ * covers: a request other than `initialize` claims 2026-07-28 in its
+ * envelope and the header names another supported version. Then it asks
+ * the SDK a second time with the header of the body and records both
+ * answers.
  *
  * Limits that make «only for the duration of the probe» hold in code: it
  * binds to 127.0.0.1 only (a tunnel on the same machine makes it public),
- * it ends itself after 60 minutes (at most 120) or after 500 requests, and
- * a body may have 1 MiB. Paths are random, one per client, and never
- * appear in the output.
+ * on a port the system picks unless one is set, it ends itself after 60
+ * minutes (at most 120) or after 500 requests, and a body may have 1 MiB.
+ * Paths are random, one per client, and never appear in the output. Each
+ * line is checked against the values of this machine and of its own
+ * request, so a stranger's request cannot hold back a client's line.
  *
  * Usage: see README.md in this folder.
  *
@@ -66,8 +71,10 @@ import {
   entryJson,
   observe,
   outputWords,
+  parseBody,
   pathLabels,
   readVerdict,
+  sanitizeEntry,
   summarize,
   type Ending,
   type Entry,
@@ -93,8 +100,12 @@ export const defaultMinutes = 60;
 /** The most minutes the variable may ask for. */
 export const maxMinutes = 120;
 
-/** Port, unless `ECCLIUM_SPIKE_PORT` names another. */
-export const defaultPort = 8787;
+/**
+ * Port, unless `ECCLIUM_SPIKE_PORT` names another: 0, so the system picks a
+ * free one and the probe names it. A tunnel left running after the probe
+ * then points at no port another program would take by default.
+ */
+export const defaultPort = 0;
 
 // How long the probe waits for the SDK to finish an answer.
 const answerTimeoutMs = 10_000;
@@ -167,8 +178,13 @@ export interface ProbeOptions {
   readonly strict: boolean;
   /** The paths of the clients, in the order of the labels. */
   readonly paths: readonly string[];
-  /** The guard of the run. */
-  readonly guard: Guard;
+  /**
+   * Makes a fresh guard with the fixed words and the values of this machine
+   * on its block list. Each request gets its own, with the values of its
+   * own headers added, so one stranger's request cannot hold back the lines
+   * of the clients or the summary.
+   */
+  readonly makeGuard: () => Guard;
   /** Where the output goes. */
   readonly io: Io;
   /** The clock, in milliseconds. */
@@ -190,8 +206,10 @@ export interface ProbeApp {
     request: ProbeRequest,
     address: string | undefined,
   ) => Promise<Response>;
-  /** The recorded entries. */
+  /** The entries whose lines were written; the summary counts only these. */
   readonly entries: () => readonly Entry[];
+  /** How many requests were recorded, shown or held back. */
+  readonly count: () => number;
   /** How many lines the guard held back. */
   readonly withheld: () => number;
   /** Stops recording and closes the SDK handler. */
@@ -205,7 +223,7 @@ export interface ProbeApp {
  * @returns The recorder.
  */
 export function createProbeApp(options: ProbeOptions): ProbeApp {
-  const { guard, io } = options;
+  const { io } = options;
   const handler = createMcpHandler(createServerFactory(), {
     legacy: 'stateless',
     responseMode: 'json',
@@ -215,6 +233,7 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
   });
   const startedAt = options.now();
   const entries: Entry[] = [];
+  let count = 0;
   let withheld = 0;
   // Read through a function, so that a check after an await reads the
   // current value and not one the compiler narrowed before it.
@@ -231,28 +250,35 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
         forwarded.set(name, value);
       }
     }
+    // One deadline for the whole answer. The abort reaches the SDK through
+    // the signal of the request; a stream it still holds ends with it.
+    const controller = new AbortController();
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(undefined);
+      }, answerTimeoutMs);
+    });
     try {
-      const answer = await handler.fetch(
-        new Request('http://localhost/mcp', {
-          method: request.method,
-          headers: forwarded,
-          ...(request.method === 'POST' && typeof request.body === 'string'
-            ? { body: request.body }
-            : {}),
-        }),
-      );
-      let timer: NodeJS.Timeout | undefined;
-      const text = await Promise.race([
-        answer.text(),
-        new Promise<undefined>((resolve) => {
-          timer = setTimeout(() => {
-            resolve(undefined);
-          }, answerTimeoutMs);
-        }),
+      const answer = await Promise.race([
+        handler.fetch(
+          new Request('http://localhost/mcp', {
+            method: request.method,
+            headers: forwarded,
+            signal: controller.signal,
+            ...(request.method === 'POST' && typeof request.body === 'string'
+              ? { body: request.body }
+              : {}),
+          }),
+        ),
+        deadline,
       ]);
-      clearTimeout(timer);
-      if (text === undefined) {
-        void answer.body?.cancel().catch(() => undefined);
+      const text =
+        answer === undefined
+          ? undefined
+          : await Promise.race([answer.text(), deadline]);
+      if (answer === undefined || text === undefined) {
         return attrappe(504);
       }
       const contentType = answer.headers.get('content-type');
@@ -274,15 +300,22 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
       };
     } catch {
       return attrappe(500);
+    } finally {
+      clearTimeout(timer);
     }
   };
 
-  const record = (entry: Entry): void => {
-    entries.push(entry);
+  const record = (recorded: Entry, guard: Guard): void => {
+    count += 1;
+    // A value in a fixed form that the block list of this request stops,
+    // such as a client name equal to a part of the host, becomes «anderer
+    // Wert»; the rest of the line stays.
+    const entry = sanitizeEntry(guard, recorded);
     allowEntry(guard, entry);
     const line = entryJson(entry);
     const findings = guard.check(line);
     if (findings.length === 0) {
+      entries.push(entry);
       io.stdout(`${JSON.stringify(line)}\n`);
     } else {
       withheld += 1;
@@ -290,7 +323,7 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
         `${JSON.stringify({ nr: entry.nr, zurueckgehalten: true, stellen: findings })}\n`,
       );
     }
-    if (entries.length === maxEntries) {
+    if (count === maxEntries) {
       state.open = false;
       options.onLimit();
     }
@@ -303,6 +336,7 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
     if (!state.open) {
       return new Response(null, { status: 503 });
     }
+    const guard = options.makeGuard();
     blockRequest(guard, request, address);
     const path = classifyPath(request.path, options.paths);
     const observation = observe(request, path);
@@ -334,19 +368,23 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
     if (!isOpen()) {
       return new Response(null, { status: 503 });
     }
-    record({
-      nr: entries.length + 1,
-      sekunde: Math.max(0, Math.floor((options.now() - startedAt) / 1000)),
-      observation,
-      streng: strict,
-      ...(adjusted === undefined ? {} : { angeglichen: adjusted }),
-    });
+    record(
+      {
+        nr: count + 1,
+        sekunde: Math.max(0, Math.floor((options.now() - startedAt) / 1000)),
+        observation,
+        streng: strict,
+        ...(adjusted === undefined ? {} : { angeglichen: adjusted }),
+      },
+      guard,
+    );
     return response;
   };
 
   return {
     handle,
     entries: () => entries,
+    count: () => count,
     withheld: () => withheld,
     close: async () => {
       state.open = false;
@@ -372,15 +410,9 @@ function refuseListen(body: string | undefined): {
   readonly verdict: Verdict;
   readonly response: Response;
 } {
-  let id: unknown = null;
-  try {
-    const parsed: unknown = JSON.parse(body ?? '');
-    if (typeof parsed === 'object' && parsed !== null && 'id' in parsed) {
-      id = parsed.id;
-    }
-  } catch {
-    // The observation already says the body was not valid.
-  }
+  // Parsed as the recorder parses it, so a body it calls a request to listen
+  // gets its own ID back.
+  const id = parseBody(body).message?.['id'];
   const safeId = typeof id === 'string' || typeof id === 'number' ? id : null;
   return {
     verdict: { status: 200, von: 'Attrappe', fehler: -32601 },
@@ -431,31 +463,41 @@ export async function startProbe(options: StartOptions): Promise<RunningProbe> {
   const paths = pathLabels.map(
     () => `/${randomBytes(18).toString('base64url')}`,
   );
-  const guard = new Guard();
-  guard.allowFixed(...outputWords);
-  for (const value of [
-    userInfo().username,
-    homedir(),
-    options.port,
-    ...paths,
-  ]) {
-    guard.block(value);
-  }
+  // What every line is checked against: this machine and the paths. The
+  // port joins once it is bound.
+  const local: (string | number)[] = [userInfo().username, homedir()];
   for (const path of paths) {
-    guard.block(path.slice(1));
+    local.push(path, path.slice(1));
   }
+  const makeGuard = (): Guard => {
+    const guard = new Guard();
+    guard.allowFixed(...outputWords);
+    for (const value of local) {
+      guard.block(value);
+    }
+    return guard;
+  };
 
   let finish: (ending: Ending) => void = () => undefined;
   const app = createProbeApp({
     strict: options.strict,
     paths,
-    guard,
+    makeGuard,
     io: options.io,
     now,
     onLimit: () => {
       finish('Obergrenze');
     },
   });
+  // Requests Node.js answers itself never reach the recorder; they are
+  // counted, so a client that fails there still leaves a trace.
+  const unrecorded = {
+    kopfzeilenZuGross: 0,
+    ungueltigeAnfrage: 0,
+    frist: 0,
+    expect: 0,
+    verbindungenAbgewiesen: 0,
+  };
   const server = createServer(
     { requestTimeout: 30_000, headersTimeout: 10_000, maxHeaderSize: 16_384 },
     (req, res) => {
@@ -463,13 +505,41 @@ export async function startProbe(options: StartOptions): Promise<RunningProbe> {
     },
   );
   server.maxConnections = 64;
+  server.on('clientError', (error: NodeJS.ErrnoException, socket) => {
+    const status =
+      error.code === 'HPE_HEADER_OVERFLOW'
+        ? 431
+        : error.code === 'ERR_HTTP_REQUEST_TIMEOUT'
+          ? 408
+          : 400;
+    if (status === 431) {
+      unrecorded.kopfzeilenZuGross += 1;
+    } else if (status === 408) {
+      unrecorded.frist += 1;
+    } else {
+      unrecorded.ungueltigeAnfrage += 1;
+    }
+    if (socket.writable) {
+      socket.end(`HTTP/1.1 ${String(status)} \r\nConnection: close\r\n\r\n`);
+    } else {
+      socket.destroy();
+    }
+  });
+  server.on('checkExpectation', (_req, res) => {
+    unrecorded.expect += 1;
+    res.writeHead(417, { connection: 'close' });
+    res.end();
+  });
+  server.on('drop', () => {
+    unrecorded.verbindungenAbgewiesen += 1;
+  });
   await listen(server, options.port);
   const bound = server.address();
   const port =
     typeof bound === 'object' && bound !== null ? bound.port : options.port;
   const address =
     typeof bound === 'object' && bound !== null ? bound.address : bindAddress;
-  guard.block(port);
+  local.push(port);
 
   const finished = new Promise<number>((resolve) => {
     let ended = false;
@@ -485,7 +555,9 @@ export async function startProbe(options: StartOptions): Promise<RunningProbe> {
       server.close();
       server.closeAllConnections();
       void app.close().finally(() => {
-        resolve(writeSummary(app, guard, options, now, ending));
+        resolve(
+          writeSummary(app, makeGuard(), options, now, ending, unrecorded),
+        );
       });
     };
   });
@@ -510,12 +582,15 @@ function listen(server: Server, port: number): Promise<void> {
   });
 }
 
+// Sums up the lines that were written, so a held-back line cannot hold back
+// the summary. The guard knows only this machine and the paths.
 function writeSummary(
   app: ProbeApp,
   guard: Guard,
   options: StartOptions,
   now: () => number,
   ending: Ending,
+  unrecorded: Readonly<Record<string, number>>,
 ): number {
   const date = new Date(now());
   const datum = [
@@ -523,14 +598,27 @@ function writeSummary(
     String(date.getMonth() + 1).padStart(2, '0'),
     String(date.getFullYear()),
   ].join('.');
-  guard.allowFixed(datum, sdkVersion, app.entries().length, app.withheld());
+  guard.allowFixed(
+    datum,
+    sdkVersion,
+    app.count(),
+    app.withheld(),
+    ...Object.values(unrecorded),
+  );
+  for (const entry of app.entries()) {
+    allowEntry(guard, entry);
+  }
   const summary = summarize(app.entries(), {
     datum,
     modus: options.strict ? 'streng' : 'nachsichtig',
     sdk: sdkVersion,
     ende: ending,
+    anfragen: app.count(),
     zurueckgehalten: app.withheld(),
+    ohneAufzeichnung: unrecorded,
   });
+  // Whatever else could listen on the port later must not stay public.
+  options.io.stderr(`${notes.tunnelBeenden}\n`);
   // The counts per path and form are numbers the probe made.
   allowCounts(guard, summary);
   const findings = guard.check(summary);
@@ -642,7 +730,9 @@ async function readBody(
 
 const notes = {
   portUngueltig:
-    'Abbruch: ECCLIUM_SPIKE_PORT muss eine ganze Zahl von 1024 bis 65535 sein.',
+    'Abbruch: ECCLIUM_SPIKE_PORT muss 0 oder eine ganze Zahl von 1024 bis 65535 sein.',
+  tunnelBeenden:
+    'Die Attrappe ist beendet. Beenden Sie jetzt auch den Tunnel, falls er noch läuft.',
   minutenUngueltig:
     'Abbruch: ECCLIUM_SPIKE_MINUTES muss eine ganze Zahl von 1 bis 120 sein.',
   modusUngueltig:
@@ -684,12 +774,9 @@ export async function main(moduleUrl: string): Promise<number> {
   } catch (error) {
     return writeError(error, io);
   }
-  const port = readInteger(
-    process.env['ECCLIUM_SPIKE_PORT'],
-    defaultPort,
-    1024,
-    65_535,
-  );
+  const portValue = process.env['ECCLIUM_SPIKE_PORT'];
+  const port =
+    portValue === '0' ? 0 : readInteger(portValue, defaultPort, 1024, 65_535);
   const minutes = readInteger(
     process.env['ECCLIUM_SPIKE_MINUTES'],
     defaultMinutes,
