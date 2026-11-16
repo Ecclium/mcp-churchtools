@@ -4,6 +4,8 @@ Diese Skripte prüfen, wie sich die REST-API von ChurchTools bei einer echten In
 
 Der Spike hat fünf Teile. Die Proben `00` bis `04` lesen nur, mit einem lesenden Dienstkonto. Die Proben `05` bis `07` laufen mit einem eigenen Schreibkonto und nur auf der Testinstanz mit synthetischen Daten aus ADR 0049: `05` und `07` schreiben in einen Schreibbereich des Wikis, `06` liest dort. Vor jeder dieser Proben prüft der Wächter der Testumgebung, ob die Instanz die Testinstanz ist und das Konto das enge Schreibkonto (siehe «Der Wächter der Testumgebung»). Die Probe `08` liest Personen, Gruppen und die globale Suche, mit dem Dienstkonto des Servers und ebenfalls nur auf der Testinstanz. Personen und Gruppen sind Daten besonderer Kategorien. Vor `08` prüft deshalb ein eigener Wächter, ob die Instanz die Testinstanz ist und das Konto nur die erlaubten Leserechte hat (siehe «Der Wächter für Personendaten»). Die Probe `09` liest hinter demselben Wächter Kalender, Termine, Events, Dienste, Abläufe, Ressourcen, Buchungen und Lieder, dazu die Suche im Wiki und die globale Suche. Auch diese Antworten nennen Personen, etwa wer einen Dienst tut oder eine Buchung angelegt hat. Für `09` lässt der Wächter zusätzlich die Leserechte auf diese Bereiche zu (siehe «Was die Probe für die Bereiche tut»). Die Probe `10` prüft die Quellen des Index der Dokumentation: das OpenAPI-Dokument, die Rechtedefinitionen und die öffentlichen Hilfeseiten von ChurchTools, die Academy. Sie läuft mit dem Dienstkonto des Servers und liest keine Personendaten (siehe «Was die Probe für die Quellen der Doku tut»).
 
+Die Probe `14` prüft nicht ChurchTools, sondern MCP-Clients. Sie ist eine Attrappe eines MCP-Servers ohne ChurchTools, ohne Token und ohne Daten und zeigt, welche Protokollversion ein Client über HTTP sendet und ob das MCP-SDK sie annimmt (siehe «Was die Probe der Protokollversion tut»).
+
 Die Proben verringern das Risiko, dass Daten Ihrer Gemeinde in eine Ausgabe geraten. Ausschliessen können sie es nicht. Lesen Sie deshalb jede Ausgabe durch, bevor Sie sie weitergeben (siehe «Durchsicht vor dem Weitergeben»).
 
 ## Was die Proben lesen
@@ -66,6 +68,18 @@ Ausser der Liste der Kategorien, `/api/permissions/global` und dem OpenAPI-Dokum
 - `GET /api/permissions/definitions` ruft sie nur auf, wenn Ihre Instanz die Operation dokumentiert. Von der Antwort zeigt sie die Struktur wie die übrigen lesenden Proben, mit den Schlüsseln, die das Dokument deklariert, höchstens zehn je Objekt, ob die Module und die Rechte der Tools darin stehen, die Klasse der Zahl der Namen von Rechten und ob sie Werte der Instanz trägt: einen Text gleich dem Namen einer Kategorie des Wikis, die das Konto sieht, oder Listen von Objekten mit Kennung und Namen. Laut OpenAPI-Dokument verlangt die Operation `administer persons` in `churchcore`, ein Recht der Verwaltung von Personen, das das Dienstkonto des Servers nicht hat. Ohne dieses Recht antwortet die Instanz mit 403, und die Ausgabe zeigt nur diese Antwort.
 - Die Academy unter `https://churchtools.academy` liest sie mit einem eigenen Client ohne Token. Zuerst liest sie `robots.txt` und fragt die Datei danach vor jeder Anfrage, mit Pfad und Query. Verbietet die Datei eine Anfrage, die die Probe braucht, verlangt sie eine Pause von mehr als 30 Sekunden oder kommt statt der Datei etwas anderes als Text, liest `10` dort nichts weiter. Scheitert eine Anfrage an die Academy, steht unter `academy` nur ihr fester Code, und die Teile zu Ihrer Instanz erscheinen trotzdem. Sonst liest sie `/de/help/` für die Sprachen aus `hreflang`, `/de/wp-json/`, die Kategorien und Wissensbasen der Hilfeseiten und jede deutsche Hilfeseite, je 50 auf einmal, und von jeder weiteren Sprache, höchstens drei, wie viele Hilfeseiten es gibt. Sie fragt nur feste Felder ab, nie die Autorinnen und Autoren einer Seite.
 - Von den Hilfeseiten zeigt sie die Zahl je Abschnitt und je Wissensbasis mit dem Slug, die Grösse der Texte, den Monat der ältesten und der neuesten Änderung und die Seiten je Jahr. Als Klassen zeigt sie, wie viele Seiten Bilder, Videos, Tabellen und Code tragen und wie viele auf welche Klasse von Hosts verlinken oder sie im Text nennen. Kein Text, kein Link und kein Host einer Hilfeseite erscheint.
+
+## Was die Probe der Protokollversion tut
+
+`14-protocol-version.mts` ist eine Attrappe eines MCP-Servers, kein Teil von Ecclium: kein ChurchTools, kein Token, keine Daten, ein einziges Tool `empty`, das nichts tut. Sie darf für die Dauer einer Probe öffentlich und ohne Anmeldung erreichbar sein, damit sich claude.ai und ChatGPT mit ihr verbinden lassen ([ADR 0073](../../docs/adr/0073-betrieb-ueber-http.md)). Für Ecclium gilt diese Ausnahme nie. Die Attrappe sendet keine Anfrage.
+
+- Jede Anfrage geht zuerst an einen eigenen Teil, der festhält, was sie zeigt, und erst danach an `createMcpHandler` des MCP-SDK, im JSON-Modus und mit `legacy: 'stateless'`, wie Ecclium es über HTTP nutzen wird. Eine Anfrage, die das SDK abweist, ist so ebenfalls festgehalten, mit der Abweisung. An das SDK gehen nur die Kopfzeilen des Protokolls, `Content-Type` und `Accept`, nie `Host` oder die Adressen eines Proxys.
+- Festgehalten werden je Anfrage: der Pfad als `k1`, `k2`, `k3` oder «fremd», bei `/.well-known/…` die Art des Dokuments und der Client, dessen Pfad es nennt, die HTTP-Methode, die Art der Nachricht, die JSON-RPC-Methode aus einer festen Liste, die Version in `MCP-Protocol-Version` und im Körper, ob der Körper den Umschlag der Ära 2026 trägt, ob `Mcp-Method` und `Mcp-Name` fehlen, zum Körper passen oder nicht, `Origin` als Adresse aus einer festen Liste (`https://claude.ai`, `https://chatgpt.com`, `https://chat.openai.com`) oder «anderer Wert», ob `Accept` JSON und SSE nennt, ob `Authorization` und `Mcp-Session-Id` da sind, und bei `initialize` oder im Umschlag Name und Version des Clients. Dazu die Antwort: Status, Fehler von JSON-RPC, die ausgehandelte Version und die angebotenen Versionen, und wer geantwortet hat, das SDK oder die Attrappe.
+- Versionen erscheinen nur in der Form `JJJJ-MM-TT`, der Name eines Clients nur als Bezeichner aus höchstens 64 Zeichen, seine Version nur, wenn sie mit einer Ziffer beginnt. Alles andere erscheint als «anderer Wert». Nie erscheinen Adressen, der Host, Pfade, weitere Kopfzeilen, Parameter, Inhalte oder Uhrzeiten, nur das Datum des Laufs und die Sekunden seit dem Start.
+- Ohne den Schalter `ECCLIUM_SPIKE_PROTOCOL_STRICT=ja` gilt in genau einem Fall die vorbereitete Ersatzregel aus ADR 0073: Nennt die Kopfzeile eine unterstützte Version und der Umschlag im Körper eine andere, und weist das SDK die Anfrage deshalb mit 400 und -32020 ab, fragt die Attrappe das SDK ein zweites Mal mit der Version des Körpers in der Kopfzeile. Die Ausgabe zeigt dann unter `streng` die erste und unter `angeglichen` die zweite Antwort, und der Client erhält die zweite. Jede andere Abweisung erhält er so, wie das SDK sie gab. Mit dem Schalter erhält er immer die erste.
+- `subscriptions/listen` beantwortet die Attrappe selbst mit dem Fehler -32601, weil das SDK dafür einen offenen Strom anlegen würde. Ein Pfad, der keinem Client gehört, endet mit 404, eine andere HTTP-Methode als `POST`, `GET` und `DELETE` mit 405, ein Körper über 1 MiB mit 413, alle ohne das SDK.
+- Grenzen im Code: Die Attrappe bindet nur an `127.0.0.1`, ein Tunnel auf demselben Rechner macht sie öffentlich. Sie endet nach 60 Minuten von selbst, mit `ECCLIUM_SPIKE_MINUTES` nach 1 bis 120 Minuten, oder nach 500 Anfragen. Die drei Pfade zieht sie bei jedem Start zufällig. Sie stehen nur im Terminal, nie in der Ausgabe.
+- Wie das SDK die Kopfzeilen prüft und was die Clients gesendet haben, steht in [MCP-Clients über HTTP](../../docs/research/mcp-clients-ueber-http.md).
 
 ## Anfragen
 
@@ -151,7 +165,7 @@ Die Slugs der Academy in `10` stammen aus einer öffentlichen Quelle, die keine 
 
 ## Voraussetzungen
 
-- Node.js in der Version aus `.nvmrc`. Die Proben brauchen nur Node.js selbst, keine Pakete und kein `pnpm install`.
+- Node.js in der Version aus `.nvmrc`. Die Proben `00` bis `13` brauchen nur Node.js selbst, keine Pakete und kein `pnpm install`. Die Probe `14` braucht das MCP-SDK aus den Entwicklungsabhängigkeiten (siehe «Ausführung der Probe der Protokollversion»).
 - Ein Dienstkonto in ChurchTools mit einem Login-Token. Es darf das Wiki sehen und die Testkategorie lesen, sonst nichts. Beim Recht «Einzelne Wiki-Kategorien sehen» wählen Sie nur die Testkategorie, nie «alle». In ChurchTools kann auch ein Personenstatus Rechte vergeben. Auf einer Testinstanz mit synthetischen Daten brachte jeder vorgegebene Status bis auf einen eigene Rechte mit, etwa auf Personendaten und Kalender. Geben Sie dem Dienstkonto deshalb einen eigenen Status ohne Berechtigungen, und nehmen Sie es in keine Gruppe auf. Ob es nur die beiden Rechte hat, zeigt `02-permissions` (Schritt 6), soweit `GET /api/permissions/global` alle Rechte nennt. Ob diese Antwort auch Rechte aus Gruppen enthält, ist ungeprüft.
 - Eine Wiki-Kategorie nur für Tests, mit einigen Seiten aus erfundenem Inhalt, mindestens eine davon mit mehreren Versionen. `04` liest höchstens drei Seiten in der Reihenfolge der Liste. Auf der Testinstanz beobachtet: Eine Seite, die Sie in der Weboberfläche anlegen, hat schon zwei Versionen, die erste ohne Text. In jeder neuen Kategorie legt ChurchTools von selbst eine leere Seite «main» an, die Kategorie hat also eine Seite mehr, als Sie angelegt haben.
 - Optional eine zweite Kategorie ohne vertrauliche Seiten, die das Dienstkonto nicht lesen darf.
@@ -587,6 +601,41 @@ Die Schritte setzen die Variablen `D`, `URL`, `SHA`, `R` und `NODE` aus den Schr
 
    Unter `testinstanz` steht «ja», wenn das Konto die Kennkategorie genau einmal sieht. Nur dann nennt die Ausgabe die Präfixe der Pfade.
 
+## Ausführung der Probe der Protokollversion
+
+Die Probe braucht das MCP-SDK und läuft deshalb im Klon des Repositorys beim geprüften Commit, nach `pnpm install`. Sie braucht kein Token und keine Instanz.
+
+1. Legen Sie die Variablen fest, holen Sie den geprüften Commit und installieren Sie die Abhängigkeiten. `git status --short` muss leer bleiben:
+
+   ```bash
+   K=PFAD_ZUM_KLON
+   SHA=COMMIT_AUS_DEM_PULL_REQUEST
+   D=PRIVATER_ORDNER
+   git -C "$K" switch --detach "$SHA"
+   git -C "$K" status --short
+   pnpm --dir "$K" install --frozen-lockfile
+   NODE="$(mise which node)"
+   mkdir -p -m 700 "$D/ausgabe"
+   ```
+
+2. Starten Sie die Attrappe. Sie hört auf `http://127.0.0.1:8787`, einen anderen Port wählen Sie mit `ECCLIUM_SPIKE_PORT`, eine andere Dauer mit `ECCLIUM_SPIKE_MINUTES`. Auf dem Bildschirm stehen die SHA-256-Werte der Skripte, die Adresse und die drei Pfade `k1` bis `k3`:
+
+   ```bash
+   env -i HOME="$HOME" "$NODE" "$K/scripts/spike/14-protocol-version.mts" > "$D/ausgabe/14-protocol-version.jsonl"
+   echo "Code $?"
+   ```
+
+3. Ein Client auf demselben Rechner, etwa Claude Code, verbindet sich mit `http://127.0.0.1:8787` und dem Pfad `k1`. claude.ai und ChatGPT verbinden sich aus dem Netz ihres Anbieters und brauchen eine öffentliche Adresse mit `https`: einen Tunnel auf demselben Rechner, der auf `http://127.0.0.1:8787` weiterleitet. Der Name des Tunnels gehört wie der Host einer Instanz nie in ein Issue, einen Commit oder `docs/research/`.
+4. Richten Sie in claude.ai einen eigenen Connector ohne Anmeldung mit der Adresse des Tunnels und dem Pfad `k1` ein, in ChatGPT im Developer Mode einen ohne Authentisierung mit dem Pfad `k2`. Lassen Sie in jedem das Tool `empty` einmal aufrufen. Den Connector von claude.ai nutzen Sie nacheinander im Web, in der Mobile-App und in Claude Code, mit einigen Minuten Abstand: Alle drei nutzen denselben Pfad, die Sekunden in der Ausgabe trennen sie.
+5. Beenden Sie zuerst den Tunnel, dann die Attrappe mit Ctrl-C. Sie schreibt danach die Zusammenfassung und endet. Entfernen Sie beide Connectors.
+6. Sehen Sie die Ausgabe durch, wie unter «Durchsicht vor dem Weitergeben» beschrieben. Suchen Sie zusätzlich nach dem Namen des Tunnels und nach den drei Pfaden vom Bildschirm, ohne den Schrägstrich. Jede Suche muss 0 ergeben:
+
+   ```bash
+   grep -c -F -e NAME_DES_TUNNELS -e PFAD_K1 -e PFAD_K2 -e PFAD_K3 "$D/ausgabe/14-protocol-version.jsonl"
+   ```
+
+Jede Zeile der Ausgabe ist ein Objekt in JSON: eine je Anfrage und am Ende die Zusammenfassung mit `"probe": "14-protocol-version"`. Sie zählt je Pfad die Anfragen und jede Form einer Anfrage mit ihren Antworten. `ende` sagt, ob die Frist, die Obergrenze oder ein Signal den Lauf beendet hat. Hält die Sicherung eine Zeile zurück, steht dort nur ihre Nummer mit den Stellen, und die Attrappe endet mit Code 3. Die Codes 2, 3 und 70 gelten wie bei den anderen Proben. Code 2 heisst hier auch, dass `ECCLIUM_SPIKE_PORT`, `ECCLIUM_SPIKE_MINUTES` oder `ECCLIUM_SPIKE_PROTOCOL_STRICT` keinen zulässigen Wert hat oder der Port belegt ist. Code 4 kommt nicht vor, die Attrappe sendet keine Anfrage.
+
 ## Codes
 
 | Code | Bedeutung                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -653,4 +702,4 @@ Die Umleitung `>` legt die Zieldatei an oder leert sie, bevor die Probe startet.
 
 ## Tests
 
-Die Tests in `tests/spike/` laufen mit `pnpm test`, ohne Netz, gegen eine synthetische Instanz, deren Antworten voller Kanarienwerte sind. Keiner dieser Werte darf in einer Ausgabe erscheinen. Woher die Testdaten stammen, steht in [`tests/fixtures/README.md`](../../tests/fixtures/README.md).
+Die Tests in `tests/spike/` laufen mit `pnpm test`, ohne Netz, gegen eine synthetische Instanz, deren Antworten voller Kanarienwerte sind. Keiner dieser Werte darf in einer Ausgabe erscheinen. Die Tests der Probe `14` rufen die Attrappe mit Anfragen beider Ären im Prozess auf, mit Kanarienwerten in Host, Adressen, Pfad, `Origin`, Cookie und Parametern. Einer bindet an `127.0.0.1`. Woher die Testdaten stammen, steht in [`tests/fixtures/README.md`](../../tests/fixtures/README.md).
