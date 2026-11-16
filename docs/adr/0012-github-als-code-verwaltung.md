@@ -32,7 +32,7 @@ Container-Images unter `ghcr.io/ecclium/` (ADR 0004) und der Release-Pfad (ADR 0
 ## Konsequenzen
 
 - Ecclium hängt an Verfügbarkeit, Bedingungen und Plan von GitHub. Fällt GitHub aus, ruhen Pull Requests, CI und Meldungen. Code, Geschichte, ADRs und Dokumentation liegen in jedem Klon vollständig vor. Ein Umzug bliebe möglich, Issues, Einstellungen und Workflows müssten aber neu aufgebaut werden.
-- Viele Schutzmassnahmen sind Einstellungen auf GitHub, keine Dateien im Repository. Das Repository kann sie nicht belegen. Sie gelten als belegt, sobald der Maintainer sie mit Datum in `docs/STATUS.md` bestätigt hat, und das Threat Model führt sie mit dem Stand «Einstellung».
+- Viele Schutzmassnahmen sind Einstellungen auf GitHub, keine Dateien im Repository. Das Repository kann sie nicht belegen. Sie gelten als belegt, sobald der Maintainer sie mit Datum in `docs/STATUS.md` bestätigt hat (nach dem Ende der Phase in ihrer Datei unter `docs/status/`), und das Threat Model führt sie mit dem Stand «Einstellung».
 - Die Konten der Maintainer auf GitHub sind schützenswert (Threat Model W8 und L15). Wer eines übernimmt, kann das Ruleset ändern und mergen.
 - Beitragende brauchen ein Konto bei GitHub. Für das Sign-off genügt die noreply-Adresse von GitHub (ADR 0002).
 - Issues und Pull Requests sind öffentlich. Daten von Gemeinden gehören auch dort nie hinein. Die Issue-Formulare weisen darauf hin, und Sicherheitslücken gehen über den vertraulichen Meldeweg.
@@ -42,4 +42,4 @@ Container-Images unter `ghcr.io/ecclium/` (ADR 0004) und der Release-Pfad (ADR 0
 - Beiträge: `.github/CODEOWNERS`, `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`.
 - CI: `.github/workflows/`, Aktualisierungen: `.github/renovate.json5` (ADR 0021).
 - Meldeweg für Sicherheitslücken: `SECURITY.md`.
-- Ruleset, Positivliste der Actions und die Einstellungen für Sicherheit: in den Einstellungen von Repository und Organisation. Als belegt gilt jede, sobald der Maintainer sie mit Datum in `docs/STATUS.md` bestätigt hat.
+- Ruleset, Positivliste der Actions und die Einstellungen für Sicherheit: in den Einstellungen von Repository und Organisation. Als belegt gilt jede, sobald der Maintainer sie mit Datum in `docs/STATUS.md` bestätigt hat (nach dem Ende der Phase in ihrer Datei unter `docs/status/`).

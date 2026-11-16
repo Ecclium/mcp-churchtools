@@ -9,7 +9,7 @@ Die Spalte «Stand» in den Tabellen bedeutet:
 - **umgesetzt:** im Repository vorhanden und durch eine Prüfung oder einen Test belegt. Grenzen, die die Massnahme bewusst hinnimmt, stehen trotzdem unter «Restrisiken», ebenso, was erst eine Abnahme an einer Instanz zeigen kann.
 - **teilweise:** Ein Teil der Massnahme fehlt noch oder ist nicht belegt. Die Lücke steht unter «Restrisiken».
 - **geplant:** folgt in der genannten Phase.
-- **Einstellung:** eine Einstellung auf GitHub oder in einer App. Das Repository kann sie nicht belegen. Als belegt gilt sie, sobald der Maintainer sie mit Datum in `STATUS.md` bestätigt hat.
+- **Einstellung:** eine Einstellung auf GitHub oder in einer App. Das Repository kann sie nicht belegen. Als belegt gilt sie, sobald der Maintainer sie mit Datum in `STATUS.md` bestätigt hat (nach dem Ende der Phase in ihrer Datei unter `status/`).
 - **offen:** Es gibt noch keine Massnahme, höchstens eine vorgesehene.
 
 ## Überblick

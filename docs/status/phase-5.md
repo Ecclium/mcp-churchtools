@@ -2,7 +2,7 @@
 
 Phase 5, Write-Guard und Schreib-Tools, lief vom 01.11.2026 bis zum 08.11.2026 und ist an diesem Tag abgenommen (#206).
 
-Diese Datei hält fest, was bis zum 16.11.2026 in [STATUS](../STATUS.md) zu dieser Phase stand, jede Zeile unverändert. Nur relative Links zeigen jetzt von `docs/status/` aus. Die Abschnitte heissen wie in STATUS: Ein Verweis auf «Weitere Entscheide» oder «Erledigt» meint den Abschnitt in dieser Datei, bei einem Entscheid, der über die Phase hinaus gilt, den in STATUS. Die Grundsatzentscheide, die offenen Punkte und diese übergreifenden Entscheide stehen weiter in STATUS.
+Diese Datei hält fest, was bis zum 16.11.2026 in [STATUS](../STATUS.md) zu dieser Phase stand, jede Zeile unverändert. Nur relative Links zeigen jetzt von `docs/status/` aus. Nennt ein Eintrag STATUS, meint er die Datei von damals. Die Abschnitte heissen wie in STATUS: Ein Verweis auf «Weitere Entscheide» oder «Erledigt» meint den Abschnitt in dieser Datei, bei einem Entscheid, der über die Phase hinaus gilt, den in STATUS. Die Grundsatzentscheide, die offenen Punkte und diese übergreifenden Entscheide stehen weiter in STATUS.
 
 ## Aktuelle Phase
 

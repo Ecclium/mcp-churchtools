@@ -1,8 +1,8 @@
 # Phase 6: Workflow-Schicht und Runner
 
-Phase 6, Workflow-Schicht und Runner, lief vom 08.11.2026 bis zum 15.11.2026 und ist an diesem Tag abgenommen (#255). Dazu gehört die Korrektur vom 16.11.2026 nach den Befunden der Abnahme (#256). Unter «Stand» steht der Absatz, der bis dahin oben in STATUS alle Phasen zusammenfasste.
+Phase 6, Workflow-Schicht und Runner, lief vom 08.11.2026 bis zum 15.11.2026 und ist an diesem Tag abgenommen (#255). Dazu gehört die Korrektur vom 16.11.2026 nach den Befunden der Abnahme (#256). Unter «Stand» steht der Absatz, der bis dahin oben in STATUS alle Phasen zusammenfasste. Dort meinen «Weitere Entscheide» und «Erledigt» die Datei der genannten Phase, für Phase 7 STATUS.
 
-Diese Datei hält fest, was bis zum 16.11.2026 in [STATUS](../STATUS.md) zu dieser Phase stand, jede Zeile unverändert. Nur relative Links zeigen jetzt von `docs/status/` aus. Die Abschnitte heissen wie in STATUS: Ein Verweis auf «Weitere Entscheide» oder «Erledigt» meint den Abschnitt in dieser Datei, bei einem Entscheid, der über die Phase hinaus gilt, den in STATUS. Die Grundsatzentscheide, die offenen Punkte und diese übergreifenden Entscheide stehen weiter in STATUS.
+Diese Datei hält fest, was bis zum 16.11.2026 in [STATUS](../STATUS.md) zu dieser Phase stand, jede Zeile unverändert. Nur relative Links zeigen jetzt von `docs/status/` aus. Nennt ein Eintrag STATUS, meint er die Datei von damals. Die Abschnitte heissen wie in STATUS: Ein Verweis auf «Weitere Entscheide» oder «Erledigt» meint den Abschnitt in dieser Datei, bei einem Entscheid, der über die Phase hinaus gilt, den in STATUS. Die Grundsatzentscheide, die offenen Punkte und diese übergreifenden Entscheide stehen weiter in STATUS.
 
 ## Stand
 
