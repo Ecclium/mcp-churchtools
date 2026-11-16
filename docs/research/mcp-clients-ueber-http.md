@@ -15,16 +15,18 @@ Dieses Dokument hält fest, was MCP-Clients über HTTP senden und wie das MCP-SD
 
 Ob eine Anfrage zur Ära 2025 oder zur Ära 2026-07-28 gehört, entscheidet das SDK nach dem Körper: Trägt `params._meta` den Schlüssel `io.modelcontextprotocol/protocolVersion`, gehört sie zur Ära 2026, sonst zur Ära 2025. Die Kopfzeile `MCP-Protocol-Version` ändert die Ära nie, das SDK vergleicht sie nur (`dist/src-Cqbh3MYc.mjs`, Funktionen `classifyRequestBody` und `validateStandardRequestHeaders` mit dem Kommentar davor). Laut diesem Kommentar verlangt die Spezifikation auf jeder Anfrage der Ära 2026 die Kopfzeilen `MCP-Protocol-Version` und `Mcp-Method`, und `Mcp-Name` für die Methoden, deren Name oder Adresse sie wiederholt, etwa `tools/call`. Bevor ein Handler läuft, weist das SDK diese Fälle mit dem HTTP-Status 400 ab:
 
-| Fall                                                                   | Fehler | Deckt die Ersatzregel ihn? |
-| ---------------------------------------------------------------------- | ------ | -------------------------- |
-| Kopfzeile nennt eine andere Version als der Umschlag im Körper         | -32020 | ja                         |
-| `initialize` mit einer Kopfzeile der Ära 2026                          | -32020 | nein                       |
-| Kopfzeile der Ära 2026, aber kein Umschlag im Körper                   | -32602 | nein                       |
-| Umschlag der Ära 2026 ohne `MCP-Protocol-Version`                      | -32020 | nein                       |
-| Umschlag der Ära 2026 ohne `Mcp-Method` oder mit einer anderen Methode | -32020 | nein                       |
-| `tools/call` der Ära 2026 ohne `Mcp-Name` oder mit einem anderen Namen | -32020 | nein                       |
+| Fall                                                                   | Fehler | Deckt die Ersatzregel ihn?  |
+| ---------------------------------------------------------------------- | ------ | --------------------------- |
+| Kopfzeile nennt eine andere Version als der Umschlag im Körper         | -32020 | ja, ausser bei `initialize` |
+| `initialize` mit einer Kopfzeile der Ära 2026                          | -32020 | nein                        |
+| Kopfzeile der Ära 2026, aber kein Umschlag im Körper                   | -32602 | nein                        |
+| Umschlag der Ära 2026 ohne `MCP-Protocol-Version`                      | -32020 | nein                        |
+| Umschlag der Ära 2026 ohne `Mcp-Method` oder mit einer anderen Methode | -32020 | nein                        |
+| `tools/call` der Ära 2026 ohne `Mcp-Name` oder mit einem anderen Namen | -32020 | nein                        |
 
-`Mcp-Name` darf den Namen auch in Base64 tragen, in der Form `=?base64?…?=`. Eine Anfrage der Ära 2025 prüft das SDK auf keine dieser Kopfzeilen ausser `MCP-Protocol-Version`, die eine unterstützte Version nennen muss. Die Tests der Probe (`tests/spike/protocol-version.test.mts`) belegen jede Zeile der Tabelle mit dem SDK im Prozess.
+`Mcp-Name` darf den Namen auch in Base64 tragen, in der Form `=?base64?…?=`; eine ungültige Kodierung weist das SDK ebenfalls ab. Trägt der Körper das Feld nicht als Text, verlangt es `Mcp-Name` nicht. Bei einer Anfrage der Ära 2025 prüft das SDK nur `MCP-Protocol-Version`: Eine Version der Ära 2025, die es nicht kennt, etwa 2025-01-01, weist es mit 400 und -32000 ab, eine Version ab 2026-07-28 ohne Umschlag mit -32602 (dritte Zeile). Die Tests der Probe (`tests/spike/protocol-version.test.mts`) belegen jede Zeile der Tabelle mit dem SDK im Prozess, `initialize` mit und ohne Umschlag.
+
+Für den Ort `ingress` von Ecclium folgt daraus: Das SDK liest den Körper mit einem `TextDecoder`, der ein Byte Order Mark am Anfang entfernt. Prüft `ingress` die Methode selbst, etwa um `subscriptions/listen` abzuweisen, oder gleicht es die Kopfzeile an, muss es den Körper genauso lesen oder dem SDK den gelesenen Körper übergeben (`parsedBody`). Sonst sieht es eine andere Nachricht als das SDK, und eine Anfrage mit Byte Order Mark ginge an seiner Prüfung vorbei. Die Attrappe liest den Körper deshalb wie das SDK, mit einem Test.
 
 ## Ergebnisse
 
