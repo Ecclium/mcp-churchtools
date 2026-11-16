@@ -21,7 +21,7 @@
  *
  * A diff longer than a person can read in a dialog gets no question: the
  * plan goes to the queue of the operator, where it is shown whole (decided
- * on 03.11.2026, see `docs/STATUS.md`). The limits are
+ * on 03.11.2026, see `docs/status/phase-5.md`). The limits are
  * {@link confirmationLimits}.
  *
  * @packageDocumentation
