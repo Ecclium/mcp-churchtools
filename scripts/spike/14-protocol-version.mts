@@ -282,18 +282,30 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
         return attrappe(504);
       }
       const contentType = answer.headers.get('content-type');
+      // The leg of the era 2025 answers as a stream of server-sent events
+      // even in the JSON mode. A tunnel without such streams, as a quick
+      // tunnel is, never delivers it. One message of a closed stream goes
+      // to the client as plain JSON, which the protocol allows for a client
+      // that accepts both; the verdict notes that the SDK sent a stream.
+      const single = singleEvent(contentType, text);
       const out = new Headers({ 'cache-control': 'no-store' });
-      if (contentType !== null) {
+      if (single !== undefined) {
+        out.set('content-type', 'application/json');
+      } else if (contentType !== null) {
         out.set('content-type', contentType);
       }
       const allow = answer.headers.get('allow');
       if (allow !== null) {
         out.set('allow', allow);
       }
-      const empty = text === '' || [204, 205, 304].includes(answer.status);
+      const body = single ?? text;
+      const empty = body === '' || [204, 205, 304].includes(answer.status);
       return {
-        verdict: readVerdict(answer.status, contentType, text),
-        response: new Response(empty ? null : text, {
+        verdict: {
+          ...readVerdict(answer.status, contentType, text),
+          antwort: isEventStream(contentType) ? 'SSE' : empty ? 'leer' : 'JSON',
+        },
+        response: new Response(empty ? null : body, {
           status: answer.status,
           headers: out,
         }),
@@ -391,6 +403,34 @@ export function createProbeApp(options: ProbeOptions): ProbeApp {
       await handler.close();
     },
   };
+}
+
+function isEventStream(contentType: string | null): boolean {
+  return (contentType ?? '').toLowerCase().includes('text/event-stream');
+}
+
+// The data of the only message of a stream that has ended, if it is JSON.
+function singleEvent(
+  contentType: string | null,
+  text: string,
+): string | undefined {
+  if (!isEventStream(contentType)) {
+    return undefined;
+  }
+  const data = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).trim());
+  const [only] = data;
+  if (data.length !== 1 || only === undefined) {
+    return undefined;
+  }
+  try {
+    JSON.parse(only);
+    return only;
+  } catch {
+    return undefined;
+  }
 }
 
 function attrappe(status: number): {

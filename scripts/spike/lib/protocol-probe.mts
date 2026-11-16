@@ -155,6 +155,9 @@ export const outputWords = [
   'ausgehandelt',
   'angeboten',
   'von',
+  'antwort',
+  'SSE',
+  'JSON',
   'fremd',
   'wellKnown',
   'ohneAufzeichnung',
@@ -538,6 +541,8 @@ export interface Verdict {
   readonly status: number;
   /** Who answered: the SDK or the probe itself. */
   readonly von: 'SDK' | 'Attrappe';
+  /** How the SDK answered: a stream of server-sent events, JSON or nothing. */
+  readonly antwort?: 'SSE' | 'JSON' | 'leer';
   /** JSON-RPC error code, if the answer is an error. */
   readonly fehler?: number;
   /** The version the answer to `initialize` names. */

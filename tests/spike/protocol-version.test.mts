@@ -153,6 +153,29 @@ async function send(h: Harness, request: ProbeRequest): Promise<Line> {
 }
 
 describe('a client of the era 2025', () => {
+  it('gets the stream of the SDK as plain JSON, which a tunnel without streams delivers', async () => {
+    const h = harness();
+    const response = await h.app.handle(post(initialize()), undefined);
+    expect(response.headers.get('content-type')).toBe('application/json');
+    const answer = JSON.parse(await response.text()) as Line;
+    expect(answer).toMatchObject({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { protocolVersion: '2025-11-25' },
+    });
+    expect(h.lines().at(-1)).toMatchObject({
+      streng: { status: 200, von: 'SDK', antwort: 'SSE' },
+    });
+    // The era 2026 already answers as JSON.
+    await h.app.handle(
+      post(modern('tools/list'), headersFor('tools/list')),
+      undefined,
+    );
+    expect(h.lines().at(-1)).toMatchObject({
+      streng: { status: 200, antwort: 'JSON' },
+    });
+  });
+
   it('is recorded with its version and name and served by the SDK', async () => {
     const h = harness();
     const init = await send(h, post(initialize()));
