@@ -6,7 +6,7 @@
 
 ## Kontext
 
-In Phase 1 kommen die Suchtools `ct_persons_search` und `ct_groups_search` dazu. Sie geben nur Kennung und Name aus, höchstens 50 Treffer je Aufruf, ohne Blättern und mit höchstens 64 KiB je Ergebnis (`docs/STATUS.md`, Weitere Entscheide, Plan für Phase 1). Beide tragen `sensitivity: special`, weil Personen und Gruppen einer Gemeinde auf die Religionszugehörigkeit schliessen lassen (Threat Model, W1). Ihr Ergebnis geht nur hinaus, wenn die Zeile des Aufrufs ganz in der Audit-Datei steht (ADR 0028).
+In Phase 1 kommen die Suchtools `ct_persons_search` und `ct_groups_search` dazu. Sie geben nur Kennung und Name aus, höchstens 50 Treffer je Aufruf, ohne Blättern und mit höchstens 64 KiB je Ergebnis (`docs/status/phase-1.md`, Weitere Entscheide, Plan für Phase 1). Beide tragen `sensitivity: special`, weil Personen und Gruppen einer Gemeinde auf die Religionszugehörigkeit schliessen lassen (Threat Model, W1). Ihr Ergebnis geht nur hinaus, wenn die Zeile des Aufrufs ganz in der Audit-Datei steht (ADR 0028).
 
 Am 12.10.2026 wurde entschieden: Das Dienstkonto des Servers erhält für `security level person` und `security level group` die niedrigste Stufe, die für seine Tools ausreicht, und jedes Tool gibt nur eine feste Liste von Feldern weiter. So erreichen Felder, die ein Tool nicht braucht, den MCP-Client nie, auch wenn ChurchTools sie liefert. Ein ADR hält das mit der Wahl der Felder je Tool fest, bevor das Konto eine dieser Stufen erhält.
 
