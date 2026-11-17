@@ -429,7 +429,9 @@ export function buildExtract(
       return sourceForm('schemas');
     }
     const found: Cleaning = { refs: new Set<string>(), names };
-    reached.set(name, cleanSchema(named[name], `schemas.${name}`, found, name));
+    // The place leaves the name out, as it does with the names of fields:
+    // it comes from the document of an instance.
+    reached.set(name, cleanSchema(named[name], 'schemas', found, name));
     pending.push(...found.refs);
   }
 
