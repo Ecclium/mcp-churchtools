@@ -1,0 +1,59 @@
+{
+  "format": "ecclium.contract.accepted.v1",
+  "entries": [
+    {
+      "operation": "whoami",
+      "feld": "data.firstName",
+      "art": "nicht Pflicht",
+      "grund": "Das Dokument nennt den Vornamen nicht als Pflicht. Der Client verlangt das Feld, und im Smoke-Lauf am 28.10.2026 fehlte es nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "whoami",
+      "feld": "data.lastName",
+      "art": "nicht Pflicht",
+      "grund": "Das Dokument nennt den Nachnamen nicht als Pflicht. Der Client verlangt das Feld, und im Smoke-Lauf am 28.10.2026 fehlte es nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "searchPersons",
+      "feld": "data[].firstName",
+      "art": "nicht Pflicht",
+      "grund": "Das Dokument nennt den Vornamen nicht als Pflicht. Der Client verlangt das Feld, und im Smoke-Lauf am 28.10.2026 fehlte es nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "searchPersons",
+      "feld": "data[].lastName",
+      "art": "nicht Pflicht",
+      "grund": "Das Dokument nennt den Nachnamen nicht als Pflicht. Der Client verlangt das Feld, und im Smoke-Lauf am 28.10.2026 fehlte es nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "person",
+      "feld": "data.firstName",
+      "art": "nicht Pflicht",
+      "grund": "Das Dokument nennt den Vornamen nicht als Pflicht. Der Client verlangt das Feld, und im Smoke-Lauf am 28.10.2026 fehlte es nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "person",
+      "feld": "data.lastName",
+      "art": "nicht Pflicht",
+      "grund": "Das Dokument nennt den Nachnamen nicht als Pflicht. Der Client verlangt das Feld, und im Smoke-Lauf am 28.10.2026 fehlte es nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "person",
+      "feld": "data.isArchived",
+      "art": "nicht Pflicht",
+      "grund": "Das Dokument nennt isArchived nicht als Pflicht. Der Client verlangt das Feld, und im Smoke-Lauf am 28.10.2026 fehlte es nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "appointment",
+      "feld": "data.calculatedDates[].startDate",
+      "art": "nicht deklariert",
+      "grund": "Das Dokument beschreibt calculatedDates als Map je Tag mit startDate und endDate oder als Liste ohne Form ihrer Einträge. Der Client nimmt beide Formen an; die Felder der Einträge einer Liste deklariert das Dokument nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    },
+    {
+      "operation": "appointment",
+      "feld": "data.calculatedDates[].endDate",
+      "art": "nicht deklariert",
+      "grund": "Das Dokument beschreibt calculatedDates als Map je Tag mit startDate und endDate oder als Liste ohne Form ihrer Einträge. Der Client nimmt beide Formen an; die Felder der Einträge einer Liste deklariert das Dokument nicht (docs/research/churchtools-api.md, «Vertragsabgleich an 3.138»)."
+    }
+  ]
+}

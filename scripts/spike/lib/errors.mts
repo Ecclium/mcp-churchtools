@@ -54,6 +54,12 @@ export const hints = {
     'Abbruch: Der Katalog der Escape Hatch in packages/core/src/churchtools/catalog/generated.ts hat nicht die Form, die pnpm docs:refresh schreibt. Prüfen Sie den Stand Ihres Checkouts.',
   dokumentZuVerschachtelt:
     'Abbruch: Das OpenAPI-Dokument in der State-Datei ist zu verschachtelt für den Abgleich. Es wurde nichts daraus ausgegeben.',
+  auszugUngueltig:
+    'Abbruch: Der Auszug in scripts/contract/openapi-extract.json hat nicht die Form, die pnpm docs:refresh schreibt. Prüfen Sie den Stand Ihres Checkouts oder schreiben Sie ihn mit pnpm docs:refresh --nur-vertrag neu.',
+  listeUngueltig:
+    'Abbruch: Die Liste der bekannten Abweichungen in scripts/contract/accepted-deviations.json ist beschädigt. Jeder Eintrag braucht Operation, Art und Grund, das Feld nur, wo es eines gibt, und keiner darf doppelt stehen.',
+  auszugUngleich:
+    'Abbruch: Der Abgleich über den Auszug ergäbe nicht dasselbe wie über das ganze Dokument. Es wurde nichts geschrieben.',
   stateDateiUngueltig:
     'Abbruch: Die State-Datei ist beschädigt oder stammt nicht von 00-inventory. Führen Sie zuerst 00-inventory aus.',
   kategorieFehlt:
