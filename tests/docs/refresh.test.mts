@@ -29,7 +29,9 @@ import { readExtract } from '../../scripts/contract/extract.mts';
 import {
   categoriesDefinition,
   checkInstanceHost,
+  defaultContractFile,
   mainExtract,
+  mainOpenApi,
   refreshDefinition,
 } from '../../scripts/docs/refresh.mts';
 import { academyOrigin } from '../../scripts/spike/lib/academy.mts';
@@ -615,6 +617,73 @@ describe('pnpm docs:refresh', () => {
     );
     expect(result.code).toBe(exitCodes.internal);
     expect(result.texts).toEqual({ 'academy.json': 'alt\n' });
+  });
+});
+
+// Everything that comes from the document, anew from a newer state, with
+// the rights and the help pages as they were (ADR 0076).
+describe('pnpm docs:refresh --nur-openapi', () => {
+  it('writes the facts of the document, the catalog and the extract anew and keeps the rights and the help pages', async () => {
+    let dataDir: URL | undefined;
+    const first = await run((dir) => {
+      dataDir = dir;
+      return refreshDefinition(dir, clock, mappingFile);
+    });
+    expect(first.code, first.output.stderr()).toBe(exitCodes.ok);
+    if (dataDir === undefined) throw new Error('no folder');
+    const newer = syntheticDocument();
+    (newer.paths as Record<string, unknown>)['/api/synthetic/more'] = {
+      get: {
+        operationId: 'listMoreSyntheticThings',
+        summary: 'More things',
+        responses: { '200': { description: 'More things.' } },
+      },
+    };
+    const privates = privateFiles('unused');
+    createState(privates.stateFile, {
+      format: 'ecclium-spike-state.v1',
+      instance: instanceId(origin),
+      version: '3.138',
+      specification: newer,
+    });
+    const output = capture();
+    const code = mainOpenApi(
+      output.io,
+      {
+        ECCLIUM_SPIKE_BASE_URL: origin,
+        ECCLIUM_SPIKE_STATE_FILE: privates.stateFile,
+      },
+      {
+        dataDir,
+        mappingFile,
+        catalogFile: new URL('generated.ts', dataDir),
+        extractFile: new URL('openapi-extract.json', dataDir),
+        contractFile: defaultContractFile,
+      },
+    );
+    expect(code, output.stderr()).toBe(exitCodes.ok);
+    const read = (name: string): string =>
+      readFileSync(new URL(name, dataDir), 'utf8');
+    expect(read('rights.json')).toBe(first.texts['rights.json']);
+    expect(read('academy.json')).toBe(first.texts['academy.json']);
+    expect(read('operations.json')).toContain('listMoreSyntheticThings');
+    expect(read('generated.ts')).toContain('listMoreSyntheticThings');
+    const before = JSON.parse(first.texts['SOURCES.json'] ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    const after = JSON.parse(read('SOURCES.json')) as Record<string, unknown>;
+    expect(after['permissions']).toEqual(before['permissions']);
+    expect(after['academy']).toEqual(before['academy']);
+    expect(after['openapi']).not.toEqual(before['openapi']);
+    expect(readExtract(read('openapi-extract.json')).source).toEqual(
+      after['openapi'],
+    );
+    expect(JSON.parse(output.stdout())).toMatchObject({
+      refresh: 'openapi',
+      churchtoolsVersion: '3.138',
+    });
+    expect(leaks(output, first.forbidden)).toEqual([]);
   });
 });
 

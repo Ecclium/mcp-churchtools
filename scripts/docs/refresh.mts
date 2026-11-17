@@ -71,6 +71,7 @@ import {
 import { hostValues, main, type ProbeDefinition } from '../spike/lib/probe.mts';
 import { isObject, type OpenApiDocument } from '../spike/lib/spec.mts';
 import {
+  type AcademyPageEntry,
   academyPages,
   categoryTree,
   readAcademy,
@@ -78,6 +79,7 @@ import {
   utcSeconds,
 } from './lib/academy.mts';
 import {
+  type AcademyOrigin,
   documentVersionOf,
   factFileNames,
   factFileTexts,
@@ -85,6 +87,7 @@ import {
   openApiExtractNotice,
   openApiNotice,
   operationRightsText,
+  type PermissionsOrigin,
   rightsText,
   writeFactFiles,
 } from './lib/files.mts';
@@ -552,6 +555,127 @@ export function mainMapping(
   }
 }
 
+/** Where `--nur-openapi` reads and writes. */
+export interface OpenApiRefreshFiles {
+  readonly dataDir: URL;
+  readonly mappingFile: URL;
+  readonly catalogFile: URL;
+  readonly extractFile: URL;
+  readonly contractFile: URL;
+}
+
+const defaultOpenApiFiles: OpenApiRefreshFiles = {
+  dataDir: defaultDataDir,
+  mappingFile: defaultMappingFile,
+  catalogFile: defaultCatalogFile,
+  extractFile: defaultExtractFile,
+  contractFile: defaultContractFile,
+};
+
+// One entry of SOURCES.json under data/, as the refresh wrote it.
+const sourceEntry = (dataDir: URL, key: string): unknown => {
+  let json: unknown;
+  try {
+    json = JSON.parse(
+      readFileSync(new URL(factFileNames.sources, dataDir), 'utf8'),
+    );
+  } catch {
+    throw new SpikeError('DATEI', 'zuordnungUngueltig', 'data.SOURCES.json');
+  }
+  return isObject(json) ? json[key] : undefined;
+};
+
+/**
+ * Writes anew what comes from the OpenAPI document alone, from the state
+ * file of 00-inventory, without a token and without the network:
+ * `operations.json`, its entry in `SOURCES.json`, `operation-rights.json`
+ * from the mapping against the new operations, the generated part of the
+ * catalog of the escape hatch and the extract for the contract check
+ * (ADR 0076). The rights and the help pages stay as they are, with their
+ * sources. All texts are made and checked before the first is written.
+ *
+ * @param env - The environment, with the variables of the probes for the
+ *   instance and the state file.
+ * @param files - Where it reads and writes.
+ * @returns The output for the guard, and the guard.
+ * @throws {SpikeError} If the state, the files or the extract do not fit.
+ */
+export function refreshOpenApi(
+  env: Readonly<Record<string, string | undefined>>,
+  files: OpenApiRefreshFiles = defaultOpenApiFiles,
+): { readonly output: Json; readonly guard: Guard } {
+  const { origin, document, openapi } = stateDocument(env);
+  const { churchToolsVersion } = openapi;
+  const operationEntries = operationFacts(document);
+
+  const { dataDir } = files;
+  const rights: RightFactEntry[] = dataEntries(
+    dataDir,
+    factFileNames.rights,
+  ).map((entry) => {
+    const kind = field(entry, 'kind', factFileNames.rights);
+    if (kind !== 'boolean' && kind !== 'list') {
+      throw new SpikeError('DATEI', 'zuordnungUngueltig', 'data.rights.json');
+    }
+    return {
+      module: field(entry, 'module', factFileNames.rights),
+      name: field(entry, 'name', factFileNames.rights),
+      kind,
+      pages: [],
+    };
+  });
+  const academy = dataEntries(dataDir, factFileNames.academy);
+  const mapped = applyMapping(
+    readMapping(readFileSync(files.mappingFile, 'utf8')),
+    {
+      rights,
+      operationIds: operationEntries.map((entry) =>
+        String(entry['operationId']),
+      ),
+      academy: academy.map((entry) => ({
+        path: field(entry, 'path', factFileNames.academy),
+        text: field(entry, 'text', factFileNames.academy),
+      })),
+    },
+  );
+  const permissions = sourceEntry(dataDir, 'permissions');
+  const academyOrigin = sourceEntry(dataDir, 'academy');
+  if (!isObject(permissions) || !isObject(academyOrigin)) {
+    throw new SpikeError('DATEI', 'zuordnungUngueltig', 'data.SOURCES.json');
+  }
+  const texts = factFileTexts({
+    operations: operationEntries,
+    rights: mapped.rights,
+    academy: academy as unknown as readonly AcademyPageEntry[],
+    operationRights: mapped.operationRights,
+    operationsNotice: openApiNotice(document, churchToolsVersion),
+    openapi,
+    permissions: permissions as unknown as PermissionsOrigin,
+    academyOrigin: academyOrigin as unknown as AcademyOrigin,
+  });
+  const extract = contractExtractText(
+    document,
+    openapi,
+    readFileSync(files.contractFile, 'utf8'),
+  );
+  checkInstanceHost({ ...texts, extract }, origin);
+  const catalog = catalogText(catalogOperations(operationEntries));
+  writeFactFiles(texts, dataDir);
+  writeCatalog(catalog, files.catalogFile);
+  writeExtract(extract, files.extractFile);
+
+  const guard = extractGuard(origin, churchToolsVersion);
+  return {
+    output: {
+      refresh: 'openapi',
+      churchtoolsVersion: churchToolsVersion,
+      operationen: count(guard, operationEntries.length),
+      auszug: extractCounts(guard, extract),
+    },
+    guard,
+  };
+}
+
 /**
  * Writes only the extract for the contract check anew, from the state
  * file of 00-inventory, without a token and without the network, and
@@ -668,6 +792,28 @@ function extractCounts(guard: Guard, extract: string): Json {
 }
 
 /**
+ * Runs {@link refreshOpenApi} and prints its counts, or the code of an
+ * error and its hint.
+ *
+ * @param io - Where to write.
+ * @param env - The environment.
+ * @param files - Where it reads and writes.
+ * @returns The exit code.
+ */
+export function mainOpenApi(
+  io: Io,
+  env: Readonly<Record<string, string | undefined>>,
+  files: OpenApiRefreshFiles = defaultOpenApiFiles,
+): number {
+  try {
+    const { output, guard } = refreshOpenApi(env, files);
+    return writeResult(output, guard, io);
+  } catch (error) {
+    return writeError(error, io);
+  }
+}
+
+/**
  * Writes the generated part of the operation catalog from
  * `operations.json` under `data/` without reading any source, and prints
  * how many operations it holds, or the code of an error and its hint.
@@ -756,6 +902,9 @@ if (import.meta.main) {
   } else if (process.argv.includes('--nur-vertrag')) {
     installCrashHandlers(io);
     process.exitCode = mainExtract(io, process.env);
+  } else if (process.argv.includes('--nur-openapi')) {
+    installCrashHandlers(io);
+    process.exitCode = mainOpenApi(io, process.env);
   } else if (process.argv.includes('--nur-katalog')) {
     installCrashHandlers(io);
     process.exitCode = mainCatalog(io, defaultDataDir, defaultCatalogFile);
