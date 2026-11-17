@@ -55,6 +55,15 @@ describe('terminalLines', () => {
     }
   });
 
+  // The core doubled the backslash of a page whose line goes on with
+  // `u{202e}`: a cut between the two halves would leave a line that reads
+  // as that code point.
+  it('keeps each form of text the core made visible whole at a cut', () => {
+    const before = 'a'.repeat(maxOutputLength - 2);
+    const lines = terminalLines('+', `${before}\\\\u{202e}`, true);
+    expect(lines).toEqual([`+${before}`, '\\ ... \\\\u{202e}']);
+  });
+
   // A line of the text can start with what looks like the mark; shown,
   // its backslash is doubled, so it never reads as a continuation.
   it('keeps the mark of a continuation out of reach of the text', () => {
@@ -68,27 +77,24 @@ describe('terminalLines', () => {
   });
 });
 
-// What a person reads from the lines: each line after the first without
-// the mark of a continuation, `\\` as one backslash, `\u{…}` as the
-// character of its code point and any other backslash as itself.
-const readBack = (lines: readonly string[]): string => {
-  const mark = '\\ ... ';
-  const joined = lines
-    .map((line, index) => (index === 0 ? line : line.slice(mark.length)))
-    .join('');
+// What a person reads from one line on its own: `\\` as one backslash,
+// `\u{…}` as the character of its code point and any other backslash as
+// itself. A form split by a cut reads otherwise than the text, so the
+// lines are read one by one, not joined first.
+const readLine = (line: string): string => {
   let text = '';
   let index = 0;
-  while (index < joined.length) {
-    const char = joined.charAt(index);
-    const next = joined.charAt(index + 1);
+  while (index < line.length) {
+    const char = line.charAt(index);
+    const next = line.charAt(index + 1);
+    const close = char === '\\' && next === 'u' ? line.indexOf('}', index) : -1;
     if (char === '\\' && next === '\\') {
       text += '\\';
       index += 2;
-    } else if (char === '\\' && next === 'u') {
-      const end = joined.indexOf('}', index);
-      const point = Number.parseInt(joined.slice(index + 3, end), 16);
-      text += String.fromCodePoint(point);
-      index = end + 1;
+    } else if (char === '\\' && next === 'u' && close !== -1) {
+      const point = Number.parseInt(line.slice(index + 3, close), 16);
+      text += Number.isInteger(point) ? String.fromCodePoint(point) : '?';
+      index = close + 1;
     } else {
       text += char;
       index += 1;
@@ -97,9 +103,28 @@ const readBack = (lines: readonly string[]): string => {
   return text;
 };
 
-// Whatever the text holds, its lines read back as exactly the text: no
-// backslash of the text makes a form, and no form gets lost. A fixed seed
-// keeps the runs the same in CI.
+// The lines without the prefix of the first and the mark of the others,
+// each read on its own.
+const readBack = (prefix: string, lines: readonly string[]): string =>
+  lines
+    .map((line, index) =>
+      readLine(index === 0 ? line.slice(prefix.length) : line.slice(6)),
+    )
+    .join('');
+
+// The form the core gives foreign text (ADR 0029): a backslash doubled,
+// a hidden character as `\u{…}`, anything else as it is.
+const hidden = [0x1b, 0x200b, 0x202e];
+const coreVisible = (text: string): string =>
+  Array.from(text, (character) => {
+    const point = character.codePointAt(0) ?? 0;
+    if (character === '\\') return '\\\\';
+    return hidden.includes(point) ? `\\u{${point.toString(16)}}` : character;
+  }).join('');
+
+// Whatever the text holds, its lines read back as exactly the text, one
+// line at a time, and the mark of a continuation starts exactly the lines
+// after the first. A fixed seed keeps the runs the same in CI.
 describe('the visible form of any text', () => {
   const run = { seed: 31_017, numRuns: 300 };
   const tricky = fc.constantFrom(
@@ -112,30 +137,66 @@ describe('the visible form of any text', () => {
     '1',
     'a',
     'ß',
+    'é',
     String.fromCodePoint(0x1b),
     '\n',
     String.fromCodePoint(0x200b),
+    String.fromCodePoint(0x202e),
     String.fromCodePoint(0x1f389),
+    String.fromCharCode(0xd800),
   );
+  const short = fc.string({ unit: tricky, minLength: 1, maxLength: 40 });
+  // Text that reaches the limit of a line within its last characters, so
+  // that the cut falls among backslashes and forms.
+  const nearCut = fc
+    .tuple(fc.nat({ max: 24 }), short)
+    .map(
+      ([shorter, tail]) => `${'a'.repeat(maxOutputLength - shorter)}${tail}`,
+    );
   const texts = fc.oneof(
-    fc.string({ unit: tricky, minLength: 1, maxLength: 2 * maxOutputLength }),
+    short,
+    nearCut,
     fc.string({ unit: 'binary', minLength: 1, maxLength: 64 }),
   );
+  const prefixes = fc.constantFrom('', '- ', '+ ', '  ');
 
-  it('reads back as the text, in lines the writers take, with the mark only where a line goes on', () => {
+  const holds = (prefix: string, lines: readonly string[]): void => {
+    for (const line of lines) {
+      expect(isTextLine(line, maxOutputLength)).toBe(true);
+    }
+    expect(lines[0]?.startsWith(prefix)).toBe(true);
+    expect(lines[0]?.slice(prefix.length).startsWith('\\ ... ')).toBe(false);
+    for (const line of lines.slice(1)) {
+      expect(line.startsWith('\\ ... ')).toBe(true);
+    }
+  };
+
+  it('reads back as the foreign text, line by line, also where a line is cut', () => {
     fc.assert(
-      fc.property(texts, (text) => {
-        const lines = terminalLines('', text);
-        for (const line of lines) {
-          expect(isTextLine(line, maxOutputLength)).toBe(true);
-        }
-        expect(lines[0]?.startsWith('\\ ... ')).toBe(false);
-        for (const line of lines.slice(1)) {
-          expect(line.startsWith('\\ ... ')).toBe(true);
-        }
-        expect(readBack(lines)).toBe(text);
+      fc.property(prefixes, texts, (prefix, text) => {
+        const lines = terminalLines(prefix, text);
+        holds(prefix, lines);
+        expect(readBack(prefix, lines)).toBe(text);
       }),
       run,
     );
+  });
+
+  it('reads back as the text behind what the core made visible, line by line, also where a line is cut', () => {
+    fc.assert(
+      fc.property(prefixes, texts, (prefix, text) => {
+        const lines = terminalLines(prefix, coreVisible(text), true);
+        holds(prefix, lines);
+        expect(readBack(prefix, lines)).toBe(text);
+      }),
+      run,
+    );
+  });
+
+  it('cuts at least some of the texts it tries', () => {
+    const cut = fc
+      .sample(texts, { seed: run.seed, numRuns: run.numRuns })
+      .filter((text) => terminalLines('', text).length > 1);
+    expect(cut.length).toBeGreaterThan(50);
   });
 });

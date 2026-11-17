@@ -44,14 +44,55 @@ const visible = (character: string): string => {
   return `\\u{${point.toString(16)}}`;
 };
 
+// The digits of a code point the core writes in `\u{…}`, at most six.
+const isHexDigits = (text: string): boolean => {
+  if (text.length < 1 || text.length > 6) return false;
+  for (const digit of text) {
+    if (!'0123456789abcdef'.includes(digit)) return false;
+  }
+  return true;
+};
+
+// Text the core made visible holds its forms whole: `\\` for a backslash
+// and `\u{…}` for a code point (ADR 0029). Each form stays one part, so
+// that a cut never splits it into what reads as another form, such as the
+// second half of `\\` before `u{202e}`; any other character is shown as
+// for foreign text.
+const coreParts = (text: string): string[] => {
+  const found: string[] = [];
+  let index = 0;
+  while (index < text.length) {
+    if (text.startsWith('\\\\', index)) {
+      found.push('\\\\');
+      index += 2;
+      continue;
+    }
+    if (text.startsWith('\\u{', index)) {
+      // The closing brace within the seven characters after `\u{`, so
+      // that a text of many `\u{` without one stays linear.
+      const close = text.slice(index + 3, index + 10).indexOf('}');
+      const digits = text.slice(index + 3, index + 3 + close);
+      if (close !== -1 && isHexDigits(digits)) {
+        found.push(`\\u{${digits}}`);
+        index += 4 + close;
+        continue;
+      }
+    }
+    const character = String.fromCodePoint(text.codePointAt(index) ?? 0);
+    found.push(visible(character));
+    index += character.length;
+  }
+  return found;
+};
+
 // A backslash of the text stays single only before a part that starts no
 // form: it doubles before a second backslash, before `u`, before a space,
 // before a character shown as `\u{…}` and at the end of the text, so that
 // `\\` always reads as one backslash and `\u{…}` and the mark always come
 // from this module. The core doubled its backslashes already.
 const parts = (text: string, shownByCore: boolean): string[] => {
+  if (shownByCore) return coreParts(text);
   const shown = Array.from(text, visible);
-  if (shownByCore) return shown;
   return shown.map((part, index) => {
     if (part !== '\\') return part;
     const next = shown[index + 1];
@@ -70,7 +111,8 @@ const parts = (text: string, shownByCore: boolean): string[] => {
  * @param text - The foreign text of one line.
  * @param shownByCore - Whether the core already made the text visible, as
  *   for the summary and the diff of an entry of the queue: its backslashes
- *   are doubled already and stay as they are.
+ *   are doubled already and stay as they are, and a cut keeps each of its
+ *   forms whole.
  * @returns One or more lines, each with at least one character.
  * @example
  * ```ts
