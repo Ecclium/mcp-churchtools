@@ -25,9 +25,14 @@ import {
 } from '@ecclium/mcp-churchtools-docs-index';
 import { describe, expect, it } from 'vitest';
 
+import { buildExtract, readExtract } from '../../scripts/contract/extract.mts';
 import {
   categoriesDefinition,
   checkInstanceHost,
+  contractExtractText,
+  defaultContractFile,
+  mainExtract,
+  mainOpenApi,
   refreshDefinition,
 } from '../../scripts/docs/refresh.mts';
 import { academyOrigin } from '../../scripts/spike/lib/academy.mts';
@@ -319,6 +324,35 @@ describe('pnpm docs:refresh', () => {
     expect(catalog).toContain('frozenOperations([');
   });
 
+  it('writes the extract for the contract check, when given its place', async () => {
+    const result = await run((dataDir) =>
+      refreshDefinition(
+        dataDir,
+        clock,
+        mappingFile,
+        undefined,
+        new URL('openapi-extract.json', dataDir),
+      ),
+    );
+    expect(result.code, result.output.stderr()).toBe(exitCodes.ok);
+    expect(Object.keys(result.texts).sort()).toEqual(
+      [...files, 'openapi-extract.json'].sort(),
+    );
+    const text = result.texts['openapi-extract.json'] ?? '';
+    const extract = readExtract(text);
+    const sources = JSON.parse(result.texts['SOURCES.json'] ?? '{}') as {
+      openapi: unknown;
+    };
+    expect(extract.source).toEqual(sources.openapi);
+    expect(extract.notice).toContain('CC BY 4.0');
+    expect(looksLikeOpenApiDocument(text)).toBe(false);
+    for (const secret of result.forbidden.filter(
+      (forbidden) => forbidden !== 'example.church.tools',
+    )) {
+      expect(text.toLowerCase()).not.toContain(secret);
+    }
+  });
+
   it('writes five files that pass the checks of the docs index', async () => {
     const result = await run((dataDir) =>
       refreshDefinition(dataDir, clock, mappingFile),
@@ -584,6 +618,283 @@ describe('pnpm docs:refresh', () => {
     );
     expect(result.code).toBe(exitCodes.internal);
     expect(result.texts).toEqual({ 'academy.json': 'alt\n' });
+  });
+});
+
+// Everything that comes from the document, anew from a newer state, with
+// the rights and the help pages as they were (ADR 0076).
+describe('pnpm docs:refresh --nur-openapi', () => {
+  it('writes the facts of the document, the catalog and the extract anew and keeps the rights and the help pages', async () => {
+    let dataDir: URL | undefined;
+    const first = await run((dir) => {
+      dataDir = dir;
+      return refreshDefinition(dir, clock, mappingFile);
+    });
+    expect(first.code, first.output.stderr()).toBe(exitCodes.ok);
+    if (dataDir === undefined) throw new Error('no folder');
+    const newer = syntheticDocument();
+    (newer.paths as Record<string, unknown>)['/api/synthetic/more'] = {
+      get: {
+        operationId: 'listMoreSyntheticThings',
+        summary: 'More things',
+        responses: { '200': { description: 'More things.' } },
+      },
+    };
+    const privates = privateFiles('unused');
+    createState(privates.stateFile, {
+      format: 'ecclium-spike-state.v1',
+      instance: instanceId(origin),
+      version: '3.138',
+      specification: newer,
+    });
+    const output = capture();
+    const code = mainOpenApi(
+      output.io,
+      {
+        ECCLIUM_SPIKE_BASE_URL: origin,
+        ECCLIUM_SPIKE_STATE_FILE: privates.stateFile,
+      },
+      {
+        dataDir,
+        mappingFile,
+        catalogFile: new URL('generated.ts', dataDir),
+        extractFile: new URL('openapi-extract.json', dataDir),
+        contractFile: defaultContractFile,
+      },
+    );
+    expect(code, output.stderr()).toBe(exitCodes.ok);
+    const read = (name: string): string =>
+      readFileSync(new URL(name, dataDir), 'utf8');
+    expect(read('rights.json')).toBe(first.texts['rights.json']);
+    expect(read('academy.json')).toBe(first.texts['academy.json']);
+    expect(read('operations.json')).toContain('listMoreSyntheticThings');
+    expect(read('generated.ts')).toContain('listMoreSyntheticThings');
+    const before = JSON.parse(first.texts['SOURCES.json'] ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    const after = JSON.parse(read('SOURCES.json')) as Record<string, unknown>;
+    expect(after['permissions']).toEqual(before['permissions']);
+    expect(after['academy']).toEqual(before['academy']);
+    expect(after['openapi']).not.toEqual(before['openapi']);
+    expect(readExtract(read('openapi-extract.json')).source).toEqual(
+      after['openapi'],
+    );
+    expect(JSON.parse(output.stdout())).toMatchObject({
+      refresh: 'openapi',
+      churchtoolsVersion: '3.138',
+    });
+    expect(leaks(output, first.forbidden)).toEqual([]);
+  });
+
+  it('writes nothing when the sources lack the help pages, with 2', async () => {
+    let dataDir: URL | undefined;
+    const first = await run((dir) => {
+      dataDir = dir;
+      return refreshDefinition(dir, clock, mappingFile);
+    });
+    expect(first.code, first.output.stderr()).toBe(exitCodes.ok);
+    if (dataDir === undefined) throw new Error('no folder');
+    const sources = JSON.parse(first.texts['SOURCES.json'] ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    delete sources['academy'];
+    writeFileSync(
+      new URL('SOURCES.json', dataDir),
+      `${JSON.stringify(sources, null, 2)}\n`,
+    );
+    // A newer document, so that unchanged facts show that nothing was
+    // written.
+    const newer = syntheticDocument();
+    (newer.paths as Record<string, unknown>)['/api/synthetic/more'] = {
+      get: {
+        operationId: 'listMoreSyntheticThings',
+        summary: 'More things',
+        responses: { '200': { description: 'More things.' } },
+      },
+    };
+    const privates = privateFiles('unused');
+    createState(privates.stateFile, {
+      format: 'ecclium-spike-state.v1',
+      instance: instanceId(origin),
+      version: '3.138',
+      specification: newer,
+    });
+    const output = capture();
+    const code = mainOpenApi(
+      output.io,
+      {
+        ECCLIUM_SPIKE_BASE_URL: origin,
+        ECCLIUM_SPIKE_STATE_FILE: privates.stateFile,
+      },
+      {
+        dataDir,
+        mappingFile,
+        catalogFile: new URL('generated.ts', dataDir),
+        extractFile: new URL('openapi-extract.json', dataDir),
+        contractFile: defaultContractFile,
+      },
+    );
+    expect(code).toBe(exitCodes.configuration);
+    expect(output.stdout()).toBe('');
+    expect(output.stderr()).toContain(hints.zuordnungUngueltig);
+    expect(readFileSync(new URL('operations.json', dataDir), 'utf8')).toBe(
+      first.texts['operations.json'],
+    );
+    expect(readdirSync(dataDir)).not.toContain('generated.ts');
+    expect(readdirSync(dataDir)).not.toContain('openapi-extract.json');
+  });
+});
+
+// The extract alone (ADR 0076): from the state file, without a token and
+// without the network, the facts untouched.
+describe('pnpm docs:refresh --nur-vertrag', () => {
+  const stateOf = (document: unknown, instance = origin) => {
+    const privates = privateFiles('unused');
+    createState(privates.stateFile, {
+      format: 'ecclium-spike-state.v1',
+      instance: instanceId(instance),
+      version: '3.138',
+      specification: document as OpenApiDocument,
+    });
+    return {
+      ECCLIUM_SPIKE_BASE_URL: origin,
+      ECCLIUM_SPIKE_STATE_FILE: privates.stateFile,
+    };
+  };
+  const folderOf = () => mkdtempSync(join(tmpdir(), 'docs-extract-'));
+
+  it('writes only the extract and prints only counts and its size', () => {
+    const folder = folderOf();
+    const extractFile = pathToFileURL(join(folder, 'openapi-extract.json'));
+    const output = capture();
+    const document = {
+      ...syntheticDocument(),
+      servers: [{ url: `${origin}/api` }],
+      paths: {
+        '/whoami': {
+          get: {
+            description: `Siehe ${origin}/whoami`,
+            responses: {
+              '200': {
+                description: 'ok',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: { data: { type: 'object' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const code = mainExtract(output.io, stateOf(document), extractFile);
+    expect(code, output.stderr()).toBe(exitCodes.ok);
+    expect(readdirSync(folder)).toEqual(['openapi-extract.json']);
+    const text = readFileSync(extractFile, 'utf8');
+    const extract = readExtract(text);
+    expect(extract.operations.map((operation) => operation.path)).toEqual([
+      '/api/whoami',
+    ]);
+    expect(text).not.toContain('demo-tenant');
+    expect(JSON.parse(output.stdout())).toEqual({
+      refresh: 'vertrag',
+      churchtoolsVersion: '3.138',
+      auszug: {
+        operationen: 1,
+        schemas: 0,
+        groesse: expect.any(String) as unknown,
+      },
+    });
+  });
+
+  // The check before writing: an extract that would give the comparison
+  // another result than the whole document stops the refresh.
+  it('takes no extract that gives the check another result', () => {
+    const document = {
+      ...syntheticDocument(),
+      servers: [{ url: `${origin}/api` }],
+      paths: {
+        '/whoami': {
+          get: {
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      required: ['data'],
+                      properties: { data: { type: 'object' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    } as OpenApiDocument;
+    const openapi = {
+      retrievedAt: '2026-11-17T00:00:00Z',
+      sha256: '0'.repeat(64),
+      documentVersion: '0.1.0',
+      churchToolsVersion: '3.138',
+    };
+    const contractText = readFileSync(defaultContractFile, 'utf8');
+    expect(() =>
+      contractExtractText(document, openapi, contractText),
+    ).not.toThrow();
+    // A builder that loses what a field requires.
+    const losing: typeof buildExtract = (...input) => {
+      const extract = buildExtract(...input);
+      return {
+        ...extract,
+        operations: extract.operations.map((operation) => ({
+          ...operation,
+          responses: Object.fromEntries(
+            Object.entries(operation.responses).map(([status, schema]) => [
+              status,
+              { ...(schema as object), required: [] },
+            ]),
+          ),
+        })),
+      };
+    };
+    expect(() =>
+      contractExtractText(document, openapi, contractText, losing),
+    ).toThrow(expect.objectContaining({ hint: 'auszugUngleich' }));
+  });
+
+  it('writes nothing for the state of another instance', () => {
+    const folder = folderOf();
+    const extractFile = pathToFileURL(join(folder, 'openapi-extract.json'));
+    const output = capture();
+    const code = mainExtract(
+      output.io,
+      stateOf(syntheticDocument(), 'https://example.church.tools'),
+      extractFile,
+    );
+    expect(code).toBe(exitCodes.configuration);
+    expect(output.stderr()).toContain(hints.stateDateiUngueltig);
+    expect(readdirSync(folder)).toEqual([]);
+  });
+
+  it('writes nothing for a document under another licence', () => {
+    const folder = folderOf();
+    const extractFile = pathToFileURL(join(folder, 'openapi-extract.json'));
+    const output = capture();
+    const code = mainExtract(
+      output.io,
+      stateOf(syntheticDocument('MIT')),
+      extractFile,
+    );
+    expect(code).not.toBe(exitCodes.ok);
+    expect(readdirSync(folder)).toEqual([]);
   });
 });
 

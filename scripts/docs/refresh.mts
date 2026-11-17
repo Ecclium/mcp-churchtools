@@ -42,19 +42,36 @@ import { domainToUnicode } from 'node:url';
 
 import { versionOf } from '../spike/00-inventory.mts';
 
+import { compareContract, contractOperations } from '../contract/check.mts';
+import {
+  buildExtract,
+  defaultExtractFile,
+  documentOf,
+  extractText,
+  maxExtractBytes,
+  readExtract,
+} from '../contract/extract.mts';
 import { formatSize } from '../spike/lib/academy.mts';
+import {
+  checkNodeEnvironment,
+  readOrigin,
+  readState,
+  statePath,
+} from '../spike/lib/env.mts';
 import { SpikeError } from '../spike/lib/errors.mts';
-import { containsWord, type Json } from '../spike/lib/guard.mts';
+import { containsWord, Guard, type Json } from '../spike/lib/guard.mts';
 import { operations } from '../spike/lib/operations.mts';
 import {
   exitCodes,
   installCrashHandlers,
   type Io,
   writeError,
+  writeResult,
 } from '../spike/lib/output.mts';
-import { main, type ProbeDefinition } from '../spike/lib/probe.mts';
-import { isObject } from '../spike/lib/spec.mts';
+import { hostValues, main, type ProbeDefinition } from '../spike/lib/probe.mts';
+import { isObject, type OpenApiDocument } from '../spike/lib/spec.mts';
 import {
+  type AcademyPageEntry,
   academyPages,
   categoryTree,
   readAcademy,
@@ -62,11 +79,15 @@ import {
   utcSeconds,
 } from './lib/academy.mts';
 import {
+  type AcademyOrigin,
   documentVersionOf,
   factFileNames,
   factFileTexts,
+  type OpenApiOrigin,
+  openApiExtractNotice,
   openApiNotice,
   operationRightsText,
+  type PermissionsOrigin,
   rightsText,
   writeFactFiles,
 } from './lib/files.mts';
@@ -176,6 +197,68 @@ export function checkInstanceHost(
   }
 }
 
+/** The contract of the client, which says what the extract holds. */
+export const defaultContractFile = new URL(
+  '../../packages/core/src/churchtools/contract.json',
+  import.meta.url,
+);
+
+/**
+ * Makes the text of the extract for the contract check in CI from the
+ * document (ADR 0076), and checks it before anything is written: the
+ * check over the extract must give exactly the report and the deviations
+ * it gives over the whole document, and the reader of the check must
+ * take the text.
+ *
+ * @param document - The OpenAPI document from the state file.
+ * @param openapi - Where it came from, as `SOURCES.json` names it.
+ * @param contractText - The text of `contract.json`.
+ * @param build - Makes the extract; replaced only by the test of the check.
+ * @returns The text of the extract.
+ * @throws {SpikeError} If the extract would differ or be too large.
+ */
+export function contractExtractText(
+  document: OpenApiDocument,
+  openapi: OpenApiOrigin,
+  contractText: string,
+  build: typeof buildExtract = buildExtract,
+): string {
+  const operations = contractOperations(contractText);
+  const extract = build(
+    document,
+    operations.map((operation) => ({
+      method: operation.method,
+      path: operation.path,
+      status: operation.status,
+      request: operation.request !== undefined,
+    })),
+    openapi,
+    openApiExtractNotice(document, openapi.churchToolsVersion),
+  );
+  const text = extractText(extract);
+  if (Buffer.byteLength(text, 'utf8') > maxExtractBytes) {
+    throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', 'auszug');
+  }
+  // The check over the extract as CI reads it, from its text, against the
+  // check over the whole document.
+  const whole = compareContract(document, operations);
+  const part = compareContract(documentOf(readExtract(text)), operations);
+  if (
+    JSON.stringify([whole.report, whole.deviations]) !==
+    JSON.stringify([part.report, part.deviations])
+  ) {
+    throw new SpikeError('INTERN', 'auszugUngleich');
+  }
+  return text;
+}
+
+// Writes the extract next to the check, as the facts are written: into a
+// new file first, then in place of the old one.
+const writeExtract = (text: string, extractFile: URL): void => {
+  const name = extractFile.pathname.split('/').pop() ?? '';
+  writeFactFiles({ [name]: text }, new URL('./', extractFile));
+};
+
 /**
  * The refresh as a run of the probes' frame, which brings the checks of
  * the environment, the token file, the state file and the guard of the
@@ -186,6 +269,9 @@ export function checkInstanceHost(
  * @param mappingFile - The mapping by hand.
  * @param catalogFile - Where the generated part of the operation catalog
  *   goes, or left out to write none, as in the tests of other files.
+ * @param extractFile - Where the extract for the contract check goes, or
+ *   left out to write none (ADR 0076).
+ * @param contractFile - The contract of the client.
  * @returns The definition for the frame of the probes.
  */
 export function refreshDefinition(
@@ -193,6 +279,8 @@ export function refreshDefinition(
   now: () => Date = () => new Date(),
   mappingFile: URL = defaultMappingFile,
   catalogFile?: URL,
+  extractFile?: URL,
+  contractFile: URL = defaultContractFile,
 ): ProbeDefinition {
   return {
     name: 'docs-refresh',
@@ -283,12 +371,27 @@ export function refreshDefinition(
         permissions,
         academyOrigin: { retrievedAt: read.retrievedAt, pages: pages.fetched },
       });
-      checkInstanceHost(texts, origin);
-      // The catalog is made before anything is written, so that an
-      // operation it cannot take stops the run with no file changed.
+      // The extract and the catalog are made before anything is written,
+      // so that a form they cannot take stops the run with no file
+      // changed.
+      const extract =
+        extractFile === undefined
+          ? undefined
+          : contractExtractText(
+              document,
+              openapi,
+              readFileSync(contractFile, 'utf8'),
+            );
+      checkInstanceHost(
+        extract === undefined ? texts : { ...texts, extract },
+        origin,
+      );
       const catalog = catalogText(catalogOperations(operationEntries));
       writeFactFiles(texts, dataDir);
       if (catalogFile !== undefined) writeCatalog(catalog, catalogFile);
+      if (extract !== undefined && extractFile !== undefined) {
+        writeExtract(extract, extractFile);
+      }
 
       const sizes = Object.fromEntries(
         Object.entries(texts).map(([name, text]) => {
@@ -455,6 +558,266 @@ export function mainMapping(
   }
 }
 
+/** Where `--nur-openapi` reads and writes. */
+export interface OpenApiRefreshFiles {
+  readonly dataDir: URL;
+  readonly mappingFile: URL;
+  readonly catalogFile: URL;
+  readonly extractFile: URL;
+  readonly contractFile: URL;
+}
+
+const defaultOpenApiFiles: OpenApiRefreshFiles = {
+  dataDir: defaultDataDir,
+  mappingFile: defaultMappingFile,
+  catalogFile: defaultCatalogFile,
+  extractFile: defaultExtractFile,
+  contractFile: defaultContractFile,
+};
+
+// One entry of SOURCES.json under data/, as the refresh wrote it.
+const sourceEntry = (dataDir: URL, key: string): unknown => {
+  let json: unknown;
+  try {
+    json = JSON.parse(
+      readFileSync(new URL(factFileNames.sources, dataDir), 'utf8'),
+    );
+  } catch {
+    throw new SpikeError('DATEI', 'zuordnungUngueltig', 'data.SOURCES.json');
+  }
+  return isObject(json) ? json[key] : undefined;
+};
+
+/**
+ * Writes anew what comes from the OpenAPI document alone, from the state
+ * file of 00-inventory, without a token and without the network:
+ * `operations.json`, its entry in `SOURCES.json`, `operation-rights.json`
+ * from the mapping against the new operations, the generated part of the
+ * catalog of the escape hatch and the extract for the contract check
+ * (ADR 0076). It does not fetch the rights and the help pages again but
+ * writes them back from the data folder with their sources, `rights.json`
+ * from the mapping as `--nur-zuordnung` does. All texts are made and
+ * checked before the first is written.
+ *
+ * @param env - The environment, with the variables of the probes for the
+ *   instance and the state file.
+ * @param files - Where it reads and writes.
+ * @returns The output for the guard, and the guard.
+ * @throws {SpikeError} If the state, the files or the extract do not fit.
+ */
+export function refreshOpenApi(
+  env: Readonly<Record<string, string | undefined>>,
+  files: OpenApiRefreshFiles = defaultOpenApiFiles,
+): { readonly output: Json; readonly guard: Guard } {
+  const { origin, document, openapi } = stateDocument(env);
+  const { churchToolsVersion } = openapi;
+  const operationEntries = operationFacts(document);
+
+  const { dataDir } = files;
+  const rights: RightFactEntry[] = dataEntries(
+    dataDir,
+    factFileNames.rights,
+  ).map((entry) => {
+    const kind = field(entry, 'kind', factFileNames.rights);
+    if (kind !== 'boolean' && kind !== 'list') {
+      throw new SpikeError('DATEI', 'zuordnungUngueltig', 'data.rights.json');
+    }
+    return {
+      module: field(entry, 'module', factFileNames.rights),
+      name: field(entry, 'name', factFileNames.rights),
+      kind,
+      pages: [],
+    };
+  });
+  const academy = dataEntries(dataDir, factFileNames.academy);
+  const mapped = applyMapping(
+    readMapping(readFileSync(files.mappingFile, 'utf8')),
+    {
+      rights,
+      operationIds: operationEntries.map((entry) =>
+        String(entry['operationId']),
+      ),
+      academy: academy.map((entry) => ({
+        path: field(entry, 'path', factFileNames.academy),
+        text: field(entry, 'text', factFileNames.academy),
+      })),
+    },
+  );
+  const permissions = sourceEntry(dataDir, 'permissions');
+  const academyOrigin = sourceEntry(dataDir, 'academy');
+  if (!isObject(permissions) || !isObject(academyOrigin)) {
+    throw new SpikeError('DATEI', 'zuordnungUngueltig', 'data.SOURCES.json');
+  }
+  const texts = factFileTexts({
+    operations: operationEntries,
+    rights: mapped.rights,
+    academy: academy as unknown as readonly AcademyPageEntry[],
+    operationRights: mapped.operationRights,
+    operationsNotice: openApiNotice(document, churchToolsVersion),
+    openapi,
+    permissions: permissions as unknown as PermissionsOrigin,
+    academyOrigin: academyOrigin as unknown as AcademyOrigin,
+  });
+  const extract = contractExtractText(
+    document,
+    openapi,
+    readFileSync(files.contractFile, 'utf8'),
+  );
+  checkInstanceHost({ ...texts, extract }, origin);
+  const catalog = catalogText(catalogOperations(operationEntries));
+  writeFactFiles(texts, dataDir);
+  writeCatalog(catalog, files.catalogFile);
+  writeExtract(extract, files.extractFile);
+
+  const guard = extractGuard(origin, churchToolsVersion);
+  return {
+    output: {
+      refresh: 'openapi',
+      churchtoolsVersion: churchToolsVersion,
+      operationen: count(guard, operationEntries.length),
+      auszug: extractCounts(guard, extract),
+    },
+    guard,
+  };
+}
+
+/**
+ * Writes only the extract for the contract check anew, from the state
+ * file of 00-inventory, without a token and without the network, and
+ * leaves the facts of the docs index as they are (ADR 0076). The extract
+ * names its own source, so it may come from a newer document than the
+ * facts.
+ *
+ * @param env - The environment, with the variables of the probes for the
+ *   instance and the state file.
+ * @param extractFile - Where the extract goes.
+ * @param contractFile - The contract of the client.
+ * @returns The output for the guard, and the guard.
+ * @throws {SpikeError} If the state or the extract do not fit.
+ */
+export function refreshExtract(
+  env: Readonly<Record<string, string | undefined>>,
+  extractFile: URL = defaultExtractFile,
+  contractFile: URL = defaultContractFile,
+): { readonly output: Json; readonly guard: Guard } {
+  const { origin, document, openapi } = stateDocument(env);
+  const extract = contractExtractText(
+    document,
+    openapi,
+    readFileSync(contractFile, 'utf8'),
+  );
+  checkInstanceHost({ extract }, origin);
+  writeExtract(extract, extractFile);
+  const guard = extractGuard(origin, openapi.churchToolsVersion);
+  return {
+    output: {
+      refresh: 'vertrag',
+      churchtoolsVersion: openapi.churchToolsVersion,
+      auszug: extractCounts(guard, extract),
+    },
+    guard,
+  };
+}
+
+/**
+ * Runs {@link refreshExtract} and prints its counts, or the code of an
+ * error and its hint.
+ *
+ * @param io - Where to write.
+ * @param env - The environment.
+ * @param extractFile - Where the extract goes.
+ * @param contractFile - The contract of the client.
+ * @returns The exit code.
+ */
+export function mainExtract(
+  io: Io,
+  env: Readonly<Record<string, string | undefined>>,
+  extractFile: URL = defaultExtractFile,
+  contractFile: URL = defaultContractFile,
+): number {
+  try {
+    const { output, guard } = refreshExtract(env, extractFile, contractFile);
+    return writeResult(output, guard, io);
+  } catch (error) {
+    return writeError(error, io);
+  }
+}
+
+// The document of the state file of 00-inventory and where it came from,
+// read without a token and without the network.
+function stateDocument(env: Readonly<Record<string, string | undefined>>): {
+  readonly origin: string;
+  readonly document: OpenApiDocument;
+  readonly openapi: OpenApiOrigin;
+} {
+  checkNodeEnvironment(env);
+  const origin = readOrigin(env);
+  const path = statePath(env);
+  const state = readState(path, origin);
+  if (state.version === null) {
+    throw new SpikeError('DATEI', 'stateOhneVersion');
+  }
+  const document = state.specification;
+  return {
+    origin,
+    document,
+    openapi: {
+      // The state keeps the parsed document, so the hash is taken over its
+      // compact JSON, as the full refresh takes it.
+      retrievedAt: utcSeconds(statSync(path).mtime),
+      sha256: createHash('sha256')
+        .update(JSON.stringify(document), 'utf8')
+        .digest('hex'),
+      documentVersion: documentVersionOf(document),
+      churchToolsVersion: state.version,
+    },
+  };
+}
+
+// The guard of the output of the narrow refreshes: fixed words, the
+// version, and nothing of the host of the instance.
+function extractGuard(origin: string, churchToolsVersion: string): Guard {
+  const guard = new Guard();
+  guard.allowFixed(...words, 'openapi', 'vertrag', 'auszug', 'schemas');
+  guard.allowVersion(churchToolsVersion);
+  for (const value of hostValues(origin)) guard.block(value);
+  return guard;
+}
+
+// The counts and the size of the extract, as fixed words.
+function extractCounts(guard: Guard, extract: string): Json {
+  const read = readExtract(extract);
+  const size = formatSize(Buffer.byteLength(extract, 'utf8'));
+  guard.allowFixed('groesse', size);
+  return {
+    operationen: count(guard, read.operations.length),
+    schemas: count(guard, Object.keys(read.schemas).length),
+    groesse: size,
+  };
+}
+
+/**
+ * Runs {@link refreshOpenApi} and prints its counts, or the code of an
+ * error and its hint.
+ *
+ * @param io - Where to write.
+ * @param env - The environment.
+ * @param files - Where it reads and writes.
+ * @returns The exit code.
+ */
+export function mainOpenApi(
+  io: Io,
+  env: Readonly<Record<string, string | undefined>>,
+  files: OpenApiRefreshFiles = defaultOpenApiFiles,
+): number {
+  try {
+    const { output, guard } = refreshOpenApi(env, files);
+    return writeResult(output, guard, io);
+  } catch (error) {
+    return writeError(error, io);
+  }
+}
+
 /**
  * Writes the generated part of the operation catalog from
  * `operations.json` under `data/` without reading any source, and prints
@@ -541,6 +904,12 @@ if (import.meta.main) {
       defaultMappingFile,
       process.env,
     );
+  } else if (process.argv.includes('--nur-vertrag')) {
+    installCrashHandlers(io);
+    process.exitCode = mainExtract(io, process.env);
+  } else if (process.argv.includes('--nur-openapi')) {
+    installCrashHandlers(io);
+    process.exitCode = mainOpenApi(io, process.env);
   } else if (process.argv.includes('--nur-katalog')) {
     installCrashHandlers(io);
     process.exitCode = mainCatalog(io, defaultDataDir, defaultCatalogFile);
@@ -552,6 +921,7 @@ if (import.meta.main) {
           () => new Date(),
           defaultMappingFile,
           defaultCatalogFile,
+          defaultExtractFile,
         );
     process.exitCode = await main(definition, import.meta.url);
   }

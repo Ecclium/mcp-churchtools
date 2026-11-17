@@ -104,6 +104,52 @@ export function openApiNotice(
   document: OpenApiDocument,
   churchToolsVersion: string,
 ): string {
+  const { title, version, contact } = openApiInfo(document);
+  return [
+    `Fakten aus dem OpenAPI-Dokument «${title}» von ChurchTools, Version ${version} des Dokuments, abgerufen von einer Instanz mit ChurchTools ${churchToolsVersion}.`,
+    ...(contact === undefined ? [] : [`Kontakt laut Dokument: ${contact}.`]),
+    'Das Dokument steht unter der Lizenz CC BY 4.0, ihr Text liegt in LICENSES/CC-BY-4.0.txt.',
+    `Ecclium hat es bearbeitet: ausgewählte Felder, Schemas nach ${String(factDepth)} Schritten gekürzt, ohne Beispiele, Vorgaben und Server, Links auf andere Hosts entfernt.`,
+    'Diese Fakten sind bearbeitetes Material und stehen ebenfalls unter CC BY 4.0, nicht unter der Elastic License 2.0.',
+    'Für sie gilt der Ausschluss der Gewährleistung und der Haftung in Abschnitt 5 der Lizenz.',
+    'Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.',
+  ].join(' ');
+}
+
+/**
+ * The notice of the extract for the contract check
+ * (`scripts/contract/openapi-extract.json`), from `info` of the document
+ * as for `operations.json` (ADR 0076).
+ *
+ * @param document - The OpenAPI document.
+ * @param churchToolsVersion - The version the instance reported.
+ * @returns The notice.
+ * @throws {SpikeError} As {@link openApiNotice}.
+ */
+export function openApiExtractNotice(
+  document: OpenApiDocument,
+  churchToolsVersion: string,
+): string {
+  const { title, version, contact } = openApiInfo(document);
+  return [
+    `Auszug aus dem OpenAPI-Dokument «${title}» von ChurchTools, Version ${version} des Dokuments, abgerufen von einer Instanz mit ChurchTools ${churchToolsVersion}.`,
+    ...(contact === undefined ? [] : [`Kontakt laut Dokument: ${contact}.`]),
+    'Das Dokument steht unter der Lizenz CC BY 4.0, ihr Text liegt in LICENSES/CC-BY-4.0.txt.',
+    'Ecclium hat es bearbeitet: nur die Operationen, die der ChurchTools-Client von Ecclium nutzt, mit Methode, Pfad und Parametern ohne Texte, und die Schemas ihrer Anfragen und Antworten in voller Tiefe, nur mit den Schlüsseln, die der Vertragsabgleich liest, ohne Texte, Beispiele, Vorgaben, Erweiterungen und Server.',
+    'Dieser Auszug ist bearbeitetes Material und steht ebenfalls unter CC BY 4.0, nicht unter der Elastic License 2.0.',
+    'Für ihn gilt der Ausschluss der Gewährleistung und der Haftung in Abschnitt 5 der Lizenz.',
+    'Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.',
+  ].join(' ');
+}
+
+// Title, version and contact from `info` of the document, checked: the
+// licence must be CC BY 4.0 (ADR 0027), address and link of the contact
+// stay out, since they name hosts.
+function openApiInfo(document: OpenApiDocument): {
+  readonly title: string;
+  readonly version: string;
+  readonly contact: string | undefined;
+} {
   const info = isObject(document['info']) ? document['info'] : {};
   const licence = isObject(info['license'])
     ? info['license']['name']
@@ -126,15 +172,7 @@ export function openApiNotice(
   if (contact !== undefined && contact.length > 200) {
     return fail('openapi.info.contact');
   }
-  return [
-    `Fakten aus dem OpenAPI-Dokument «${title}» von ChurchTools, Version ${version} des Dokuments, abgerufen von einer Instanz mit ChurchTools ${churchToolsVersion}.`,
-    ...(contact === undefined ? [] : [`Kontakt laut Dokument: ${contact}.`]),
-    'Das Dokument steht unter der Lizenz CC BY 4.0, ihr Text liegt in LICENSES/CC-BY-4.0.txt.',
-    `Ecclium hat es bearbeitet: ausgewählte Felder, Schemas nach ${String(factDepth)} Schritten gekürzt, ohne Beispiele, Vorgaben und Server, Links auf andere Hosts entfernt.`,
-    'Diese Fakten sind bearbeitetes Material und stehen ebenfalls unter CC BY 4.0, nicht unter der Elastic License 2.0.',
-    'Für sie gilt der Ausschluss der Gewährleistung und der Haftung in Abschnitt 5 der Lizenz.',
-    'Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.',
-  ].join(' ');
+  return { title, version, contact };
 }
 
 /**
@@ -259,7 +297,7 @@ export function operationRightsText(
  * @throws {Error} If a file cannot be written; the new files are removed then.
  */
 export function writeFactFiles(
-  texts: Readonly<Partial<FactTexts>>,
+  texts: Readonly<Record<string, string>>,
   dataDir: URL,
 ): void {
   const pending = Object.entries(texts).map(([name, text]) => ({

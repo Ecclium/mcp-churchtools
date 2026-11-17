@@ -16,6 +16,11 @@
  * the names of the client and of the catalog leave the script, through
  * the guard of the spike.
  *
+ * With `--auszug`, as `pnpm check:contract` in CI, it reads the extract of
+ * the document in this folder instead of the state file and compares the
+ * deviations with the list of the known ones, without the part `katalog`
+ * (ADR 0076).
+ *
  * Usage: see README.md in this folder.
  *
  * @packageDocumentation
@@ -33,6 +38,7 @@ import {
 } from '../spike/lib/env.mts';
 import { Guard, type Json } from '../spike/lib/guard.mts';
 import {
+  exitCodes,
   installCrashHandlers,
   type Io,
   writeError,
@@ -45,8 +51,10 @@ import {
   isObject,
   type JsonObject,
   type Method,
+  type OpenApiDocument,
   Schemas,
 } from '../spike/lib/spec.mts';
+import { defaultExtractFile, documentOf, readExtract } from './extract.mts';
 
 /** Follows a reference to a schema, or takes a schema as it is. */
 export type Resolve = (node: unknown) => JsonObject | undefined;
@@ -495,7 +503,8 @@ interface Entry {
 
 const methods: readonly Method[] = ['get', 'post', 'put', 'patch', 'delete'];
 
-interface Operation {
+/** An operation of the client, as `contract.json` describes it. */
+export interface Operation {
   readonly name: string;
   readonly method: Method;
   readonly path: string;
@@ -585,8 +594,160 @@ const words = [
   ...deviationKinds,
 ];
 
+// The words of the part against the extract (ADR 0076).
+const extractWords = ['auszug', 'bekannt', 'neu', 'nichtMehr'] as const;
+
 /**
- * Runs the check.
+ * Reads the operations of the client from the text of `contract.json`.
+ *
+ * @param contractText - The text of contract.json.
+ * @returns The operations, in the order of the file.
+ * @throws {SpikeError} `DATEI` if the file is damaged.
+ */
+export function contractOperations(contractText: string): Operation[] {
+  let contract: unknown;
+  try {
+    contract = JSON.parse(contractText);
+  } catch {
+    throw new SpikeError('DATEI', 'vertragUngueltig');
+  }
+  return operationsOf(contract);
+}
+
+/** What the comparison of the client with a document found. */
+export interface ContractComparison {
+  /** Per operation of the client, what the document declares. */
+  readonly report: Record<string, Json>;
+  /** Where the document departs from what the client expects. */
+  readonly deviations: readonly Deviation[];
+  /** Names of the client and of its fields, which stand in the repository. */
+  readonly fixed: readonly string[];
+  /** Names only the document gives, for the checks of the guard. */
+  readonly checked: readonly string[];
+}
+
+/**
+ * Compares each operation of the client with a document: whether the
+ * document documents it and marks it as deprecated, its parameters of the
+ * query, the body of a write, every field of the answer it reads and,
+ * for the rights, whether the values are a map.
+ *
+ * @param document - The OpenAPI document, from the state file or made from
+ *   the extract.
+ * @param operations - The operations of the client.
+ * @returns The report, the deviations and the names they show.
+ * @throws {SpikeError} If the document needs more than the steps allowed.
+ */
+export function compareContract(
+  document: OpenApiDocument,
+  operations: readonly Operation[],
+): ContractComparison {
+  const schemas = new Schemas(document);
+  const report: Record<string, Json> = {};
+  const deviations: Deviation[] = [];
+  const fixed: string[] = [];
+  const checked: string[] = [];
+  for (const operation of operations) {
+    const documented = findOperation(
+      document,
+      operation.method,
+      operation.path,
+    );
+    // The parameters of the operation and those its path declares for
+    // every operation on it.
+    const declaredQuery = new Set(
+      documented === undefined
+        ? []
+        : schemas
+            .parameterDetails(
+              documented,
+              findPathItem(document, operation.method, operation.path),
+            )
+            .filter((parameter) => parameter.location === 'query')
+            .map((parameter) => parameter.name),
+    );
+    const body =
+      documented === undefined
+        ? undefined
+        : schemas.responseSchema(documented, operation.status);
+    const entry: Record<string, Json> = {
+      pfad: operation.path,
+      dokumentiert: documented !== undefined,
+      veraltet: documented?.['deprecated'] === true,
+      parameter: Object.fromEntries(
+        operation.query.map((name) => [name, declaredQuery.has(name)]),
+      ),
+    };
+    fixed.push(operation.name, operation.path, ...operation.query);
+    if (documented === undefined) {
+      deviations.push({
+        operation: operation.name,
+        art: 'nicht dokumentiert',
+      });
+    } else {
+      if (entry['veraltet'] === true)
+        deviations.push({ operation: operation.name, art: 'veraltet' });
+      for (const name of operation.query)
+        if (!declaredQuery.has(name))
+          deviations.push({
+            operation: operation.name,
+            feld: name,
+            art: 'parameter nicht deklariert',
+          });
+    }
+    // The body of a write: what the client sends against what the
+    // document declares for the request (ADR 0072).
+    if (operation.request !== undefined) {
+      const requestBody =
+        documented === undefined
+          ? undefined
+          : schemas.requestSchema(documented);
+      const fields = compareSchema(schemas, requestBody, operation.request);
+      fixed.push(
+        ...fields.flatMap((field) => [field.path, `koerper.${field.path}`]),
+      );
+      entry['koerper'] = Object.fromEntries(
+        fields.map((field) => [field.path, { ...field.document }]),
+      );
+      if (documented !== undefined) {
+        // A name the document requires comes from the document, so it
+        // passes only the checks for names the document gives.
+        const required = requiredOf(schemas, requestBody, {
+          left: maxSteps,
+        });
+        for (const name of required) checked.push(`koerper.${name}`);
+        deviations.push(...requestDeviations(operation.name, fields, required));
+      }
+    }
+    if (operation.response !== undefined) {
+      const fields = compareSchema(schemas, body, operation.response);
+      fixed.push(...fields.map((field) => field.path));
+      entry['felder'] = Object.fromEntries(
+        fields.map((field) => [field.path, { ...field.document }]),
+      );
+      if (documented !== undefined)
+        deviations.push(...fieldDeviations(operation.name, fields));
+    }
+    // The rights: whether the document describes their values as a map,
+    // as the client reads them.
+    if (operation.value !== undefined) {
+      const steps: Steps = { left: maxSteps };
+      const data = propertyOf(schemas, body, 'data', steps);
+      entry['werteAlsMap'] =
+        gather(
+          schemas,
+          data,
+          (schema) => schema['additionalProperties'],
+          steps,
+        ) !== undefined;
+    }
+    report[operation.name] = entry;
+  }
+  return { report, deviations, fixed, checked };
+}
+
+/**
+ * Runs the check against the document of the instance in the state file.
  *
  * @param env - Environment of the process.
  * @param contractText - The text of contract.json.
@@ -605,15 +766,8 @@ export function run(
     checkNodeEnvironment(env);
     const origin = readOrigin(env);
     const state = readState(statePath(env), origin);
-    let contract: unknown;
-    try {
-      contract = JSON.parse(contractText);
-    } catch {
-      throw new SpikeError('DATEI', 'vertragUngueltig');
-    }
-    const operations = operationsOf(contract);
+    const operations = contractOperations(contractText);
     const catalog = readCatalog(catalogText);
-    const schemas = new Schemas(state.specification);
     const guard = new Guard();
     guard.allowFixed(...words);
     if (state.version !== null) guard.allowVersion(state.version);
@@ -629,110 +783,9 @@ export function run(
     }
     guard.block(homedir());
 
-    const report: Record<string, Json> = {};
-    const deviations: Deviation[] = [];
-    for (const operation of operations) {
-      const documented = findOperation(
-        state.specification,
-        operation.method,
-        operation.path,
-      );
-      // The parameters of the operation and those its path declares for
-      // every operation on it.
-      const declaredQuery = new Set(
-        documented === undefined
-          ? []
-          : schemas
-              .parameterDetails(
-                documented,
-                findPathItem(
-                  state.specification,
-                  operation.method,
-                  operation.path,
-                ),
-              )
-              .filter((parameter) => parameter.location === 'query')
-              .map((parameter) => parameter.name),
-      );
-      const body =
-        documented === undefined
-          ? undefined
-          : schemas.responseSchema(documented, operation.status);
-      const entry: Record<string, Json> = {
-        pfad: operation.path,
-        dokumentiert: documented !== undefined,
-        veraltet: documented?.['deprecated'] === true,
-        parameter: Object.fromEntries(
-          operation.query.map((name) => [name, declaredQuery.has(name)]),
-        ),
-      };
-      guard.allowFixed(operation.name, operation.path, ...operation.query);
-      if (documented === undefined) {
-        deviations.push({
-          operation: operation.name,
-          art: 'nicht dokumentiert',
-        });
-      } else {
-        if (entry['veraltet'] === true)
-          deviations.push({ operation: operation.name, art: 'veraltet' });
-        for (const name of operation.query)
-          if (!declaredQuery.has(name))
-            deviations.push({
-              operation: operation.name,
-              feld: name,
-              art: 'parameter nicht deklariert',
-            });
-      }
-      // The body of a write: what the client sends against what the
-      // document declares for the request (ADR 0072).
-      if (operation.request !== undefined) {
-        const requestBody =
-          documented === undefined
-            ? undefined
-            : schemas.requestSchema(documented);
-        const fields = compareSchema(schemas, requestBody, operation.request);
-        guard.allowFixed(
-          ...fields.flatMap((field) => [field.path, `koerper.${field.path}`]),
-        );
-        entry['koerper'] = Object.fromEntries(
-          fields.map((field) => [field.path, { ...field.document }]),
-        );
-        if (documented !== undefined) {
-          // A name the document requires comes from the instance, so it
-          // passes only the checks for names the document gives.
-          const required = requiredOf(schemas, requestBody, {
-            left: maxSteps,
-          });
-          for (const name of required) guard.allowChecked(`koerper.${name}`);
-          deviations.push(
-            ...requestDeviations(operation.name, fields, required),
-          );
-        }
-      }
-      if (operation.response !== undefined) {
-        const fields = compareSchema(schemas, body, operation.response);
-        guard.allowFixed(...fields.map((field) => field.path));
-        entry['felder'] = Object.fromEntries(
-          fields.map((field) => [field.path, { ...field.document }]),
-        );
-        if (documented !== undefined)
-          deviations.push(...fieldDeviations(operation.name, fields));
-      }
-      // The rights: whether the document describes their values as a map,
-      // as the client reads them.
-      if (operation.value !== undefined) {
-        const steps: Steps = { left: maxSteps };
-        const data = propertyOf(schemas, body, 'data', steps);
-        entry['werteAlsMap'] =
-          gather(
-            schemas,
-            data,
-            (schema) => schema['additionalProperties'],
-            steps,
-          ) !== undefined;
-      }
-      report[operation.name] = entry;
-    }
+    const compared = compareContract(state.specification, operations);
+    guard.allowFixed(...compared.fixed);
+    for (const name of compared.checked) guard.allowChecked(name);
 
     // Names of the generated part stand in the repository; a name only the
     // document gives comes from the instance and stays subject to the
@@ -744,8 +797,8 @@ export function run(
     const output: Json = {
       abgleich: 'churchtools-client',
       churchtoolsVersion: state.version ?? 'unbekannt',
-      operationen: report,
-      abweichungen: deviations.map((deviation) => ({ ...deviation })),
+      operationen: compared.report,
+      abweichungen: compared.deviations.map((deviation) => ({ ...deviation })),
       katalog: catalogPart.report,
     };
     return writeResult(output, guard, io);
@@ -756,6 +809,197 @@ export function run(
         : error,
       io,
     );
+  }
+}
+
+/** A deviation the project knows and has looked at, with its reason. */
+export interface AcceptedDeviation extends Deviation {
+  readonly grund: string;
+}
+
+/** The format of the list of known deviations. */
+export const acceptedFormat = 'ecclium.contract.accepted.v1';
+
+/** The list of known deviations, next to the check. */
+export const defaultAcceptedFile = new URL(
+  './accepted-deviations.json',
+  import.meta.url,
+);
+
+const deviationKey = (deviation: Deviation): string =>
+  JSON.stringify([deviation.operation, deviation.feld ?? null, deviation.art]);
+
+/**
+ * Reads the list of the deviations the project knows: each with the
+ * operation, the field if any, the kind and a reason, no entry twice.
+ *
+ * @param text - The text of `accepted-deviations.json`.
+ * @returns The entries.
+ * @throws {SpikeError} `DATEI` if the list has another form.
+ */
+export function readAccepted(text: string): AcceptedDeviation[] {
+  const broken = (): never => {
+    throw new SpikeError('DATEI', 'listeUngueltig');
+  };
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return broken();
+  }
+  if (
+    !isObject(value) ||
+    Object.keys(value).join() !== 'format,entries' ||
+    value['format'] !== acceptedFormat ||
+    !Array.isArray(value['entries'])
+  ) {
+    return broken();
+  }
+  const seen = new Set<string>();
+  return (value['entries'] as unknown[]).map((raw) => {
+    if (!isObject(raw)) return broken();
+    const { operation, feld, art, grund } = raw;
+    const keys = Object.keys(raw).join();
+    if (
+      typeof operation !== 'string' ||
+      (feld !== undefined && typeof feld !== 'string') ||
+      !deviationKinds.includes(art as Deviation['art']) ||
+      typeof grund !== 'string' ||
+      grund.trim() === '' ||
+      (keys !== 'operation,feld,art,grund' && keys !== 'operation,art,grund')
+    ) {
+      return broken();
+    }
+    const deviation: AcceptedDeviation = {
+      operation,
+      ...(feld === undefined ? {} : { feld }),
+      art: art as Deviation['art'],
+      grund,
+    };
+    const key = deviationKey(deviation);
+    if (seen.has(key)) return broken();
+    seen.add(key);
+    return deviation;
+  });
+}
+
+const withoutReason = ({ operation, feld, art }: Deviation): Json => ({
+  operation,
+  ...(feld === undefined ? {} : { feld }),
+  art,
+});
+
+const mismatchNote =
+  'Abweichung: Der Abgleich mit dem Auszug findet nicht genau die Abweichungen aus scripts/contract/accepted-deviations.json. Unter «neu» steht, was dazukam, unter «nichtMehr», was wegfiel. Nutzt der Client eine neue Operation oder einen anderen Status, schreiben Sie zuerst den Auszug mit pnpm docs:refresh --nur-vertrag neu. Sonst prüfen Sie die Änderung am Client, tragen eine Abweichung, die ein Lauf gegen die Testinstanz belegt, mit ihrem Grund in die Liste ein oder entfernen einen Eintrag, der nicht mehr zutrifft.';
+
+/** The exit code for deviations other than the known ones. */
+export const mismatchCode = 1;
+
+/**
+ * Runs the check in CI: against the extract in the repository instead of
+ * the state file, without the part `katalog`, which a test of the
+ * generated part holds already, and against the list of the known
+ * deviations (ADR 0076).
+ *
+ * @param contractText - The text of contract.json.
+ * @param extractText - The text of the extract.
+ * @param acceptedText - The text of the list of known deviations.
+ * @param io - Where to write.
+ * @returns 0 if the deviations are exactly the known ones, 1 if not, 2
+ *   for a damaged file, 3 if the guard withholds the output.
+ */
+export function runExtract(
+  contractText: string,
+  extractText: string,
+  acceptedText: string,
+  io: Io,
+): number {
+  try {
+    const operations = contractOperations(contractText);
+    const extract = readExtract(extractText);
+    const accepted = readAccepted(acceptedText);
+    const compared = compareContract(documentOf(extract), operations);
+    const known = new Set(accepted.map(deviationKey));
+    const found = new Set(compared.deviations.map(deviationKey));
+    const fresh = compared.deviations.filter(
+      (deviation) => !known.has(deviationKey(deviation)),
+    );
+    const gone = accepted.filter(
+      (deviation) => !found.has(deviationKey(deviation)),
+    );
+
+    // In CI only the counts and the deviations that differ from the list
+    // go out; the whole report is what the run against the state file
+    // gives.
+    const counts = {
+      operationen: Object.keys(compared.report).length,
+      abweichungen: compared.deviations.length,
+      bekannt: accepted.length,
+    };
+    const guard = new Guard();
+    guard.allowFixed(...words, ...extractWords, ...Object.values(counts));
+    guard.allowVersion(extract.source.churchToolsVersion);
+    guard.allowFixed(...compared.fixed);
+    for (const name of compared.checked) guard.allowChecked(name);
+    // The known deviations stand in the repository.
+    guard.allowFixed(
+      ...accepted.flatMap((deviation) => [
+        deviation.operation,
+        ...(deviation.feld === undefined ? [] : [deviation.feld]),
+      ]),
+    );
+
+    const output: Json = {
+      abgleich: 'auszug',
+      churchtoolsVersion: extract.source.churchToolsVersion,
+      ...counts,
+      neu: fresh.map(withoutReason),
+      nichtMehr: gone.map(withoutReason),
+    };
+    const code = writeResult(output, guard, io);
+    if (code !== exitCodes.ok) return code;
+    if (fresh.length > 0 || gone.length > 0) {
+      io.stderr(`${mismatchNote}\n`);
+      return mismatchCode;
+    }
+    return exitCodes.ok;
+  } catch (error) {
+    return writeError(error, io);
+  }
+}
+
+/**
+ * Reads the extract and the list of the known deviations and runs
+ * {@link runExtract}. A missing file counts as a damaged one, with 2.
+ *
+ * @param contractText - The text of contract.json.
+ * @param io - Where to write.
+ * @param extractFile - The extract.
+ * @param acceptedFile - The list of the known deviations.
+ * @returns The exit code of {@link runExtract}, or 2 for a missing file.
+ */
+export function mainExtractCheck(
+  contractText: string,
+  io: Io,
+  extractFile: URL = defaultExtractFile,
+  acceptedFile: URL = defaultAcceptedFile,
+): number {
+  const read = (file: URL, hint: 'auszugUngueltig' | 'listeUngueltig') => {
+    try {
+      return readFileSync(file, 'utf8');
+    } catch {
+      throw new SpikeError('DATEI', hint);
+    }
+  };
+  try {
+    return runExtract(
+      contractText,
+      read(extractFile, 'auszugUngueltig'),
+      read(acceptedFile, 'listeUngueltig'),
+      io,
+    );
+  } catch (error) {
+    return writeError(error, io);
   }
 }
 
@@ -774,12 +1018,16 @@ if (import.meta.main) {
     ),
     'utf8',
   );
-  const catalogText = readFileSync(
-    new URL(
-      '../../packages/core/src/churchtools/catalog/generated.ts',
-      import.meta.url,
-    ),
-    'utf8',
-  );
-  process.exitCode = run(process.env, contractText, io, catalogText);
+  if (process.argv.includes('--auszug')) {
+    process.exitCode = mainExtractCheck(contractText, io);
+  } else {
+    const catalogText = readFileSync(
+      new URL(
+        '../../packages/core/src/churchtools/catalog/generated.ts',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    process.exitCode = run(process.env, contractText, io, catalogText);
+  }
 }

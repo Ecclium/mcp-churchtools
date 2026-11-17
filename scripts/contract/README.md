@@ -1,6 +1,6 @@
 # Vertragsabgleich des ChurchTools-Clients
 
-Das Skript `check.mts` vergleicht, was der ChurchTools-Client von Ecclium liest und schreibt, mit dem OpenAPI-Dokument Ihrer Instanz (ADR 0057, ADR 0072), und ebenso den Katalog des lesenden Zugriffs auf die API (ADR 0067). Es sendet nichts an ChurchTools. Es liest nur drei Dateien:
+Das Skript `check.mts` vergleicht, was der ChurchTools-Client von Ecclium liest und schreibt, mit dem OpenAPI-Dokument Ihrer Instanz (ADR 0057, ADR 0072), und ebenso den Katalog des lesenden Zugriffs auf die API (ADR 0067). Es sendet nichts an ChurchTools. Gegen Ihre Instanz liest es nur drei Dateien, in CI statt der State-Datei den Auszug in diesem Ordner (siehe «In CI»):
 
 - `packages/core/src/churchtools/contract.json`: die Schemas des Clients als JSON Schema. Ein Test hält die Datei fest und wird rot, sobald sich ein Schema ändert.
 - `packages/core/src/churchtools/catalog/generated.ts`: den erzeugten Teil des Katalogs, je Operation mit `GET` Pfad und Parameter, wie `pnpm docs:refresh` ihn schreibt.
@@ -20,9 +20,21 @@ Ist `contract.json` beschädigt oder das Dokument so verschachtelt, dass der Abg
 
 Ausgegeben werden nur feste Wörter, die Namen des Clients und des Katalogs, die geprüften Namen neuer Operationen und Parameter, Wahrheitswerte, Zahlen der Operationen und die Version von ChurchTools als Haupt- und Nebennummer. Dafür sorgt dieselbe Sicherung wie bei den Proben. Stünde an einer Stelle womöglich etwas aus Ihrer Instanz, hält das Skript die ganze Ausgabe zurück.
 
-## Aufruf
+## In CI
 
-Das Skript läuft nicht in CI. Sie starten es lokal, mit denselben Variablen wie die Proben:
+`pnpm check:contract` führt `node scripts/contract/check.mts --auszug` aus, als Schritt von `pnpm check` und damit in CI (ADR 0076). Statt der State-Datei liest das Skript dann `openapi-extract.json` in diesem Ordner, einen Auszug des OpenAPI-Dokuments nur mit den Operationen des Clients, mit allen Feldern der Schemas, die sie erreichen, aber nur mit den Schlüsseln, die der Abgleich liest, und vergleicht die Abweichungen mit `accepted-deviations.json`: je bekannter Abweichung Operation, Feld, Art und ein Grund mit Beleg. Den Teil `katalog` lässt es weg, weil ein Test den Katalog schon in CI gegen `operations.json` hält. Ausgegeben werden nur Zahlen und die Abweichungen, die nicht zur Liste passen. Codes: 0, wenn die Abweichungen genau die Liste sind, 1 bei einer neuen und bei einer, die nicht mehr auftritt, 2 bei einer beschädigten oder fehlenden Datei, 3, wenn die Sicherung der Ausgabe etwas zurückhält.
+
+Ändern Sie den Client so, dass er vom Dokument abweicht, wird CI rot. Belegen Sie die Abweichung, etwa mit einem Lauf der Tools gegen die Testinstanz, und tragen Sie sie mit ihrem Grund in die Liste ein, oder passen Sie den Client an. Fällt eine bekannte Abweichung weg, entfernen Sie ihren Eintrag. Braucht der Client eine neue Operation oder liest er die Antwort eines anderen Status, schreiben Sie zuerst den Auszug neu, nach einem frischen Lauf von `00-inventory`, statt eine Abweichung einzutragen:
+
+```bash
+ECCLIUM_SPIKE_BASE_URL=https://example.church.tools ECCLIUM_SPIKE_STATE_FILE=/pfad/zur/state-datei pnpm docs:refresh --nur-vertrag
+```
+
+Der Auszug nennt das Dokument, aus dem er stammt. Er kann neuer sein als die Fakten des Doku-Index; `pnpm docs:refresh --nur-openapi` schreibt beide aus demselben Dokument. Vor dem Schreiben prüft der Refresh, dass der Abgleich über den Auszug genau dasselbe ergibt wie über das ganze Dokument, sonst schreibt er nichts. Eine Änderung am API von ChurchTools findet nur der Lauf gegen Ihre Instanz unten; machen Sie ihn vor jeder Erneuerung des Auszugs.
+
+## Aufruf gegen Ihre Instanz
+
+Sie starten das Skript lokal, mit denselben Variablen wie die Proben:
 
 ```bash
 ECCLIUM_SPIKE_BASE_URL=https://example.church.tools ECCLIUM_SPIKE_STATE_FILE=/pfad/zur/state-datei node scripts/contract/check.mts

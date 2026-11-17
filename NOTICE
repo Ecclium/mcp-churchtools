@@ -41,6 +41,13 @@ Jede dieser Dateien nennt ihre Quelle und deren Bedingungen auch selbst. Die
 Bezeichnungen in rights.json stehen auch in scripts/docs/rights-mapping.json,
 aus der sie kommen, und dort gilt für sie dasselbe.
 
+scripts/contract/openapi-extract.json, der Auszug für den Vertragsabgleich in
+CI, enthält aus demselben OpenAPI-Dokument nur die Operationen, die der
+ChurchTools-Client von Ecclium nutzt, mit den Schemas ihrer Anfragen und
+Antworten ohne Texte, Beispiele, Vorgaben und Server. Für ihn gilt, was für
+operations.json gilt: Er ist bearbeitetes Material, steht unter CC BY 4.0,
+nicht unter der Elastic License 2.0, und nennt Quelle und Bedingungen selbst.
+
 operation-rights.json in packages/docs-index/data/, die Zuordnung von
 Operationen zu Rechten, ist eigene Arbeit des Projekts und steht wie der
 Quellcode unter der Elastic License 2.0. Operationen und Rechte nennt sie nur

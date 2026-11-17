@@ -257,6 +257,22 @@ describe('prepareSearch', () => {
     expect(many / one).toBeLessThan(1.5);
   });
 
+  // The best match counts in each field, and the fields add up: a summary
+  // that names «memberships» adds to a path that names «members».
+  it('adds the best match of each field', () => {
+    const stored = buildSearchIndex(
+      [
+        { name: 'path', weight: 3 },
+        { name: 'summary', weight: 3 },
+      ],
+      [
+        { key: 'a', texts: ['members', 'Anderes'] },
+        { key: 'b', texts: ['members', 'List memberships'] },
+      ],
+    );
+    expect(keysFor(stored, 'members')).toEqual(['b', 'a']);
+  });
+
   it('orders equal scores by key, whichever word found them first', () => {
     expect(keysFor(index('alpha', 'beta'), 'beta alpha')).toEqual([
       'doc-0',
