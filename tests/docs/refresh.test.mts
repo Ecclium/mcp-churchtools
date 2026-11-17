@@ -704,12 +704,22 @@ describe('pnpm docs:refresh --nur-openapi', () => {
       new URL('SOURCES.json', dataDir),
       `${JSON.stringify(sources, null, 2)}\n`,
     );
+    // A newer document, so that unchanged facts show that nothing was
+    // written.
+    const newer = syntheticDocument();
+    (newer.paths as Record<string, unknown>)['/api/synthetic/more'] = {
+      get: {
+        operationId: 'listMoreSyntheticThings',
+        summary: 'More things',
+        responses: { '200': { description: 'More things.' } },
+      },
+    };
     const privates = privateFiles('unused');
     createState(privates.stateFile, {
       format: 'ecclium-spike-state.v1',
       instance: instanceId(origin),
       version: '3.138',
-      specification: syntheticDocument(),
+      specification: newer,
     });
     const output = capture();
     const code = mainOpenApi(
