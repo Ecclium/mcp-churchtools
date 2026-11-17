@@ -9,9 +9,11 @@
  * The writers of the command line refuse such a line whole (`send.ts`), so
  * this module turns every character they would not let through into a
  * visible form of plain ASCII before the line goes out: `\u{1b}` for an
- * escape, `\\` for a backslash, so that the form cannot be faked by the
- * text itself. It cuts a long line into parts the writers take, each part
- * after the first starting with `\ ... `, which the text cannot fake.
+ * escape. A backslash of the text becomes `\\` wherever it could start a
+ * form, so that the text cannot fake one; elsewhere, as in the `18\.11.`
+ * that Markdown writes for a date at the start of a line, it stays as it
+ * is. It cuts a long line into parts the writers take, each part after
+ * the first starting with `\ ... `, which the text cannot fake.
  *
  * @packageDocumentation
  */
@@ -19,20 +21,42 @@ import { isShown } from '../send.js';
 import { maxOutputLength } from './write.js';
 
 // The mark at the start of a part that continues the line before it. It
-// starts with a backslash, which no shown line of foreign text does: a
-// backslash of the text itself is always doubled, and a caller that shows
-// lines puts its own prefix first, such as that of a diff.
+// starts with a backslash and a space, which no shown line of foreign text
+// does: a backslash of the text before a space is always doubled, and a
+// caller that shows lines puts its own prefix first, such as that of a
+// diff.
 const continued = '\\ ... ';
 
-// A character the writers let through stays; a backslash doubles, unless
-// the core doubled it already; any other character, a pair of surrogates
-// as one, becomes its code point.
-const visible = (character: string, doubled: boolean): string => {
-  if (character === '\\') return doubled ? '\\' : '\\\\';
+// Whether a part starts what follows the backslash of a form: a second
+// backslash, the `u` of `\u{…}` or the space of the mark of a
+// continuation. A part shown as `\u{…}` starts with a backslash.
+const startsForm = (part: string): boolean => {
+  const first = part.charAt(0);
+  return first === '\\' || first === 'u' || first === ' ';
+};
+
+// A character the writers let through stays; any other character, a pair
+// of surrogates as one, becomes its code point.
+const visible = (character: string): string => {
   const code = character.charCodeAt(0);
   if (character.length === 1 && isShown(code)) return character;
   const point = character.codePointAt(0) ?? code;
   return `\\u{${point.toString(16)}}`;
+};
+
+// A backslash of the text stays single only before a part that starts no
+// form: it doubles before a second backslash, before `u`, before a space,
+// before a character shown as `\u{…}` and at the end of the text, so that
+// `\\` always reads as one backslash and `\u{…}` and the mark always come
+// from this module. The core doubled its backslashes already.
+const parts = (text: string, shownByCore: boolean): string[] => {
+  const shown = Array.from(text, visible);
+  if (shownByCore) return shown;
+  return shown.map((part, index) => {
+    if (part !== '\\') return part;
+    const next = shown[index + 1];
+    return next === undefined || startsForm(next) ? '\\\\' : part;
+  });
 };
 
 /**
@@ -59,13 +83,9 @@ export function terminalLines(
   shownByCore = false,
 ): string[] {
   // Whole visible forms only, so that no part ends in half an escape.
-  const parts = [
-    prefix,
-    ...Array.from(text, (character) => visible(character, shownByCore)),
-  ];
   const lines: string[] = [];
   let line = '';
-  for (const part of parts) {
+  for (const part of [prefix, ...parts(text, shownByCore)]) {
     if (line.length + part.length > maxOutputLength) {
       lines.push(line);
       line = continued;
