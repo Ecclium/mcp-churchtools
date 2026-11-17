@@ -8,9 +8,11 @@
  * it stands in, times the weight of the field. All words a query word
  * matches share one rarity, taken from the documents that hold any of
  * them, so that a rare longer word does not outrank the query word itself.
- * For each query word only its best matching word counts, so that a short
- * start with many matches does not add up. A document that matches more of
- * the query words ranks higher, and equal scores go by key.
+ * For each query word only its best matching word counts in each field, so
+ * that a short start with many matches does not add up within a field; the
+ * fields add up, so that a form such as «memberships» in a summary counts
+ * beside «members» in a path. A document that matches more of the query
+ * words ranks higher, and equal scores go by key.
  *
  * @packageDocumentation
  */
@@ -142,7 +144,10 @@ export function prepareSearch(index: SerializedSearchIndex): Searcher {
         factor *
         (weights[field] ?? 0) *
         ((idf * count * (k1 + 1)) / (count + k1 * norm));
-      scores.set(document, (scores.get(document) ?? 0) + value);
+      // One slot per field of a document, so that the search can take the
+      // best word of each field.
+      const slot = document * fields.length + field;
+      scores.set(slot, (scores.get(slot) ?? 0) + value);
     }
     return scores;
   };
@@ -168,11 +173,16 @@ export function prepareSearch(index: SerializedSearchIndex): Searcher {
       const matches = matchingTerms(terms, word);
       const idf = rarity(matches);
       for (const [term, factor] of matches) {
-        for (const [document, value] of scoreOf(term, factor, idf)) {
-          best.set(document, Math.max(best.get(document) ?? 0, value));
+        for (const [slot, value] of scoreOf(term, factor, idf)) {
+          best.set(slot, Math.max(best.get(slot) ?? 0, value));
         }
       }
-      for (const [document, value] of best) {
+      const byDocument = new Map<number, number>();
+      for (const [slot, value] of best) {
+        const document = Math.floor(slot / fields.length);
+        byDocument.set(document, (byDocument.get(document) ?? 0) + value);
+      }
+      for (const [document, value] of byDocument) {
         totals.set(document, (totals.get(document) ?? 0) + value);
         matched.set(document, (matched.get(document) ?? 0) + 1);
       }
