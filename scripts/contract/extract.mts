@@ -142,6 +142,8 @@ export const maxSchemaDepth = 64;
 
 const isText = (value: unknown): value is string => typeof value === 'string';
 
+// A place shows only letters, digits, `_`, `.`, `-` and brackets, or the
+// error drops it, so the key `$ref` stands there as `ref`.
 const sourceForm = (where: string): never => {
   throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', where);
 };
@@ -205,10 +207,10 @@ function cleanSchema(
     switch (key) {
       case '$ref': {
         if (!isText(value) || !value.startsWith(refPrefix)) {
-          return sourceForm(`${where}.$ref`);
+          return sourceForm(`${where}.ref`);
         }
         const name = value.slice(refPrefix.length);
-        if (!isSchemaName(name)) return sourceForm(`${where}.$ref`);
+        if (!isSchemaName(name)) return sourceForm(`${where}.ref`);
         context.refs.add(name);
         copy[key] = value;
         break;
@@ -380,12 +382,14 @@ export function buildExtract(
       responses: Record<string, unknown>;
     }
   >();
-  for (const need of needs) {
+  for (const [index, need] of needs.entries()) {
     const path = documentPath(document, need.method, need.path);
     const operation = findOperation(document, need.method, need.path);
     if (path === undefined || operation === undefined) continue;
     const key = `${path} ${need.method}`;
-    const where = `operations.${need.method} ${need.path}`;
+    // The place names the operation by its position in the contract: a
+    // path holds characters that a place may not show.
+    const where = `operations[${String(index)}]`;
     let entry = byKey.get(key);
     if (entry === undefined) {
       const item = document.paths[path.slice(basePath(document).length)];
@@ -425,7 +429,7 @@ export function buildExtract(
       return sourceForm('schemas');
     }
     const found: Cleaning = { refs: new Set<string>(), names };
-    reached.set(name, cleanSchema(named[name], 'schemas', found, name));
+    reached.set(name, cleanSchema(named[name], `schemas.${name}`, found, name));
     pending.push(...found.refs);
   }
 
@@ -537,7 +541,7 @@ function checkSchema(
       names.has(ref.slice(refPrefix.length))
     )
   ) {
-    broken(`${where}.$ref`);
+    broken(`${where}.ref`);
   }
   const type = node['type'];
   if (type !== undefined && !isTypeValue(type)) broken(`${where}.type`);
@@ -632,7 +636,7 @@ export function readExtract(text: string): Extract {
   const names = new Set(Object.keys(schemas));
   for (const [name, schema] of Object.entries(schemas)) {
     if (!isSchemaName(name)) broken('schemas');
-    checkSchema(schema, 'schemas', names);
+    checkSchema(schema, `schemas.${name}`, names);
   }
   const operations = value['operations'];
   if (!Array.isArray(operations)) return broken('operations');

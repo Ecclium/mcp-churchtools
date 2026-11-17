@@ -335,6 +335,21 @@ describe('the reader of the extract', () => {
     expect(output.stdout()).toBe('');
     expect(output.stderr()).toContain(hints.auszugUngueltig);
   });
+
+  it('names the place of what it refuses', () => {
+    expect(() =>
+      readExtract(withSchema({ $ref: '#/components/schemas/Unbekannt' })),
+    ).toThrow(
+      expect.objectContaining({ where: 'operations[0].responses.ref' }),
+    );
+    const value = extractValue();
+    const schemas = value['schemas'] as Record<string, unknown>;
+    const [name] = Object.keys(schemas);
+    schemas[name ?? ''] = { type: 'Text' };
+    expect(() => readExtract(JSON.stringify(value))).toThrow(
+      expect.objectContaining({ where: `schemas.${name ?? ''}.type` }),
+    );
+  });
 });
 
 // A document of an instance writes every schema out in place; the extract
@@ -485,8 +500,19 @@ describe('buildExtract', () => {
         },
       },
     };
+    // The schema exists under that name, so only the form of the name
+    // refuses it, at the reference.
+    const components = document['components'] as {
+      schemas: Record<string, unknown>;
+    };
+    components.schemas['Per%20son'] = { type: 'object' };
     expect(() => buildExtract(document, needs, source, 'Hinweis')).toThrow(
-      expect.objectContaining({ hint: 'quelleUngueltig' }),
+      expect.objectContaining({
+        hint: 'quelleUngueltig',
+        where: expect.stringMatching(
+          /^operations\[\d+\]\.responses\.ref$/u,
+        ) as unknown,
+      }),
     );
   });
 
