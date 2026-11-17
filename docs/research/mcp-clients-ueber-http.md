@@ -1,12 +1,13 @@
 # MCP-Clients über HTTP: Befunde
 
-Stand: 16.11.2026, mit `@modelcontextprotocol/server` 2.3.1
+Stand: 16.11.2026, mit `@modelcontextprotocol/server` 2.3.1; die Prüfungen des SDK am 17.11.2026 mit 2.4.0 nachgeprüft
 
 Dieses Dokument hält fest, was MCP-Clients über HTTP senden und wie das MCP-SDK darauf antwortet, und worauf sich jede Aussage stützt. Der Entscheid, der darauf aufbaut, steht in [ADR 0073](../adr/0073-betrieb-ueber-http.md), dort unter «Ältere Clients» und «Grenzen der Anfrage». Der erste Teil beschreibt, was das SDK prüft. Der zweite hält fest, was die Clients an einer Attrappe gesendet haben. Der Test mit den Clients in Phase 7 ergänzt dieses Dokument.
 
 ## Methode
 
 - Gelesen ist der Code im Paket `@modelcontextprotocol/server` 2.3.1 unter `dist/`. Die Namen der Dateien tragen einen Hash des Builds und gelten nur für diese Version.
+- Am 17.11.2026 kam das SDK auf 2.4.0. Die Funktionen `classifyRequestBody` und `validateStandardRequestHeaders` stehen dort in `dist/src-DdvbAHrR.mjs`, und ihre Quellen in den Source Maps gleichen denen von 2.3.1. Die Tests der Probe laufen mit 2.4.0 unverändert grün, auch jede Zeile der Tabelle unten. Die Läufe mit den Clients unter «Ergebnisse» liefen mit 2.3.1 und sind nicht wiederholt.
 - Beobachtet ist mit der Probe `scripts/spike/14-protocol-version.mts` ([README der Proben](../../scripts/spike/README.md), «Was die Probe der Protokollversion tut»). Sie ist eine Attrappe eines MCP-Servers ohne ChurchTools, ohne Daten und mit einem leeren Tool. Ein eigener Teil hält jede Anfrage fest und reicht sie danach an `createMcpHandler` des SDK, im JSON-Modus und mit `legacy: 'stateless'`, wie Ecclium es über HTTP nutzen wird. Festgehalten werden nur feste Wörter und Werte in fester Form, nie Adressen, der Host, Pfade, weitere Kopfzeilen oder Inhalte.
 - Eine Antwort, die das SDK als Strom mit genau einer Nachricht schickt, gibt die Attrappe als JSON an den Client weiter und hält fest, dass es ein Strom war (siehe «Ergebnisse», claude.ai).
 - Das Urteil des SDK ist also beobachtet, mit Version 2.3.1 und ohne den Adapter für Hono, den Ecclium dazu nimmt. Den Beleg von Ende zu Ende bringt der Test mit den Clients gegen den Server von Ecclium.
