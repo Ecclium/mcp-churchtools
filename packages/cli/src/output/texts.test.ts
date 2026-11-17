@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+
 import {
   type ConfigProblem,
   configProblemCodes,
@@ -100,9 +102,11 @@ const fixedTexts: readonly (readonly [string, readonly string[]])[] = [
   ['the internal error', [internalErrorText]],
 ];
 
-// Printable ASCII, the quotes «» and ‹› and the umlauts, as the tripwire
-// of the writers allows them. Nothing else reaches a terminal, so no
-// character can hide or turn what a line says.
+// Printable ASCII, the quotes «» and ‹› and the umlauts: what the tripwire
+// of the writers allows, except the sharp s, which it lets through for
+// foreign text and which the texts of the command line write as ss.
+// Nothing else reaches a terminal, so no character can hide or turn what a
+// line says.
 const allowed = /^[\u0020-\u007e«»‹›äöüÄÖÜ]+$/;
 
 describe('the texts of the output', () => {
@@ -171,5 +175,26 @@ describe('the texts of the output', () => {
     expect(helpLines[0]).toBe(usageLine);
     expect(Object.isFrozen(helpLines)).toBe(true);
     expect(Object.isFrozen(usageProblemTexts)).toBe(true);
+  });
+});
+
+// The texts of the command line write ss, never the sharp s. The tripwire
+// of the writers lets it through for foreign text, so it no longer catches
+// one in a text of the command line itself: no source of the package holds
+// it, texts and comments alike. The tests may, for the foreign text they
+// show.
+describe('the sources of the command line', () => {
+  it('hold no sharp s outside the tests', () => {
+    const root = new URL('../', import.meta.url);
+    const sharpS = String.fromCodePoint(0xdf);
+    const sources = readdirSync(root, { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
+      .sort();
+    expect(sources).toContain('send.ts');
+    expect(sources).toContain('output/terminal.ts');
+    const holding = sources.filter((file) =>
+      readFileSync(new URL(file, root), 'utf8').includes(sharpS),
+    );
+    expect(holding).toEqual([]);
   });
 });

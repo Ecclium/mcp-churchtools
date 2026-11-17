@@ -234,6 +234,21 @@ const entryOf = (
   ...extra,
 });
 
+/** A provider of the providers file, by default the one of every setup. */
+const providerOf = (
+  apiKeyFile: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  alias: 'default',
+  vendor: 'example',
+  model: 'example-model-1',
+  hostingCountry: 'CH',
+  endpoint: doubleModelEndpoint,
+  structuredOutput: true,
+  apiKeyFile,
+  ...extra,
+});
+
 // What the account of the wiki routine needs, and nothing more, so that
 // its write is no drift of rights.
 const wikiRights = {
@@ -569,23 +584,15 @@ const setup = (options: SetupOptions = {}) => {
       unattended: options.entries ?? [entryOf(wikiRoutine)],
     }),
   );
-  const providersFile = privateFile(
-    join(configDir, 'providers.json'),
-    JSON.stringify({
-      schema: 'providers.v1',
-      providers: [
-        {
-          alias: 'default',
-          vendor: 'example',
-          model: 'example-model-1',
-          hostingCountry: 'CH',
-          endpoint: doubleModelEndpoint,
-          structuredOutput: true,
-          apiKeyFile: modelKeyFile,
-        },
-      ],
-    }),
-  );
+  const providersFile = join(configDir, 'providers.json');
+  // Replaces the providers file, as an operator edits it between two runs.
+  const writeProviders = (...providers: Record<string, unknown>[]): void => {
+    privateFile(
+      providersFile,
+      JSON.stringify({ schema: 'providers.v1', providers }),
+    );
+  };
+  writeProviders(providerOf(modelKeyFile));
   const writeRoutine = (id: string, routine: RoutineOptions): void => {
     privateFile(
       join(routinesDir, `${id}.yaml`),
@@ -680,6 +687,9 @@ const setup = (options: SetupOptions = {}) => {
   // double forgets its calls.
   const churchtoolsCalls: MockedCall[] = [];
   const modelCalls: MockedCall[] = [];
+  // The endpoint of each transport to a model, in the order the runner
+  // built them.
+  const modelEndpoints: string[] = [];
   const createTransport = (given: HttpTransportOptions) => {
     // With the logger of the pipeline, so that the lines of the transport,
     // which holds the token, reach the log as in production.
@@ -702,6 +712,7 @@ const setup = (options: SetupOptions = {}) => {
     });
   };
   const createModelTransport = (given: ModelHttpTransportOptions) => {
+    modelEndpoints.push(given.endpoint);
     const double = createModelEndpointDouble({
       key: given.key,
       endpoint: given.endpoint,
@@ -982,6 +993,9 @@ const setup = (options: SetupOptions = {}) => {
     plugin,
     churchtoolsCalls,
     modelCalls,
+    modelEndpoints,
+    modelKeyFile,
+    writeProviders,
     stdout,
     stderr,
     logs,
@@ -1615,6 +1629,119 @@ describe('a preview of a routine that does not start', () => {
     );
     expect(stderr.join('\n')).not.toContain('run_target_unlisted');
     expect(t.plugin.calls()).toEqual([]);
+  });
+});
+
+// A provider outside Switzerland and the EEA needs the basis of a transfer
+// in the providers file (ADR 0033): without it no routine starts, neither
+// in a call nor in the daemon, and nothing is read or sent.
+describe('the basis of a transfer of a provider of ecclium run-once', () => {
+  const abroad = (
+    t: ReturnType<typeof setup>,
+    extra: Record<string, unknown> = {},
+  ): void => {
+    t.writeProviders(
+      providerOf(t.modelKeyFile, { hostingCountry: 'US', ...extra }),
+    );
+  };
+
+  it('keeps every routine from starting without it, with 78, in a call and in the daemon, and reads nothing', async () => {
+    const t = setup();
+    abroad(t);
+    const once = await t.call(due);
+    expect(once.code).toBe(exitCodes.invalidConfig);
+    expect(once.stdout).toEqual([]);
+    expect(once.stderr).toHaveLength(1);
+    expect(once.stderr[0]).toContain('‹providers[0].transferBasis›');
+    const daemon = await t.daemon();
+    expect(daemon.code).toBe(exitCodes.invalidConfig);
+    expect(daemon.stdout).toEqual([]);
+    expect(daemon.stderr).toEqual(once.stderr);
+    expect(t.driver.waits).toEqual([]);
+    expect(t.plugin.calls()).toEqual([]);
+    expect(t.modelEndpoints).toEqual([]);
+    expect(t.modelCalls).toEqual([]);
+    expect(t.churchtoolsCalls).toEqual([]);
+    expect(t.auditLines()).toEqual([]);
+    t.assertNothingLeaked();
+  });
+
+  it('runs with it and names it in the audit', async () => {
+    const t = setup();
+    abroad(t, { transferBasis: 'standard_contractual_clauses' });
+    const { code } = await t.call(due);
+    expect(code).toBe(exitCodes.ok);
+    expect(t.patches()).toHaveLength(1);
+    expect(t.modelCalls).toHaveLength(1);
+    expect(JSON.stringify(t.auditLines())).toContain(
+      '"transferBasis":"standard_contractual_clauses"',
+    );
+    t.assertNothingLeaked();
+  });
+});
+
+// Changing the provider is configuration only: the same routine, with the
+// same prompt, schema and template, runs against another provider once
+// the providers file names it under the same alias.
+describe('a change of the provider of a routine', () => {
+  const otherEndpoint = 'https://model-zwei.example.org/v1/chat/completions';
+  const sent = (call: MockedCall | undefined): Record<string, unknown> =>
+    JSON.parse(call?.body ?? '{}') as Record<string, unknown>;
+
+  it('runs the same routine against the new provider after an edit of the providers file only', async () => {
+    const t = setup();
+    const first = await t.call(due);
+    expect(first.code).toBe(exitCodes.ok);
+    expect(t.pageText()).toContain('Gottesdienst: Mesmer');
+
+    t.writeProviders(
+      providerOf(t.modelKeyFile, {
+        vendor: 'andere',
+        model: 'andere-model-2',
+        hostingCountry: 'DE',
+        endpoint: otherEndpoint,
+      }),
+    );
+    // The new provider answers otherwise, so that its answer shows on the
+    // page. By hand, since the trigger of the week is closed and the
+    // double of ChurchTools gives the date of the test as its own.
+    t.state.answer = {
+      unbesetzt: [
+        { datum: '2026-11-15', termin: 'Gottesdienst', dienst: 'Sigrist' },
+      ],
+    };
+    const second = await t.call(byHand(wikiRoutine));
+    expect(second.code).toBe(exitCodes.ok);
+    expect(t.patches()).toHaveLength(2);
+    expect(t.pageText()).toContain('Gottesdienst: Sigrist');
+    expect(t.pageText()).not.toContain('Mesmer');
+
+    // The second run reached only the new provider, with its model.
+    expect(t.modelEndpoints).toEqual([doubleModelEndpoint, otherEndpoint]);
+    expect(t.modelCalls).toHaveLength(2);
+    const [before, after] = t.modelCalls.map(sent);
+    expect(before?.['model']).toBe('example-model-1');
+    expect(after?.['model']).toBe('andere-model-2');
+    // The same instructions and the same schema of the answer.
+    expect(after?.['response_format']).toEqual(before?.['response_format']);
+    expect((after?.['messages'] as unknown[] | undefined)?.[0]).toEqual(
+      (before?.['messages'] as unknown[] | undefined)?.[0],
+    );
+    expect(t.runLines().map((line) => line['provider'])).toEqual([
+      {
+        vendor: 'example',
+        model: 'example-model-1',
+        hostingCountry: 'CH',
+        endpointHost: 'model.example.org',
+      },
+      {
+        vendor: 'andere',
+        model: 'andere-model-2',
+        hostingCountry: 'DE',
+        endpointHost: 'model-zwei.example.org',
+      },
+    ]);
+    t.assertNothingLeaked();
   });
 });
 

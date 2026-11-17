@@ -34,18 +34,20 @@ export interface Sent {
 export const maxAttempts = 4;
 
 // Characters beyond printable ASCII that the texts of the command line
-// use: the umlauts and the quotes «» and ‹›. A list of what is allowed,
-// not of what is refused: a control character, a line separator, a mark
-// for the direction of text, an invisible or a lookalike character never
-// reaches a terminal, also one that a list of refused characters would
-// miss.
+// use: the umlauts and the quotes «» and ‹›, and the sharp s U+00DF,
+// which its own texts avoid but foreign text in German, such as a page of
+// the wiki or a preview, often holds and which looks like no character of
+// ASCII. A list of what is allowed, not of what is refused: a control
+// character, a line separator, a mark for the direction of text, an
+// invisible or a lookalike character never reaches a terminal, also one
+// that a list of refused characters would miss.
 const letters: readonly number[] = Object.freeze([
-  0xab, 0xbb, 0xc4, 0xd6, 0xdc, 0xe4, 0xf6, 0xfc, 0x2039, 0x203a,
+  0xab, 0xbb, 0xc4, 0xd6, 0xdc, 0xdf, 0xe4, 0xf6, 0xfc, 0x2039, 0x203a,
 ]);
 
 /**
  * Tells whether a character may reach a terminal as it is: printable
- * ASCII, a German umlaut or one of the quotes «» and ‹›.
+ * ASCII, a German umlaut, the sharp s or one of the quotes «» and ‹›.
  *
  * @param code - The UTF-16 code unit of the character.
  * @returns Whether the writers let it through.
@@ -60,8 +62,8 @@ export const isShown = (code: number): boolean =>
 
 /**
  * Tells whether a value is one line of text for a terminal: 1 to
- * `maxLength` characters, each of them printable ASCII, a German umlaut
- * or one of the quotes «» and ‹›. The writers of the command line check
+ * `maxLength` characters, each of them printable ASCII, a German umlaut,
+ * the sharp s or one of the quotes «» and ‹›. The writers of the command line check
  * every line with it as a tripwire.
  *
  * @param value - Any value.
