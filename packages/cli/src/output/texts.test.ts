@@ -191,6 +191,7 @@ describe('the sources of the command line', () => {
       .filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))
       .sort();
     expect(sources).toContain('send.ts');
+    expect(sources).toContain('output/terminal.ts');
     const holding = sources.filter((file) =>
       readFileSync(new URL(file, root), 'utf8').includes(sharpS),
     );
