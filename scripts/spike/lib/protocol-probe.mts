@@ -30,7 +30,7 @@ export const clientInfoMetaKey = 'io.modelcontextprotocol/clientInfo';
 export const byteOrderMark = String.fromCharCode(0xfeff);
 
 /**
- * Versions the SDK 2.3.1 serves, as its sources list them: five of the era
+ * Versions the SDK 2.4.0 serves, as its sources list them: five of the era
  * 2025 and one of the era 2026.
  */
 export const supportedVersions = [
@@ -42,7 +42,7 @@ export const supportedVersions = [
   '2024-10-07',
 ] as const;
 
-/** The one version of the era 2026 the SDK 2.3.1 serves. */
+/** The one version of the era 2026 the SDK 2.4.0 serves. */
 export const modernVersion = '2026-07-28';
 
 /** Methods recorded by name. Any other method is «andere Methode». */
@@ -87,7 +87,7 @@ const wellKnownNames = [
 ] as const;
 
 // The field of the body that the header Mcp-Name repeats, for the methods
-// the SDK 2.3.1 checks it on (besides the methods of tasks, which the probe
+// the SDK 2.4.0 checks it on (besides the methods of tasks, which the probe
 // does not offer).
 function nameField(method: string | undefined): string | undefined {
   switch (method) {
@@ -452,7 +452,7 @@ function nameHeader(
   method: string | undefined,
   params: Readonly<Record<string, unknown>> | undefined,
 ): string {
-  // The same steps as validateStandardRequestHeaders of the SDK 2.3.1: a
+  // The same steps as validateStandardRequestHeaders of the SDK 2.4.0: a
   // header is needed only when the body carries the field as text, a
   // header in Base64 is decoded first, and a header without a field in the
   // body passes if it decodes.

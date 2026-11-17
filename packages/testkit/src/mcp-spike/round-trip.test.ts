@@ -501,7 +501,7 @@ describe('the stdio framing', () => {
     expect(JSON.parse(lines[0] ?? '')).toMatchObject({
       event: 'process_start',
       instanceId: 'test-instance',
-      sdkVersion: '2.3.1',
+      sdkVersion: '2.4.0',
     });
   });
 });

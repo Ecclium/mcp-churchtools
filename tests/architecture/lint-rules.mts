@@ -153,7 +153,7 @@ const networkModules = [
  * Methods and properties of the MCP SDK that register tools, prompts,
  * resources or handlers, remove or announce them, or swap the handler of a
  * registered resource. The rule matches them by name, so the plugin API must
- * not use these names for its own methods. Checked against version 2.3.1 of
+ * not use these names for its own methods. Checked against version 2.4.0 of
  * the SDK (ADR 0053).
  *
  * The objects that registerTool, registerPrompt and registerResource return
@@ -169,10 +169,10 @@ const registration =
 /**
  * Names of the MCP SDK that compile a JSON schema with the bundled Ajv, or
  * hand out Ajv itself. Ajv resolves $id and $ref with the bundled fast-uri,
- * which has known advisories in version 2.3.1. fromJsonSchema compiles with
+ * which has known advisories in version 2.4.0. fromJsonSchema compiles with
  * a validator of its own module, so the throwing validator that the mount
  * gives every instance does not cover it. Like registration, the rule
- * matches them by name. Checked against version 2.3.1 of the SDK
+ * matches them by name. Checked against version 2.4.0 of the SDK
  * (ADR 0059).
  */
 const jsonSchemaNames =
