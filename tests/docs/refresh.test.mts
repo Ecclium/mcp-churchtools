@@ -686,6 +686,55 @@ describe('pnpm docs:refresh --nur-openapi', () => {
     });
     expect(leaks(output, first.forbidden)).toEqual([]);
   });
+
+  it('writes nothing when the sources lack the help pages, with 2', async () => {
+    let dataDir: URL | undefined;
+    const first = await run((dir) => {
+      dataDir = dir;
+      return refreshDefinition(dir, clock, mappingFile);
+    });
+    expect(first.code, first.output.stderr()).toBe(exitCodes.ok);
+    if (dataDir === undefined) throw new Error('no folder');
+    const sources = JSON.parse(first.texts['SOURCES.json'] ?? '{}') as Record<
+      string,
+      unknown
+    >;
+    delete sources['academy'];
+    writeFileSync(
+      new URL('SOURCES.json', dataDir),
+      `${JSON.stringify(sources, null, 2)}\n`,
+    );
+    const privates = privateFiles('unused');
+    createState(privates.stateFile, {
+      format: 'ecclium-spike-state.v1',
+      instance: instanceId(origin),
+      version: '3.138',
+      specification: syntheticDocument(),
+    });
+    const output = capture();
+    const code = mainOpenApi(
+      output.io,
+      {
+        ECCLIUM_SPIKE_BASE_URL: origin,
+        ECCLIUM_SPIKE_STATE_FILE: privates.stateFile,
+      },
+      {
+        dataDir,
+        mappingFile,
+        catalogFile: new URL('generated.ts', dataDir),
+        extractFile: new URL('openapi-extract.json', dataDir),
+        contractFile: defaultContractFile,
+      },
+    );
+    expect(code).toBe(exitCodes.configuration);
+    expect(output.stdout()).toBe('');
+    expect(output.stderr()).toContain(hints.zuordnungUngueltig);
+    expect(readFileSync(new URL('operations.json', dataDir), 'utf8')).toBe(
+      first.texts['operations.json'],
+    );
+    expect(readdirSync(dataDir)).not.toContain('generated.ts');
+    expect(readdirSync(dataDir)).not.toContain('openapi-extract.json');
+  });
 });
 
 // The extract alone (ADR 0076): from the state file, without a token and
