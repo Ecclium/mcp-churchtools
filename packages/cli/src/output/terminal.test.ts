@@ -20,7 +20,7 @@ describe('terminalLines', () => {
     ['a mark that turns the direction', 'abc\u202Edef', 'abc\\u{202e}def'],
     ['an invisible character', 'a\u200Bb', 'a\\u{200b}b'],
     ['a line break', 'a\nb', 'a\\u{a}b'],
-    ['a letter outside the list', 'Café ß', 'Caf\\u{e9} \\u{df}'],
+    ['a letter outside the list', 'Café', 'Caf\\u{e9}'],
     ['a pair of surrogates', 'Lob 🎉', 'Lob \\u{1f389}'],
     ['a lone surrogate', 'x\uD800y', 'x\\u{d800}y'],
     ['a backslash', 'C:\\u{41}', 'C:\\\\u{41}'],

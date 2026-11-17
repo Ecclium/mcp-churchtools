@@ -150,7 +150,7 @@ describe('sendAll', () => {
 });
 
 describe('isTextLine', () => {
-  // Printable ASCII, the umlauts and the quotes «» and ‹›.
+  // Printable ASCII, the umlauts, «ß» and the quotes «» and ‹›.
   const shown = new Set([
     ...Array.from({ length: 0x7f - 0x20 }, (_, index) => 0x20 + index),
     0xab,
@@ -158,6 +158,7 @@ describe('isTextLine', () => {
     0xc4,
     0xd6,
     0xdc,
+    0xdf,
     0xe4,
     0xf6,
     0xfc,
