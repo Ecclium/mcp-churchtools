@@ -70,11 +70,11 @@ const coreParts = (text: string): string[] => {
     if (text.startsWith('\\u{', index)) {
       // The closing brace within the seven characters after `\u{`, so
       // that a text of many `\u{` without one stays linear.
-      const close = text.slice(index + 3, index + 10).indexOf('}');
-      const digits = text.slice(index + 3, index + 3 + close);
-      if (close !== -1 && isHexDigits(digits)) {
+      const brace = text.slice(index + 3, index + 10).indexOf('}');
+      const digits = text.slice(index + 3, index + 3 + brace);
+      if (brace !== -1 && isHexDigits(digits)) {
         found.push(`\\u{${digits}}`);
-        index += 4 + close;
+        index += 4 + brace;
         continue;
       }
     }
