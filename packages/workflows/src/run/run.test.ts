@@ -191,6 +191,31 @@ describe('preparing a run', () => {
     expect(prepared.ok).toBe(true);
   });
 
+  // An entry for another page of the same category is no entry for the
+  // page of the routine: the routine does not start, as without any entry.
+  it('refuses a target whose only entry names another page of its category', () => {
+    const page = (name: string) =>
+      context(
+        policyOf([
+          entry({
+            target: {
+              kind: 'wiki_page',
+              categoryId: 7,
+              guid: '00000000-0000-4000-8000-0000000000b2',
+              name,
+            },
+          }),
+        ]),
+      );
+    const routine = loadedOf(routineValue({ output: wikiOutput }));
+    expect(prepareRun(routine, page('Andere Seite'))).toEqual({
+      ok: false,
+      code: 'run_target_unlisted',
+      field: 'output.scope',
+    });
+    expect(prepareRun(routine, page('Auswertung')).ok).toBe(true);
+  });
+
   it('starts a draft to a file without an entry, at strict and with the account of the runner', () => {
     const prepared = prepareRun(loadedOf(routineValue()), context());
     if (!prepared.ok) throw new Error(prepared.code);
