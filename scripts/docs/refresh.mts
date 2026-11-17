@@ -594,8 +594,10 @@ const sourceEntry = (dataDir: URL, key: string): unknown => {
  * `operations.json`, its entry in `SOURCES.json`, `operation-rights.json`
  * from the mapping against the new operations, the generated part of the
  * catalog of the escape hatch and the extract for the contract check
- * (ADR 0076). The rights and the help pages stay as they are, with their
- * sources. All texts are made and checked before the first is written.
+ * (ADR 0076). It does not fetch the rights and the help pages again but
+ * writes them back from the data folder with their sources, `rights.json`
+ * from the mapping as `--nur-zuordnung` does. All texts are made and
+ * checked before the first is written.
  *
  * @param env - The environment, with the variables of the probes for the
  *   instance and the state file.
