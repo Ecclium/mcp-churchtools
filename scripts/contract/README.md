@@ -30,7 +30,7 @@ Ausgegeben werden nur feste Wörter, die Namen des Clients und des Katalogs, die
 ECCLIUM_SPIKE_BASE_URL=https://example.church.tools ECCLIUM_SPIKE_STATE_FILE=/pfad/zur/state-datei pnpm docs:refresh --nur-vertrag
 ```
 
-Der Auszug nennt das Dokument, aus dem er stammt. Er kann neuer sein als die Fakten des Doku-Index. Vor dem Schreiben prüft der Refresh, dass der Abgleich über den Auszug genau dasselbe ergibt wie über das ganze Dokument, sonst schreibt er nichts. Eine Änderung am API von ChurchTools findet nur der Lauf gegen Ihre Instanz unten; machen Sie ihn vor jeder Erneuerung des Auszugs.
+Der Auszug nennt das Dokument, aus dem er stammt. Er kann neuer sein als die Fakten des Doku-Index; `pnpm docs:refresh --nur-openapi` schreibt beide aus demselben Dokument. Vor dem Schreiben prüft der Refresh, dass der Abgleich über den Auszug genau dasselbe ergibt wie über das ganze Dokument, sonst schreibt er nichts. Eine Änderung am API von ChurchTools findet nur der Lauf gegen Ihre Instanz unten; machen Sie ihn vor jeder Erneuerung des Auszugs.
 
 ## Aufruf gegen Ihre Instanz
 
