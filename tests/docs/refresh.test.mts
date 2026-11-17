@@ -25,10 +25,11 @@ import {
 } from '@ecclium/mcp-churchtools-docs-index';
 import { describe, expect, it } from 'vitest';
 
-import { readExtract } from '../../scripts/contract/extract.mts';
+import { buildExtract, readExtract } from '../../scripts/contract/extract.mts';
 import {
   categoriesDefinition,
   checkInstanceHost,
+  contractExtractText,
   defaultContractFile,
   mainExtract,
   mainOpenApi,
@@ -323,7 +324,7 @@ describe('pnpm docs:refresh', () => {
     expect(catalog).toContain('frozenOperations([');
   });
 
-  it('writes the extract for the contract check after the facts, when given its place', async () => {
+  it('writes the extract for the contract check, when given its place', async () => {
     const result = await run((dataDir) =>
       refreshDefinition(
         dataDir,
@@ -751,6 +752,63 @@ describe('pnpm docs:refresh --nur-vertrag', () => {
         groesse: expect.any(String) as unknown,
       },
     });
+  });
+
+  // The check before writing: an extract that would give the comparison
+  // another result than the whole document stops the refresh.
+  it('takes no extract that gives the check another result', () => {
+    const document = {
+      ...syntheticDocument(),
+      servers: [{ url: `${origin}/api` }],
+      paths: {
+        '/whoami': {
+          get: {
+            responses: {
+              '200': {
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      required: ['data'],
+                      properties: { data: { type: 'object' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    } as OpenApiDocument;
+    const openapi = {
+      retrievedAt: '2026-11-17T00:00:00Z',
+      sha256: '0'.repeat(64),
+      documentVersion: '0.1.0',
+      churchToolsVersion: '3.138',
+    };
+    const contractText = readFileSync(defaultContractFile, 'utf8');
+    expect(() =>
+      contractExtractText(document, openapi, contractText),
+    ).not.toThrow();
+    // A builder that loses what a field requires.
+    const losing: typeof buildExtract = (...input) => {
+      const extract = buildExtract(...input);
+      return {
+        ...extract,
+        operations: extract.operations.map((operation) => ({
+          ...operation,
+          responses: Object.fromEntries(
+            Object.entries(operation.responses).map(([status, schema]) => [
+              status,
+              { ...(schema as object), required: [] },
+            ]),
+          ),
+        })),
+      };
+    };
+    expect(() =>
+      contractExtractText(document, openapi, contractText, losing),
+    ).toThrow(expect.objectContaining({ hint: 'auszugUngleich' }));
   });
 
   it('writes nothing for the state of another instance', () => {

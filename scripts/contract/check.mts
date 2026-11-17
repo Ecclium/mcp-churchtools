@@ -16,6 +16,11 @@
  * the names of the client and of the catalog leave the script, through
  * the guard of the spike.
  *
+ * With `--auszug`, as `pnpm check:contract` in CI, it reads the extract of
+ * the document in this folder instead of the state file and compares the
+ * deviations with the list of the known ones, without the part `katalog`
+ * (ADR 0076).
+ *
  * Usage: see README.md in this folder.
  *
  * @packageDocumentation
@@ -885,7 +890,7 @@ const withoutReason = ({ operation, feld, art }: Deviation): Json => ({
 });
 
 const mismatchNote =
-  'Abweichung: Der Abgleich mit dem Auszug findet nicht genau die Abweichungen aus scripts/contract/accepted-deviations.json. Unter «neu» steht, was dazukam, unter «nichtMehr», was wegfiel. Prüfen Sie die Änderung am Client, oder tragen Sie eine belegte Abweichung mit ihrem Grund in die Liste ein.';
+  'Abweichung: Der Abgleich mit dem Auszug findet nicht genau die Abweichungen aus scripts/contract/accepted-deviations.json. Unter «neu» steht, was dazukam, unter «nichtMehr», was wegfiel. Nutzt der Client eine neue Operation oder einen anderen Status, schreiben Sie zuerst den Auszug mit pnpm docs:refresh --nur-vertrag neu. Sonst prüfen Sie die Änderung am Client, tragen eine Abweichung, die ein Lauf gegen die Testinstanz belegt, mit ihrem Grund in die Liste ein oder entfernen einen Eintrag, der nicht mehr zutrifft.';
 
 /** The exit code for deviations other than the known ones. */
 export const mismatchCode = 1;
@@ -963,6 +968,41 @@ export function runExtract(
   }
 }
 
+/**
+ * Reads the extract and the list of the known deviations and runs
+ * {@link runExtract}. A missing file counts as a damaged one, with 2.
+ *
+ * @param contractText - The text of contract.json.
+ * @param io - Where to write.
+ * @param extractFile - The extract.
+ * @param acceptedFile - The list of the known deviations.
+ * @returns The exit code of {@link runExtract}, or 2 for a missing file.
+ */
+export function mainExtractCheck(
+  contractText: string,
+  io: Io,
+  extractFile: URL = defaultExtractFile,
+  acceptedFile: URL = defaultAcceptedFile,
+): number {
+  const read = (file: URL, hint: 'auszugUngueltig' | 'listeUngueltig') => {
+    try {
+      return readFileSync(file, 'utf8');
+    } catch {
+      throw new SpikeError('DATEI', hint);
+    }
+  };
+  try {
+    return runExtract(
+      contractText,
+      read(extractFile, 'auszugUngueltig'),
+      read(acceptedFile, 'listeUngueltig'),
+      io,
+    );
+  } catch (error) {
+    return writeError(error, io);
+  }
+}
+
 // As in the other scripts: a comparison of URLs would miss a path with a
 // space or a symbolic link and end with 0 without running.
 if (import.meta.main) {
@@ -979,12 +1019,7 @@ if (import.meta.main) {
     'utf8',
   );
   if (process.argv.includes('--auszug')) {
-    process.exitCode = runExtract(
-      contractText,
-      readFileSync(defaultExtractFile, 'utf8'),
-      readFileSync(defaultAcceptedFile, 'utf8'),
-      io,
-    );
+    process.exitCode = mainExtractCheck(contractText, io);
   } else {
     const catalogText = readFileSync(
       new URL(

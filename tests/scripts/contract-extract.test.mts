@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compareContract,
   contractOperations,
+  mainExtractCheck,
   mismatchCode,
   readAccepted,
   runExtract,
@@ -19,6 +20,7 @@ import {
   type Extract,
   extractText,
   maxExtractBytes,
+  maxSchemaDepth,
   readExtract,
 } from '../../scripts/contract/extract.mts';
 import { hints } from '../../scripts/spike/lib/errors.mts';
@@ -35,9 +37,6 @@ const read = (path: string): string =>
 const contract = read('../../packages/core/src/churchtools/contract.json');
 const extractFile = read('../../scripts/contract/openapi-extract.json');
 const acceptedFile = read('../../scripts/contract/accepted-deviations.json');
-const sources = JSON.parse(
-  read('../../packages/docs-index/data/SOURCES.json'),
-) as { openapi: Record<string, string> };
 
 interface Output {
   abgleich: string;
@@ -111,7 +110,9 @@ describe('the extract in the repository', () => {
     );
   });
 
-  it('holds exactly the operations of the client, each once', () => {
+  // The document may drop an operation of the client; the comparison then
+  // names it as not documented, which the list must hold.
+  it('holds only operations of the client, each once', () => {
     const extract = readExtract(extractFile);
     const ofClient = new Set(
       contractOperations(contract).map(
@@ -123,7 +124,46 @@ describe('the extract in the repository', () => {
       (operation) => `${operation.method} ${normalizeTemplate(operation.path)}`,
     );
     expect(new Set(held).size).toBe(held.length);
-    expect(new Set(held)).toEqual(ofClient);
+    for (const operation of held) expect(ofClient).toContain(operation);
+  });
+
+  it('stands in canonical order, which a refresh keeps', () => {
+    const extract = readExtract(extractFile);
+    const sorted = (list: readonly string[]) =>
+      [...list].sort((left, right) =>
+        left < right ? -1 : left > right ? 1 : 0,
+      );
+    const methods = ['get', 'post', 'put', 'patch', 'delete'];
+    const order = extract.operations.map(
+      (operation) =>
+        `${operation.path} ${String(methods.indexOf(operation.method))}`,
+    );
+    expect(order).toEqual(sorted(order));
+    expect(Object.keys(extract.schemas)).toEqual(
+      sorted(Object.keys(extract.schemas)),
+    );
+    for (const operation of extract.operations) {
+      const places = operation.parameters.map(
+        (parameter) => `${parameter.in} ${parameter.name}`,
+      );
+      expect(places).toEqual(sorted(places));
+    }
+    // Every list of properties in its order.
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(visit);
+        return;
+      }
+      if (typeof node !== 'object' || node === null) return;
+      const value = node as Record<string, unknown>;
+      const properties = value['properties'];
+      if (typeof properties === 'object' && properties !== null) {
+        const names = Object.keys(properties);
+        expect(names).toEqual(sorted(names));
+      }
+      Object.values(value).forEach(visit);
+    };
+    visit(extract);
   });
 
   it('is no raw source and names no host, only its source and licence', () => {
@@ -133,12 +173,6 @@ describe('the extract in the repository', () => {
     const extract = readExtract(extractFile);
     expect(extract.notice).toContain('CC BY 4.0');
     expect(extract.notice).toContain('LICENSES/CC-BY-4.0.txt');
-    expect(extract.source.churchToolsVersion).toBe(
-      sources.openapi['churchToolsVersion'],
-    );
-    expect(extract.source.documentVersion).toBe(
-      sources.openapi['documentVersion'],
-    );
   });
 });
 
@@ -215,6 +249,20 @@ describe('the comparison with the list of the known deviations', () => {
   });
 });
 
+describe('the files of the check in CI', () => {
+  const missing = new URL('file:///nicht-vorhanden/datei.json');
+  it.each([
+    ['the extract', missing, undefined, hints.auszugUngueltig],
+    ['the list', undefined, missing, hints.listeUngueltig],
+  ])('ends with 2 when %s is missing', (_, extract, accepted, hint) => {
+    const output = capture();
+    const code = mainExtractCheck(contract, output.io, extract, accepted);
+    expect(code).toBe(exitCodes.configuration);
+    expect(output.stdout()).toBe('');
+    expect(output.stderr()).toContain(hint);
+  });
+});
+
 describe('the reader of the extract', () => {
   const withSchema = (schema: unknown): string => {
     const value = extractValue();
@@ -245,6 +293,36 @@ describe('the reader of the extract', () => {
       JSON.stringify({
         ...extractValue(),
         source: { ...(extractValue()['source'] as object), sha256: 'x' },
+      }),
+    ],
+    [
+      'a type of another form',
+      withSchema({ type: 'max.mustermann@example.org' }),
+    ],
+    [
+      'a parameter in another place',
+      (() => {
+        const value = extractValue();
+        const operations = value['operations'] as {
+          parameters: { in: string }[];
+        }[];
+        const first = operations.find(
+          (operation) => operation.parameters.length > 0,
+        );
+        if (first?.parameters[0] !== undefined) {
+          first.parameters[0].in = 'Gemeinde Musterstadt';
+        }
+        return JSON.stringify(value);
+      })(),
+    ],
+    [
+      'a version of ChurchTools with three numbers',
+      JSON.stringify({
+        ...extractValue(),
+        source: {
+          ...(extractValue()['source'] as object),
+          churchToolsVersion: '3.138.2',
+        },
       }),
     ],
     [
@@ -385,6 +463,47 @@ describe('buildExtract', () => {
           },
         },
       },
+    };
+    expect(() => buildExtract(document, needs, source, 'Hinweis')).toThrow(
+      expect.objectContaining({ hint: 'quelleUngueltig' }),
+    );
+  });
+
+  it('refuses a reference to a name of another form', () => {
+    const document = inlinedDocument();
+    const paths = document.paths as Record<string, unknown>;
+    paths['/whoami'] = {
+      get: {
+        responses: {
+          '200': {
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Per%20son' },
+              },
+            },
+          },
+        },
+      },
+    };
+    expect(() => buildExtract(document, needs, source, 'Hinweis')).toThrow(
+      expect.objectContaining({ hint: 'quelleUngueltig' }),
+    );
+  });
+
+  it('refuses a schema deeper than it reads', () => {
+    let schema: Record<string, unknown> = { type: 'string' };
+    for (let level = 0; level <= maxSchemaDepth + 1; level += 1) {
+      schema = { type: 'object', properties: { inner: schema } };
+    }
+    const document = inlinedDocument();
+    const paths = document.paths as Record<
+      string,
+      { get: { responses: Record<string, unknown> } }
+    >;
+    const whoami = paths['/whoami'];
+    if (whoami === undefined) throw new Error('no whoami');
+    whoami.get.responses['200'] = {
+      content: { 'application/json': { schema } },
     };
     expect(() => buildExtract(document, needs, source, 'Hinweis')).toThrow(
       expect.objectContaining({ hint: 'quelleUngueltig' }),

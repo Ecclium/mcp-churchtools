@@ -213,6 +213,7 @@ export const defaultContractFile = new URL(
  * @param document - The OpenAPI document from the state file.
  * @param openapi - Where it came from, as `SOURCES.json` names it.
  * @param contractText - The text of `contract.json`.
+ * @param build - Makes the extract; replaced only by the test of the check.
  * @returns The text of the extract.
  * @throws {SpikeError} If the extract would differ or be too large.
  */
@@ -220,9 +221,10 @@ export function contractExtractText(
   document: OpenApiDocument,
   openapi: OpenApiOrigin,
   contractText: string,
+  build: typeof buildExtract = buildExtract,
 ): string {
   const operations = contractOperations(contractText);
-  const extract = buildExtract(
+  const extract = build(
     document,
     operations.map((operation) => ({
       method: operation.method,
@@ -233,19 +235,20 @@ export function contractExtractText(
     openapi,
     openApiExtractNotice(document, openapi.churchToolsVersion),
   );
+  const text = extractText(extract);
+  if (Buffer.byteLength(text, 'utf8') > maxExtractBytes) {
+    throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', 'auszug');
+  }
+  // The check over the extract as CI reads it, from its text, against the
+  // check over the whole document.
   const whole = compareContract(document, operations);
-  const part = compareContract(documentOf(extract), operations);
+  const part = compareContract(documentOf(readExtract(text)), operations);
   if (
     JSON.stringify([whole.report, whole.deviations]) !==
     JSON.stringify([part.report, part.deviations])
   ) {
     throw new SpikeError('INTERN', 'auszugUngleich');
   }
-  const text = extractText(extract);
-  if (Buffer.byteLength(text, 'utf8') > maxExtractBytes) {
-    throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', 'auszug');
-  }
-  readExtract(text);
   return text;
 }
 

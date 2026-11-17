@@ -108,19 +108,43 @@ const combiners = ['allOf', 'oneOf', 'anyOf'] as const;
 const refPrefix = '#/components/schemas/';
 const methods: readonly Method[] = ['get', 'post', 'put', 'patch', 'delete'];
 
-// A name of a schema in a reference: one segment of a JSON pointer without
-// an escape, so that the name in the extract is the name in the document.
-const isSchemaName = (name: string): boolean =>
-  name.length > 0 &&
-  name.length <= 200 &&
-  !name.includes('/') &&
-  !name.includes('~');
+// A name of a schema in a reference: letters, digits, `_`, `.` and `-`,
+// so that no escape of a JSON pointer, percent sign or slash makes the
+// reference in the extract read another name than in the document.
+const schemaNameForm = /^[A-Za-z0-9_.-]{1,200}$/;
+const isSchemaName = (name: string): boolean => schemaNameForm.test(name);
+
+// The values of `type` and of the place of a parameter that the extract
+// takes, so that no other text of the document stands in them.
+const jsonTypes: ReadonlySet<string> = new Set([
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'array',
+  'object',
+  'null',
+]);
+const isTypeValue = (value: unknown): boolean =>
+  (isText(value) && jsonTypes.has(value)) ||
+  (Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => isText(item) && jsonTypes.has(item)));
+const parameterPlaces: ReadonlySet<string> = new Set([
+  'query',
+  'path',
+  'header',
+  'cookie',
+]);
+
+/** The deepest schema the extract copies and reads. */
+export const maxSchemaDepth = 64;
+
+const isText = (value: unknown): value is string => typeof value === 'string';
 
 const sourceForm = (where: string): never => {
   throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', where);
 };
-
-const isText = (value: unknown): value is string => typeof value === 'string';
 
 /** What copying the schemas of an operation needs and collects. */
 interface Cleaning {
@@ -153,6 +177,7 @@ const stableJson = (value: unknown): string =>
  *   knows the named schemas of the document by their form.
  * @param self - The name of the schema it copies, if it is a named one, so
  *   that its root does not turn into a reference to itself.
+ * @param depth - How deep the schema lies, against {@link maxSchemaDepth}.
  * @returns The copy, its properties sorted by name.
  * @throws {SpikeError} For a form the extract cannot hold, such as a
  *   reference outside the named schemas.
@@ -162,8 +187,9 @@ function cleanSchema(
   where: string,
   context: Cleaning,
   self?: string,
+  depth = 0,
 ): unknown {
-  if (!isObject(node)) return sourceForm(where);
+  if (!isObject(node) || depth > maxSchemaDepth) return sourceForm(where);
   // The document of an instance writes every schema out in place. One
   // equal to a named schema becomes a reference to it, as the facts of
   // the docs index name it, so that the extract holds each only once.
@@ -188,10 +214,8 @@ function cleanSchema(
         break;
       }
       case 'type':
-        if (!isText(value) && !(Array.isArray(value) && value.every(isText))) {
-          return sourceForm(`${where}.type`);
-        }
-        copy[key] = Array.isArray(value) ? [...value] : value;
+        if (!isTypeValue(value)) return sourceForm(`${where}.type`);
+        copy[key] = Array.isArray(value) ? value.map(String) : value;
         break;
       case 'nullable':
         if (typeof value !== 'boolean') return sourceForm(`${where}.nullable`);
@@ -210,26 +234,46 @@ function cleanSchema(
             .sort()
             .map((name) => [
               name,
-              cleanSchema(value[name], `${where}.properties`, context),
+              cleanSchema(
+                value[name],
+                `${where}.properties`,
+                context,
+                undefined,
+                depth + 1,
+              ),
             ]),
         );
         break;
       }
       case 'items':
         copy[key] = Array.isArray(value)
-          ? value.map((item) => cleanSchema(item, `${where}.items`, context))
-          : cleanSchema(value, `${where}.items`, context);
+          ? value.map((item) =>
+              cleanSchema(
+                item,
+                `${where}.items`,
+                context,
+                undefined,
+                depth + 1,
+              ),
+            )
+          : cleanSchema(value, `${where}.items`, context, undefined, depth + 1);
         break;
       case 'additionalProperties':
         copy[key] =
           typeof value === 'boolean'
             ? value
-            : cleanSchema(value, `${where}.additionalProperties`, context);
+            : cleanSchema(
+                value,
+                `${where}.additionalProperties`,
+                context,
+                undefined,
+                depth + 1,
+              );
         break;
       default:
         if (!Array.isArray(value)) return sourceForm(`${where}.${key}`);
         copy[key] = value.map((part) =>
-          cleanSchema(part, `${where}.${key}`, context),
+          cleanSchema(part, `${where}.${key}`, context, undefined, depth + 1),
         );
     }
   }
@@ -273,7 +317,7 @@ const parametersOf = (
       const parameter = schemas.resolve(raw);
       const name = parameter?.['name'];
       const place = parameter?.['in'];
-      if (!isText(name) || !isText(place)) {
+      if (!isText(name) || !isText(place) || !parameterPlaces.has(place)) {
         return sourceForm(`${where}.parameters`);
       }
       found.set(`${place} ${name}`, {
@@ -341,7 +385,7 @@ export function buildExtract(
     const operation = findOperation(document, need.method, need.path);
     if (path === undefined || operation === undefined) continue;
     const key = `${path} ${need.method}`;
-    const where = `operations.${need.method} ${path}`;
+    const where = `operations.${need.method} ${need.path}`;
     let entry = byKey.get(key);
     if (entry === undefined) {
       const item = document.paths[path.slice(basePath(document).length)];
@@ -372,16 +416,16 @@ export function buildExtract(
   }
 
   // The named schemas the operations reach, and those these reach.
-  const reached: Record<string, unknown> = {};
+  const reached = new Map<string, unknown>();
   const pending = [...context.refs];
   while (pending.length > 0) {
     const name = pending.pop() ?? '';
-    if (Object.hasOwn(reached, name)) continue;
+    if (reached.has(name)) continue;
     if (!Object.hasOwn(named, name)) {
       return sourceForm('schemas');
     }
     const found: Cleaning = { refs: new Set<string>(), names };
-    reached[name] = cleanSchema(named[name], 'schemas', found, name);
+    reached.set(name, cleanSchema(named[name], 'schemas', found, name));
     pending.push(...found.refs);
   }
 
@@ -413,9 +457,9 @@ export function buildExtract(
         ),
       })),
     schemas: Object.fromEntries(
-      Object.keys(reached)
+      [...reached.keys()]
         .sort(compareText)
-        .map((name) => [name, reached[name]]),
+        .map((name) => [name, reached.get(name)]),
     ),
   };
 }
@@ -480,7 +524,7 @@ function checkSchema(
   names: ReadonlySet<string>,
   depth = 0,
 ): void {
-  if (!isObject(node) || depth > 64) return broken(where);
+  if (!isObject(node) || depth > maxSchemaDepth) return broken(where);
   for (const key of Object.keys(node)) {
     if (!(schemaKeys as readonly string[]).includes(key)) broken(where);
   }
@@ -496,13 +540,7 @@ function checkSchema(
     broken(`${where}.$ref`);
   }
   const type = node['type'];
-  if (
-    type !== undefined &&
-    !isText(type) &&
-    !(Array.isArray(type) && type.every(isText))
-  ) {
-    broken(`${where}.type`);
-  }
+  if (type !== undefined && !isTypeValue(type)) broken(`${where}.type`);
   const nullable = node['nullable'];
   if (nullable !== undefined && typeof nullable !== 'boolean') {
     broken(`${where}.nullable`);
@@ -548,6 +586,8 @@ function checkSchema(
 const sha256Form = /^[0-9a-f]{64}$/;
 const timeForm = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const versionForm = /^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/;
+// The version of ChurchTools as major and minor number, as the probes keep it.
+const churchToolsVersionForm = /^\d+\.\d+$/;
 
 /**
  * Reads the text of the extract and checks its form: the format, a
@@ -583,7 +623,7 @@ export function readExtract(text: string): Extract {
     !isText(source['documentVersion']) ||
     !versionForm.test(source['documentVersion']) ||
     !isText(source['churchToolsVersion']) ||
-    !versionForm.test(source['churchToolsVersion'])
+    !churchToolsVersionForm.test(source['churchToolsVersion'])
   ) {
     broken('source');
   }
@@ -630,6 +670,7 @@ export function readExtract(text: string): Extract {
         Object.keys(parameter).join() !== 'name,in,required' ||
         !isText(parameter['name']) ||
         !isText(parameter['in']) ||
+        !parameterPlaces.has(parameter['in']) ||
         typeof parameter['required'] !== 'boolean'
       ) {
         broken(`${where}.parameters`);
