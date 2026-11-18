@@ -39,6 +39,7 @@ export const concernIds = [
   'mcp-json-schema',
   'module-state',
   'client-writes',
+  'ingress',
 ] as const;
 
 type Concern = (typeof concernIds)[number];
@@ -93,6 +94,7 @@ const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['util-module', 'utilModule'],
   ['client-writes', 'writeGuard'],
   ['client-writes', 'rawClient'],
+  ['ingress', 'ingress'],
 ];
 
 /** The places of boundaries.json that lift a restriction. */
@@ -126,6 +128,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     'module-state': `[arch:module-state] Code in the packages keeps no mutable state at module level. State that outlives a request is created in the composition root, as a named port or a named exception (${adr('moduleState')}).`,
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
     'client-writes': `[arch:client-writes] Only the write guard in core and the ChurchTools client itself use the writes of the client, so that nothing writes to ChurchTools past planning, confirmation and audit (${adr('writeGuard')}).`,
+    ingress: `[arch:ingress] Only the place ingress of the server imports hono and the Hono adapter of the MCP SDK. It takes the requests over HTTP, with its checks of sign-in, host, origin and body before the handler of the SDK (${adr('ingress')}).`,
     diagnostics:
       '[arch:diagnostics] No code in the packages imports node:diagnostics_channel. undici publishes the headers of every request there, the token among them, and the answers as well, so a subscriber would read them past the Secret (ADR 0056).',
   };
@@ -175,6 +178,13 @@ const registration =
  * (ADR 0024, ADR 0059).
  */
 const extensionPaths = '^@modelcontextprotocol/server/ext(/|$)';
+
+/**
+ * The framework of the server over HTTP and the adapter of the SDK for it.
+ * Only the place ingress imports them, so no other code takes requests
+ * past its checks (ADR 0073).
+ */
+const ingressPaths = '^(hono|@modelcontextprotocol/hono)(/|$)';
 
 /**
  * Names of the MCP SDK that compile a JSON schema with the bundled Ajv, or
@@ -340,6 +350,9 @@ function restrictions(
           ...(forbid('mcp-register')
             ? [{ regex: extensionPaths, message: message['mcp-register'] }]
             : []),
+          ...(forbid('ingress')
+            ? [{ regex: ingressPaths, message: message.ingress }]
+            : []),
           ...(forbid('network')
             ? [{ regex: '^undici(/|$)', message: message.network }]
             : []),
@@ -458,6 +471,12 @@ function restrictions(
           ].map((selector) => ({
             selector,
             message: message['client-writes'],
+          }))
+        : []),
+      ...(forbid('ingress')
+        ? ['ImportExpression', 'TSImportType'].map((node) => ({
+            selector: `${node}[source.value=/${ingressPaths.replaceAll('/', String.raw`\x2F`)}/]`,
+            message: message.ingress,
           }))
         : []),
       ...(forbid('mcp-json-schema')

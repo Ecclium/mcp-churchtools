@@ -540,6 +540,13 @@ export function dependencyRules(
       from: { path: '^packages/', pathNot: at('cronSchedule') },
       to: { path: '(^|/)node_modules/croner/' },
     },
+    {
+      name: 'hono-only-in-ingress',
+      severity: 'error',
+      comment: `${adr('ingress')}: only the way in of the server over HTTP imports hono and the Hono adapter of the MCP SDK, so that no other code takes requests past its checks of sign-in, host, origin and body. Tests in the packages are not exempt. Imports for types only count as well.`,
+      from: { path: '^packages/', pathNot: at('ingress') },
+      to: { path: '(^|/)node_modules/(hono|@modelcontextprotocol/hono)/' },
+    },
   ];
 }
 

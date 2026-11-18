@@ -169,7 +169,7 @@ const probes: readonly {
   },
   {
     code: "export * from '@modelcontextprotocol/hono';",
-    concerns: ['mcp-sdk'],
+    concerns: ['ingress', 'mcp-sdk'],
   },
   {
     code: "await import('@modelcontextprotocol/server');",
@@ -279,6 +279,21 @@ const probes: readonly {
   {
     code: "server['registerPrompt']('x', {}, () => ({}));",
     concerns: ['mcp-register'],
+  },
+  { code: "import { Hono } from 'hono';", concerns: ['ingress'] },
+  { code: "export { cors } from 'hono/cors';", concerns: ['ingress'] },
+  { code: "await import('hono');", concerns: ['ingress'] },
+  {
+    code: "type App = typeof import('hono');",
+    concerns: ['ingress'],
+  },
+  {
+    code: "import { createMcpHonoApp } from '@modelcontextprotocol/hono';",
+    concerns: ['ingress', 'mcp-sdk'],
+  },
+  {
+    code: "await import('@modelcontextprotocol/hono');",
+    concerns: ['ingress', 'mcp-sdk'],
   },
   {
     code: "import { SkillsExtension } from '@modelcontextprotocol/server/ext/skills';",
@@ -645,6 +660,21 @@ const locations: readonly {
   { path: 'packages/core/src/mcpx/probe.ts', allowed: [] },
   { path: 'packages/server/src/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
+  {
+    path: 'packages/server/src/http/probe.ts',
+    allowed: ['mcp-sdk', 'ingress'],
+  },
+  {
+    path: 'packages/server/src/http/probe.test.ts',
+    allowed: [
+      'mcp-sdk',
+      'ingress',
+      'mcp-json-schema',
+      'module-state',
+      'util-module',
+    ],
+  },
+  { path: 'packages/server/src/httpx/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/core/src/http/probe.ts', allowed: ['network'] },
   { path: 'packages/core/src/write/probe.ts', allowed: ['client-writes'] },
   {

@@ -1202,10 +1202,41 @@ export const cases: readonly Case[] = [
         "import type { CronOptions } from 'croner';\nexport type Options = CronOptions;\n",
     },
   },
+  {
+    rule: 'hono-only-in-ingress',
+    name: 'the server over stdio takes requests with hono',
+    files: {
+      'packages/server/src/stdio/forbidden.ts':
+        "import { Hono } from 'hono';\nexport const app = new Hono();\n",
+    },
+  },
+  {
+    rule: 'hono-only-in-ingress',
+    name: 'a module of the server next to the way in imports the adapter',
+    files: {
+      'packages/server/src/forbidden.ts':
+        "import { createMcpHonoApp } from '@modelcontextprotocol/hono';\nexport const build = createMcpHonoApp;\n",
+    },
+  },
+  {
+    rule: 'hono-only-in-ingress',
+    name: 'a test of the server outside the way in imports a type of hono',
+    files: {
+      'packages/server/src/forbidden.test.ts':
+        "import type { Context } from 'hono';\nexport type Seen = Context;\n",
+    },
+  },
 ];
 
 // Imports the rules must let pass.
 export const allowedCases: readonly Omit<Case, 'rule'>[] = [
+  {
+    name: 'the way in of the server builds its application with the adapter',
+    files: {
+      'packages/server/src/http/allowed.ts':
+        "import { Hono } from 'hono';\nimport { createMcpHonoApp } from '@modelcontextprotocol/hono';\nexport const build = (): Hono => createMcpHonoApp();\n",
+    },
+  },
   {
     name: 'the composition root builds the store of plans',
     files: {
