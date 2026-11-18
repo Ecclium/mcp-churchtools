@@ -976,6 +976,52 @@ describe('the identity of a request', () => {
     expect(promptLoggerFor).toHaveBeenCalledTimes(1);
   });
 
+  it('serves a prompt without a tenant in its line when the resolver is late over HTTP', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      let asked: () => void = () => undefined;
+      const wasAsked = new Promise<void>((done) => {
+        asked = done;
+      });
+      const resolve = vi.fn(() => {
+        asked();
+        return new Promise<never>(() => undefined);
+      });
+      const promptLoggerFor = vi.fn();
+      const { options, logs } = setup(
+        { resolver: { resolve } as unknown as TenantResolver },
+        [],
+        [testPrompt],
+      );
+      const factory = createMcpMount({
+        ...withoutIdentity(options),
+        identityOf: () => identity,
+        promptLoggerFor,
+      }).factory;
+      const connection = await modern.open(factory);
+      const before = logs().length;
+      const reply = modern.ask(connection, 'prompts/get', {
+        name: 'test_wochenende',
+        arguments: { samstag: '2026-10-31', stichworte: 'Kaffee' },
+      });
+      await wasAsked;
+      await vi.advanceTimersByTimeAsync(tenantResolverDeadlineMs);
+      expect(at(await reply, 'result', 'messages')).toBeDefined();
+      expect(logs().slice(before)).toEqual([
+        {
+          ts: '1970-01-01T00:00:00.000Z',
+          level: 'info',
+          event: 'prompt_served',
+          prompt: 'test_wochenende',
+        },
+      ]);
+      expect(promptLoggerFor).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the line of a prompt over stdio without a tenant and without asking the resolver', async () => {
     const resolve = vi.fn();
     const promptLoggerFor = vi.fn();

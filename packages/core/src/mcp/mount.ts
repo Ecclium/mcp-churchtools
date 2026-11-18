@@ -253,14 +253,17 @@ const isVersion = (value: unknown): value is string => {
  * stands also when the catalog offers no prompt, so the answer to the
  * handshake does not change with the toolsets.
  *
- * A call resolves tenant and actor for the identity of the start; an answer
- * of the resolver that is no object, or a rejection, counts as no tenant,
- * which the pipeline audits and ends with `auth`. So does an object the
- * pipeline cannot read without running its code, such as a proxy or one
- * with a getter (ADR 0024). The mount waits for the resolver only until
- * the client cancels the call or the connection ends; the call then runs
- * into the pipeline without a tenant, which ends it as `network` and
- * audits it. A call without arguments counts as one with none, as in the
+ * A call resolves tenant and actor for its identity, the one of the start
+ * over stdio or the one of its request over HTTP; an answer of the
+ * resolver that is no object, or a rejection, counts as no tenant, which
+ * the pipeline audits and ends with `auth`. So does an object the pipeline
+ * cannot read without running its code, such as a proxy or one with a
+ * getter (ADR 0024). The mount waits for the resolver until the client
+ * cancels the call or the connection ends, which the pipeline ends as
+ * `network`, and at most {@link tenantResolverDeadlineMs}, after which it
+ * ends as `upstream` (ADR 0073); both are audited. Over HTTP a prompt asks
+ * the resolver as well, with the same deadline, only to name the tenant in
+ * its log line; a prompt without a tenant in time is served all the same. A call without arguments counts as one with none, as in the
  * tools the SDK registers itself. The handler never throws: the SDK would
  * send the message of an error as it is. A call that fails in the mount
  * itself gets the fixed sentence of `internal`, and the logger gets the
