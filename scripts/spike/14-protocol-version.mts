@@ -83,7 +83,7 @@ import {
 } from './lib/protocol-probe.mts';
 
 /** The version of the SDK behind the recorder, as the root pins it. */
-export const sdkVersion = '2.3.1';
+export const sdkVersion = '2.4.0';
 
 /** The only address the probe binds to. */
 export const bindAddress = '127.0.0.1';
@@ -137,7 +137,7 @@ export const emptyTool: Tool = Object.freeze<Tool>({
 });
 
 // fromJsonSchema and elicitInput are the only ways a value of a client
-// reaches the bundled fast-uri of the SDK 2.3.1; the probe uses neither,
+// reaches the bundled fast-uri of the SDK 2.4.0; the probe uses neither,
 // and like the mount of Ecclium it refuses validation outright (ADR 0059).
 const refusingValidator: jsonSchemaValidator = Object.freeze({
   getValidator: (): never => {

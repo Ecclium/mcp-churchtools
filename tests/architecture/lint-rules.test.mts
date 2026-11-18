@@ -281,6 +281,22 @@ const probes: readonly {
     concerns: ['mcp-register'],
   },
   {
+    code: "import { SkillsExtension } from '@modelcontextprotocol/server/ext/skills';",
+    concerns: ['mcp-register', 'mcp-sdk'],
+  },
+  {
+    code: "export * from '@modelcontextprotocol/server/ext/skills/node';",
+    concerns: ['mcp-register', 'mcp-sdk'],
+  },
+  {
+    code: "await import('@modelcontextprotocol/server/ext/skills');",
+    concerns: ['mcp-register', 'mcp-sdk'],
+  },
+  {
+    code: "type Skills = typeof import('@modelcontextprotocol/server/ext/skills');",
+    concerns: ['mcp-register', 'mcp-sdk'],
+  },
+  {
     code: 'mcp.server.setRequestHandler(schema, () => ({}));',
     concerns: ['mcp-register'],
   },

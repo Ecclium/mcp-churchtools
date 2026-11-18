@@ -280,7 +280,9 @@ describe('renderEgressAcl', () => {
           }
         }
       }),
-      { numRuns: 500 },
+      // 500 runs rendered 14 to 26 lists in twelve runs and 10 in one, so
+      // the check below failed now and then. 2000 runs render about 70.
+      { numRuns: 2000 },
     );
     // Not only lists that throw or hold no target.
     expect(rendered).toBeGreaterThan(10);

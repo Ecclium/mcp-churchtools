@@ -29,7 +29,7 @@ import { defaultPolicy } from '../policy/check.js';
 import { createToolCatalog } from '../registry/index.js';
 import { createMcpMount } from './mount.js';
 
-// The test of reachability of ADR 0059. The SDK bundles fast-uri 3.1.0
+// The test of reachability of ADR 0059. The SDK bundles fast-uri 3.1.8
 // with known advisories, and only Ajv calls it, through the object it sets
 // as its default uriResolver. This test counts every call on that object
 // while a client drives the mount through whole sessions of both eras with
