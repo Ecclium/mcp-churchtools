@@ -53,7 +53,11 @@ import { maxResultBytes, resultBytes } from '../pipeline/stages.js';
 import { sealRedacted } from '../redaction/redacted.js';
 import { createToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
-import { createMcpMount, type McpMountOptions } from './mount.js';
+import {
+  createMcpMount,
+  type McpMountOptions,
+  tenantResolverDeadlineMs,
+} from './mount.js';
 import { deriveOutputSchema } from './schema.js';
 
 // The mount never takes a write back nor signs a section anew; the
@@ -768,6 +772,228 @@ describe('the resolver of the tenant', () => {
     const connection = await modern.open(factory);
     await call(modern, connection, 'ct_test_context', {});
     expect(listeners).toEqual([0]);
+  });
+});
+
+describe('the deadline of the resolver', () => {
+  const resolverOf = (resolve: (identity: never) => unknown): TenantResolver =>
+    ({ resolve }) as unknown as TenantResolver;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each(eras)(
+    'ends a call in the $name era with upstream when the resolver has not answered after ten seconds',
+    async (era) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      // Not vi.waitFor: with fake timers it moves the clock on by itself.
+      let asked: () => void = () => undefined;
+      const wasAsked = new Promise<void>((done) => {
+        asked = done;
+      });
+      const resolve = vi.fn(() => {
+        asked();
+        return new Promise<never>(() => undefined);
+      });
+      const { factory, audit, logs } = setup({
+        resolver: resolverOf(resolve),
+      });
+      const connection = await era.open(factory);
+      const reply = call(era, connection, 'ct_example_echo', {});
+      await wasAsked;
+      await vi.advanceTimersByTimeAsync(tenantResolverDeadlineMs - 1);
+      expect(audit()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(at(await reply, 'result')).toMatchObject({
+        content: [{ type: 'text', text: fixedSentences.upstream }],
+        isError: true,
+      });
+      expect(audit()).toMatchObject([
+        {
+          tool: 'ct_example_echo',
+          outcome: 'error',
+          errorCode: 'upstream',
+          tenantId: auditPlaceholders.tenantId,
+          actor: auditPlaceholders.actor,
+        },
+      ]);
+      expect(logs()).toEqual([]);
+    },
+  );
+
+  it('takes an answer just before the deadline and clears its timer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const real = createStdioTenantResolver();
+    let answer: (value: unknown) => void = () => undefined;
+    let asked: () => void = () => undefined;
+    const wasAsked = new Promise<void>((done) => {
+      asked = done;
+    });
+    const resolve = vi.fn((given: never) => {
+      asked();
+      return new Promise((resolved) => {
+        answer = () => {
+          resolved(real.resolve(given));
+        };
+      });
+    });
+    const { factory, audit } = setup({ resolver: resolverOf(resolve) });
+    const connection = await modern.open(factory);
+    const reply = call(modern, connection, 'ct_test_context', {});
+    await wasAsked;
+    await vi.advanceTimersByTimeAsync(tenantResolverDeadlineMs - 1);
+    answer(undefined);
+    expect(at(await reply, 'result', 'isError')).toBeUndefined();
+    expect(audit()).toMatchObject([{ outcome: 'ok', tenantId: 'default' }]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+// The options without the fixed identity of the start, for a mount that
+// reads the identity of each request.
+const withoutIdentity = (options: McpMountOptions): McpMountOptions => {
+  const copy: Record<string, unknown> = { ...options };
+  delete copy['identity'];
+  return copy as unknown as McpMountOptions;
+};
+
+describe('the identity of a request', () => {
+  const identity = createStdioIdentity({
+    stdioSubject: 'local-stdio',
+    readOnly: true,
+  });
+
+  it('takes exactly one of a fixed identity and a reader of the identity of a request', () => {
+    const { options } = setup();
+    const { identity: fixed, ...rest } = options;
+    expect(() => createMcpMount(rest)).toThrow(TypeError);
+    expect(() =>
+      createMcpMount({ ...options, identityOf: () => fixed }),
+    ).toThrow(TypeError);
+    expect(() =>
+      createMcpMount({ ...rest, identityOf: () => fixed }),
+    ).not.toThrow();
+  });
+
+  it.each(eras)(
+    'reads the identity per instance from the context of the factory in the $name era',
+    async (era) => {
+      const seen: unknown[] = [];
+      const real = createStdioTenantResolver();
+      const resolve = vi.fn((given: unknown) =>
+        real.resolve(given as typeof identity),
+      );
+      const { options } = setup({
+        resolver: { resolve } as unknown as TenantResolver,
+      });
+      const rest = withoutIdentity(options);
+      const factory = createMcpMount({
+        ...rest,
+        identityOf: (context) => {
+          seen.push(context.era);
+          return identity;
+        },
+      }).factory;
+      const connection = await era.open(factory);
+      const reply = await call(era, connection, 'ct_test_context', {});
+      expect(at(reply, 'result', 'isError')).toBeUndefined();
+      expect(seen).toContain(era.name);
+      expect(resolve.mock.calls.at(-1)?.[0]).toBe(identity);
+    },
+  );
+
+  it.each([
+    ['no identity', () => undefined],
+    [
+      'a reader that throws',
+      () => {
+        throw new Error('person-id-1');
+      },
+    ],
+  ])('ends every call with auth for %s', async (_label, identityOf) => {
+    const { options, audit } = setup();
+    const rest = withoutIdentity(options);
+    const factory = createMcpMount({ ...rest, identityOf }).factory;
+    const connection = await modern.open(factory);
+    const reply = await call(modern, connection, 'ct_example_echo', {});
+    expect(at(reply, 'result')).toMatchObject({
+      content: [{ type: 'text', text: fixedSentences.auth }],
+      isError: true,
+    });
+    expect(audit()).toMatchObject([
+      { errorCode: 'auth', tenantId: auditPlaceholders.tenantId },
+    ]);
+    expect(JSON.stringify(connection.received)).not.toContain('person-id-1');
+  });
+
+  it('names the tenant in the line of a prompt over HTTP, and no tenant without one', async () => {
+    const tenantLines: string[] = [];
+    const { options, logs } = setup({}, [], [testPrompt]);
+    const rest = withoutIdentity(options);
+    const promptLoggerFor = vi.fn((tenantId: string) =>
+      createLogger({
+        writer: lines(tenantLines),
+        clock: frozenClock,
+        minLevel: 'debug',
+        bound: { tenantId: tenantId as never },
+        prompts: new Set([testPrompt.name]),
+      }),
+    );
+    const ask = async (who: typeof identity | undefined): Promise<Json> => {
+      const factory = createMcpMount({
+        ...rest,
+        identityOf: () => who,
+        promptLoggerFor,
+      }).factory;
+      const connection = await modern.open(factory);
+      return modern.ask(connection, 'prompts/get', {
+        name: 'test_wochenende',
+        arguments: { samstag: '2026-10-31', stichworte: 'Kaffee' },
+      });
+    };
+    const before = logs().length;
+    expect(at(await ask(identity), 'result', 'messages')).toBeDefined();
+    expect(parsed(tenantLines)).toEqual([
+      {
+        ts: '1970-01-01T00:00:00.000Z',
+        level: 'info',
+        event: 'prompt_served',
+        tenantId: 'default',
+        prompt: 'test_wochenende',
+      },
+    ]);
+    expect(logs().slice(before)).toEqual([]);
+    expect(at(await ask(undefined), 'result', 'messages')).toBeDefined();
+    expect(logs().slice(before)).toEqual([
+      {
+        ts: '1970-01-01T00:00:00.000Z',
+        level: 'info',
+        event: 'prompt_served',
+        prompt: 'test_wochenende',
+      },
+    ]);
+    expect(promptLoggerFor).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the line of a prompt over stdio without a tenant and without asking the resolver', async () => {
+    const resolve = vi.fn();
+    const promptLoggerFor = vi.fn();
+    const { factory } = setup(
+      {
+        resolver: { resolve } as unknown as TenantResolver,
+        promptLoggerFor,
+      },
+      [],
+      [testPrompt],
+    );
+    const connection = await modern.open(factory);
+    await modern.ask(connection, 'prompts/get', {
+      name: 'test_wochenende',
+      arguments: { samstag: '2026-10-31', stichworte: 'Kaffee' },
+    });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(promptLoggerFor).not.toHaveBeenCalled();
   });
 });
 

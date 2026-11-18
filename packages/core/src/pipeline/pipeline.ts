@@ -65,6 +65,7 @@ import {
   type RunId,
   type TenantAssignment,
   type TenantContext,
+  type TenantId,
   type ToolCall,
   type WritePort,
   type WriteState,
@@ -188,6 +189,14 @@ export interface ToolRequest {
    * assignment it cannot read that way counts as none.
    */
   readonly assignment: TenantAssignment | undefined;
+  /**
+   * Whether the resolver gave no answer within the deadline of the mount
+   * (ADR 0073). A call without a tenant then ends with `upstream` instead
+   * of `auth`, so that the operator looks at what the resolver waits for,
+   * not at the sign-in. It counts only when no tenant came. Unset counts
+   * as no.
+   */
+  readonly resolverLate?: boolean;
   /** How the call runs, set by the composition root only. */
   readonly mode: Mode;
   /** The level of redaction. */
@@ -1072,6 +1081,19 @@ const copyAssignment = (value: unknown): TenantAssignment | undefined => {
   }) as unknown as TenantAssignment;
 };
 
+/**
+ * The tenant of an answer of a resolver, read the way the pipeline reads
+ * it: through own data properties only, without running a getter or a
+ * trap of a proxy (ADR 0024). `undefined` for an answer the pipeline would
+ * count as no tenant. The mount names the tenant in the log line of a
+ * prompt with it (ADR 0065).
+ *
+ * @param value - What the resolver answered.
+ * @returns The tenant, or `undefined`.
+ */
+export const tenantOfAssignment = (value: unknown): TenantId | undefined =>
+  copyAssignment(value)?.tenantId;
+
 const failed = (
   code: ErrorCode,
   message?: string,
@@ -1542,8 +1564,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // Without a tenant, or with an answer the copy could not read, there is
     // no context to run the tool in. The call ends before a listener or a
     // context exists, with one audit line that holds the placeholders and
-    // without a log line, since only a context writes one (ADR 0024).
-    if (assignment === undefined) return failed('auth');
+    // without a log line, since only a context writes one (ADR 0024). A
+    // resolver that missed the deadline of the mount ends it as upstream,
+    // one that answered without a tenant or failed as auth (ADR 0073).
+    if (assignment === undefined) {
+      return failed(request.resolverLate === true ? 'upstream' : 'auth');
+    }
     const controller = new AbortController();
     const forward = (): void => {
       controller.abort(abortReason);

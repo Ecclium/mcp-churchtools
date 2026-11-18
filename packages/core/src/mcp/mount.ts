@@ -30,6 +30,7 @@ import type {
   Mode,
   RedactionLevel,
   TenantAssignment,
+  TenantId,
   TenantResolver,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
@@ -45,6 +46,7 @@ import {
   type jsonSchemaValidator,
   type ListPromptsResult,
   type ListToolsResult,
+  type McpRequestContext,
   McpServer,
   type McpServerFactory,
   type Prompt,
@@ -57,7 +59,11 @@ import {
 
 import { fixedSentences } from '../errors/index.js';
 import { isStrictLevel } from '../redaction/pseudonym-form.js';
-import type { ConfirmationAnswer, ToolPipeline } from '../pipeline/index.js';
+import {
+  type ConfirmationAnswer,
+  tenantOfAssignment,
+  type ToolPipeline,
+} from '../pipeline/index.js';
 import type { ObjectJsonSchema, ToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
 import { deriveOutputSchema } from './schema.js';
@@ -69,10 +75,28 @@ export interface McpMountOptions {
   readonly catalog: ToolCatalog;
   /** The pipeline every call runs through. */
   readonly pipeline: ToolPipeline;
-  /** The checked identity of the start, the same for every call. */
-  readonly identity: Identity;
+  /**
+   * The checked identity of the start, the same for every call, over
+   * stdio. Exactly one of `identity` and `identityOf` is set.
+   */
+  readonly identity?: Identity;
+  /**
+   * Reads the checked identity of one request from the context the SDK
+   * hands the factory, over HTTP, where every request signs in on its own
+   * (ADR 0073). `undefined` counts as no identity: every call of that
+   * request then ends with `auth`. Exactly one of `identity` and
+   * `identityOf` is set.
+   */
+  readonly identityOf?: (context: McpRequestContext) => Identity | undefined;
   /** Assigns tenant and actor to the identity, once per call. */
   readonly resolver: TenantResolver;
+  /**
+   * Builds the logger of the lines of a prompt for one tenant, with the
+   * tenant bound to it, over HTTP (ADR 0065). Without it, or when no tenant
+   * comes in time, the lines go to `logger` without a tenant, as over stdio.
+   * It is asked only with `identityOf`.
+   */
+  readonly promptLoggerFor?: (tenantId: TenantId) => Logger;
   /** How calls run, set by the composition root only. */
   readonly mode: Mode;
   /** The level of redaction of every call. */
@@ -156,6 +180,24 @@ const questionKey = 'bestaetigung';
 // How long a requestState and the question it belongs to live: as long as
 // the plan waits in the PlanStore (ADR 0029).
 const questionSeconds = 600;
+
+/**
+ * How long the mount waits for the `TenantResolver` of one call or one
+ * prompt, in milliseconds: ten seconds over stdio and HTTP alike (ADR
+ * 0073). A resolver that has not answered by then counts as late: the call
+ * ends with `upstream`, and the line of a prompt goes without a tenant.
+ */
+export const tenantResolverDeadlineMs = 10_000;
+
+// What the mount learned from the resolver: a tenant, none, or none in
+// time.
+type Resolved =
+  | { readonly kind: 'answer'; readonly assignment: TenantAssignment }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'late' };
+
+const noneResolved: Resolved = Object.freeze({ kind: 'none' });
+const lateResolved: Resolved = Object.freeze({ kind: 'late' });
 
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -258,10 +300,19 @@ const isVersion = (value: unknown): value is string => {
  * ```
  */
 export function createMcpMount(options: McpMountOptions): McpMount {
-  const { catalog, pipeline, identity, resolver, logger, version } = options;
+  const { catalog, pipeline, resolver, logger, version } = options;
   const { mode, redaction, readOnly } = options;
+  const { identity, identityOf, promptLoggerFor } = options;
   if (!isVersion(version)) {
     throw new TypeError('The version of the server is invalid.');
+  }
+  // One source of the identity: fixed for the process over stdio, or read
+  // per request over HTTP. Both or neither would leave it open which
+  // principal a call runs for.
+  if ((identity === undefined) === (identityOf === undefined)) {
+    throw new TypeError(
+      'The mount takes exactly one of a fixed identity and a reader of the identity of a request.',
+    );
   }
   const serverInfo = Object.freeze({ name: serverName, version });
   // The codec of the requestState of a question (ADR 0053): HMAC with the
@@ -353,42 +404,59 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     },
   });
 
-  // The question to the resolver runs against the signal of the request.
-  // A resolver of an extension that never answers would otherwise hold the
-  // call before the pipeline and its audit, beyond a cancellation and the
-  // end of the connection, both of which abort the signal. An abort counts
-  // as no tenant, and the pipeline ends the call as network (ADR 0024).
+  // The question to the resolver runs against the signal of the request
+  // and against a deadline. A resolver of an extension that never answers
+  // would otherwise hold the call before the pipeline and its audit; an
+  // abort, a cancellation or the end of the connection, counts as no
+  // tenant, which the pipeline ends as network, and the deadline as late,
+  // which it ends as upstream (ADR 0024, ADR 0073). The timer lives only as
+  // long as the question.
   const resolveAssignment = async (
+    who: Identity | undefined,
     signal: AbortSignal,
-  ): Promise<TenantAssignment | undefined> => {
-    // Removes the listener once either side has settled.
+  ): Promise<Resolved> => {
+    if (who === undefined) return noneResolved;
+    // Removes the listener and the timer once either side has settled.
     const settled = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // An aborted signal fires no further event, so the race below could
       // not end; the catch makes this no tenant as well.
       signal.throwIfAborted();
-      const aborted = new Promise<undefined>((resolve) => {
+      const aborted = new Promise<Resolved>((resolve) => {
         signal.addEventListener(
           'abort',
           () => {
-            resolve(undefined);
+            resolve(noneResolved);
           },
           { once: true, signal: settled.signal },
         );
       });
-      const answered = Promise.resolve(resolver.resolve(identity));
-      // A rejection after the abort must not end as an unhandled one.
+      const late = new Promise<Resolved>((resolve) => {
+        timer = setTimeout(() => {
+          resolve(lateResolved);
+        }, tenantResolverDeadlineMs);
+      });
+      const answered = Promise.resolve(resolver.resolve(who)).then(
+        (answer: unknown): Resolved =>
+          typeof answer === 'object' &&
+          answer !== null &&
+          !Array.isArray(answer)
+            ? Object.freeze({
+                kind: 'answer',
+                assignment: answer as TenantAssignment,
+              })
+            : noneResolved,
+      );
+      // A rejection after the abort or the deadline must not end as an
+      // unhandled one.
       answered.catch(() => undefined);
-      const answer: unknown = await Promise.race([answered, aborted]);
-      return typeof answer === 'object' &&
-        answer !== null &&
-        !Array.isArray(answer)
-        ? (answer as TenantAssignment)
-        : undefined;
+      return await Promise.race([answered, aborted, late]);
     } catch {
-      return undefined;
+      return noneResolved;
     } finally {
       settled.abort();
+      if (timer !== undefined) clearTimeout(timer);
     }
   };
 
@@ -396,14 +464,40 @@ export function createMcpMount(options: McpMountOptions): McpMount {
 
   const listPrompts = (): ListPromptsResult => ({ prompts });
 
+  // The logger of the lines of one prompt: over HTTP with the tenant of the
+  // request bound to it, when the resolver names one in time (ADR 0065).
+  // A builder that throws leaves the line without a tenant.
+  const promptLogger = async (
+    who: Identity | undefined,
+    signal: AbortSignal,
+  ): Promise<Logger> => {
+    if (identityOf === undefined || promptLoggerFor === undefined) {
+      return logger;
+    }
+    const resolved = await resolveAssignment(who, signal);
+    const tenantId =
+      resolved.kind === 'answer'
+        ? tenantOfAssignment(resolved.assignment)
+        : undefined;
+    if (tenantId === undefined) return logger;
+    try {
+      return promptLoggerFor(tenantId);
+    } catch {
+      return logger;
+    }
+  };
+
   // Throws only the refusals below, each with a fixed sentence, which the
   // SDK sends as invalid params.
-  const getPrompt = (request: GetPromptRequest): GetPromptResult => {
+  const getPrompt = (
+    request: GetPromptRequest,
+    lines: Logger,
+  ): GetPromptResult => {
     const { name } = request.params;
     const entry = catalog.prompt(name);
     if (entry === undefined) {
       note(() => {
-        logger.warn(promptUnknownEvent);
+        lines.warn(promptUnknownEvent);
       });
       throw new ProtocolError(
         ProtocolErrorCode.InvalidParams,
@@ -413,7 +507,7 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     const filling = entry.fill(request.params.arguments);
     if (!filling.ok) {
       note(() => {
-        logger.warn(promptRefusedEvent, {
+        lines.warn(promptRefusedEvent, {
           prompt: entry.name,
           code: 'validation',
         });
@@ -426,7 +520,7 @@ export function createMcpMount(options: McpMountOptions): McpMount {
       );
     }
     note(() => {
-      logger.info(promptServedEvent, { prompt: entry.name });
+      lines.info(promptServedEvent, { prompt: entry.name });
     });
     return {
       description: entry.description,
@@ -461,6 +555,7 @@ export function createMcpMount(options: McpMountOptions): McpMount {
   const callTool = async (
     instance: McpServer,
     era: 'legacy' | 'modern',
+    who: Identity | undefined,
     request: CallToolRequest,
     ctx: ServerContext,
   ): Promise<CallToolResult | InputRequiredResult> => {
@@ -474,12 +569,14 @@ export function createMcpMount(options: McpMountOptions): McpMount {
       // codec nothing verified a requestState, and it counts for nothing.
       const state = codec === undefined ? undefined : ctx.mcpReq.requestState();
       const answer = state === undefined ? undefined : answerOf(state, ctx);
-      const assignment = await resolveAssignment(signal);
+      const resolved = await resolveAssignment(who, signal);
       const outcome = await pipeline.call(
         name,
         input,
         Object.freeze({
-          assignment,
+          assignment:
+            resolved.kind === 'answer' ? resolved.assignment : undefined,
+          ...(resolved.kind === 'late' ? { resolverLate: true } : {}),
           mode,
           redaction,
           readOnly,
@@ -520,6 +617,16 @@ export function createMcpMount(options: McpMountOptions): McpMount {
 
   const factory: McpServerFactory = (context) => {
     const { era } = context;
+    // The identity of this instance: the one of the start over stdio, the
+    // one of its request over HTTP. A reader that throws counts as none.
+    let who: Identity | undefined = identity;
+    if (identityOf !== undefined) {
+      try {
+        who = identityOf(context);
+      } catch {
+        who = undefined;
+      }
+    }
     // No capabilities here: with them, the SDK installs handlers of its
     // own, which check input and output before any code of the mount runs
     // (ADR 0053). The codec checks a requestState before the handler, and
@@ -549,10 +656,14 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     });
     instance.server.setRequestHandler('tools/list', listTools);
     instance.server.setRequestHandler('tools/call', (request, ctx) =>
-      callTool(instance, era, request, ctx),
+      callTool(instance, era, who, request, ctx),
     );
     instance.server.setRequestHandler('prompts/list', listPrompts);
-    instance.server.setRequestHandler('prompts/get', getPrompt);
+    instance.server.setRequestHandler(
+      'prompts/get',
+      async (request, ctx): Promise<GetPromptResult> =>
+        getPrompt(request, await promptLogger(who, ctx.mcpReq.signal)),
+    );
     instance.server.onerror = () => {
       report(instanceErrorEvent);
     };

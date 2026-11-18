@@ -30,7 +30,11 @@ import {
   type ToolCatalog,
 } from '../registry/index.js';
 import { defaultPolicy } from '../policy/check.js';
-import { createToolPipeline, type ToolRequest } from './pipeline.js';
+import {
+  createToolPipeline,
+  tenantOfAssignment,
+  type ToolRequest,
+} from './pipeline.js';
 import { maxInputDepth, maxInputElements } from './stages.js';
 
 // Requests go through the real transport on the ChurchTools double, which
@@ -518,6 +522,86 @@ describe('a call without a tenant', () => {
       objectRefs: [],
     });
     expect(logLines).toEqual([]);
+  });
+
+  it('ends with upstream when the resolver missed the deadline of the mount', async () => {
+    let runs = 0;
+    const { pipeline, events, auditLines, logLines } = setup([
+      testTool('ct_count', () => {
+        runs += 1;
+        return Promise.resolve({ text: 'x' });
+      }),
+    ]);
+    const outcome = await pipeline.call(
+      'ct_count',
+      {},
+      request({ assignment: undefined, resolverLate: true }),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'upstream', message: fixedSentences.upstream },
+    });
+    expect(runs).toBe(0);
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tenantId: 'invalid',
+      tool: 'ct_count',
+      outcome: 'error',
+      errorCode: 'upstream',
+    });
+    expect(logLines).toEqual([]);
+    // A late resolver counts only without a tenant, and a cancelled call
+    // stays network.
+    const withTenant = await pipeline.call(
+      'ct_count',
+      {},
+      request({ resolverLate: true }),
+    );
+    expect(withTenant.ok).toBe(true);
+    const controller = new AbortController();
+    controller.abort('a reason of the client');
+    const cancelled = await pipeline.call(
+      'ct_count',
+      {},
+      request({
+        assignment: undefined,
+        resolverLate: true,
+        signal: controller.signal,
+      }),
+    );
+    expect(!cancelled.ok && cancelled.error.code).toBe('network');
+  });
+
+  it('reads the tenant of an answer of a resolver only through own data properties', () => {
+    expect(
+      tenantOfAssignment({
+        tenantId: 'demo-tenant',
+        actor: { kind: 'service', id: 'person-id-1' },
+      }),
+    ).toBe('demo-tenant');
+    let read = 0;
+    const withGetter = {
+      get tenantId(): string {
+        read += 1;
+        return 'demo-tenant';
+      },
+      actor: { kind: 'service', id: 'person-id-1' },
+    };
+    expect(tenantOfAssignment(withGetter)).toBeUndefined();
+    expect(
+      tenantOfAssignment(
+        new Proxy(
+          {
+            tenantId: 'demo-tenant',
+            actor: { kind: 'service', id: 'person-id-1' },
+          },
+          {},
+        ),
+      ),
+    ).toBeUndefined();
+    expect(tenantOfAssignment({ tenantId: 'demo-tenant' })).toBeUndefined();
+    expect(tenantOfAssignment(undefined)).toBeUndefined();
+    expect(read).toBe(0);
   });
 
   it('ends with auth before the input is checked', async () => {
