@@ -119,7 +119,11 @@ const origin = 'http://127.0.0.1:8787';
 
 const setup = (overrides: Partial<HttpAppOptions> = {}) => {
   const events: Logged[] = [];
-  const calls: { readonly name: string; readonly request: ToolRequest }[] = [];
+  const calls: {
+    readonly name: string;
+    readonly input: unknown;
+    readonly request: ToolRequest;
+  }[] = [];
   const pipeline: ToolPipeline = {
     undo: () => Promise.resolve({ kind: 'off' }),
     adopt: () => Promise.resolve({ kind: 'off' }),
@@ -137,8 +141,8 @@ const setup = (overrides: Partial<HttpAppOptions> = {}) => {
         transient: false,
       }),
     endRun: () => false,
-    call: (name, _input, request) => {
-      calls.push({ name, request });
+    call: (name, input, request) => {
+      calls.push({ name, input, request });
       return Promise.resolve(done);
     },
   };
@@ -306,16 +310,70 @@ describe('the server over HTTP', () => {
     expect(await response.text()).not.toContain('person-id-1');
   });
 
-  it('refuses a host that is not allowed with 403, before the sign-in', async () => {
-    const { app, events } = setup();
-    const response = await send(
+  it('refuses a host or an origin that is not allowed with 403 and a fixed sentence, before the sign-in', async () => {
+    let asked = 0;
+    const { app, events } = setup({
+      authenticate: () => {
+        asked += 1;
+        return Promise.resolve(identityA);
+      },
+    });
+    const canary = `CANARY${String(Date.now())}`;
+    const host = await send(
       app,
       { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-      { headers: { host: 'rebound.example.org' } },
+      { headers: { host: `${canary}.example.org`, authorization: '' } },
     );
-    expect(response.status).toBe(403);
-    expect(events).toEqual([]);
+    const origin = await send(
+      app,
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      { headers: { origin: `https://${canary}.example.org` } },
+    );
+    expect([host.status, origin.status]).toEqual([403, 403]);
+    expect(host.headers.get('cache-control')).toBe('no-store');
+    expect(at(await json(host), 'error', 'message')).toBe(
+      'This server does not answer for this host.',
+    );
+    expect(at(await json(origin), 'error', 'message')).toBe(
+      'This server does not answer requests from this origin.',
+    );
+    expect(asked).toBe(0);
+    expect(events.map((event) => event.event)).toEqual([
+      'http_host_refused',
+      'http_origin_refused',
+    ]);
+    expect(JSON.stringify(events)).not.toContain(canary);
   });
+
+  it.each([
+    ['null', null],
+    [
+      'an identity without scopes',
+      { source: 'bearer', subject: 'person-id-1' },
+    ],
+    [
+      'an identity with an unknown scope',
+      { source: 'bearer', subject: 'person-id-1', scopes: ['admin'] },
+    ],
+    ['an empty subject', { source: 'bearer', subject: '', scopes: ['read'] }],
+    [
+      'an unknown source',
+      { source: 'header', subject: 'person-id-1', scopes: ['read'] },
+    ],
+  ])(
+    'counts %s from the check of the sign-in as a refusal',
+    async (_label, given) => {
+      const { app, calls } = setup({
+        authenticate: () => Promise.resolve(given as unknown as Identity),
+      });
+      const response = await modern(app, 'tools/call', {
+        name: 'ct_example_echo',
+        arguments: {},
+      });
+      expect(response.status).toBe(401);
+      expect(calls).toEqual([]);
+    },
+  );
 
   it('answers 404 with an empty body on any other path', async () => {
     const { app } = setup();
@@ -350,21 +408,33 @@ describe('the 2026 era over HTTP', () => {
     });
   });
 
-  it('keeps two principals of two tenants apart in one process', async () => {
+  it('keeps two principals of two tenants apart in one process, in parallel and in both eras', async () => {
     const { app, calls } = setup();
-    await modern(app, 'tools/call', { name: 'ct_example_echo', arguments: {} });
-    await modern(
-      app,
-      'tools/call',
-      { name: 'ct_example_echo', arguments: {} },
-      { authorization: `Bearer ${tokenB}` },
-    );
-    await modern(app, 'tools/call', { name: 'ct_example_echo', arguments: {} });
-    expect(calls.map((call) => call.request.assignment?.tenantId)).toEqual([
-      'demo-tenant',
-      'second-tenant',
-      'demo-tenant',
+    const echo = (label: string) => ({
+      name: 'ct_example_echo',
+      arguments: { text: label },
+    });
+    const asB = { authorization: `Bearer ${tokenB}` };
+    await Promise.all([
+      modern(app, 'tools/call', echo('modern-a')),
+      modern(app, 'tools/call', echo('modern-b'), asB),
+      legacy(app, 'tools/call', echo('legacy-a')),
+      legacy(app, 'tools/call', echo('legacy-b'), asB),
+      modern(app, 'tools/call', echo('modern-a2')),
     ]);
+    const tenants = Object.fromEntries(
+      calls.map((call) => [
+        String(at(call.input, 'text')),
+        call.request.assignment?.tenantId,
+      ]),
+    );
+    expect(tenants).toEqual({
+      'modern-a': 'demo-tenant',
+      'modern-b': 'second-tenant',
+      'legacy-a': 'demo-tenant',
+      'legacy-b': 'second-tenant',
+      'modern-a2': 'demo-tenant',
+    });
   });
 
   it('refuses subscriptions/listen before the handler, also behind a byte order mark and in a list', async () => {
@@ -471,11 +541,33 @@ describe('the body of a request', () => {
     ]);
   });
 
-  it('refuses a body over 1 MiB with 413, with or without a declared length', async () => {
+  it('refuses a body over 1 MiB with 413, with a declared length before reading and without one while reading', async () => {
     const { app, events } = setup();
-    const raw = `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"x":"${'a'.repeat(maxHttpBodyBytes)}"}}`;
-    const declared = await send(app, undefined, { raw });
+    let read = false;
+    const declared = await app.fetch(
+      new Request(`${origin}${mcpPath}`, {
+        method: 'POST',
+        headers: {
+          host: '127.0.0.1:8787',
+          'content-type': 'application/json',
+          'content-length': String(maxHttpBodyBytes + 1),
+          authorization: `Bearer ${tokenA}`,
+        },
+        body: new ReadableStream<Uint8Array>(
+          {
+            pull: (controller) => {
+              read = true;
+              controller.close();
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+        duplex: 'half',
+      }),
+    );
     expect(declared.status).toBe(413);
+    expect(read).toBe(false);
+    const raw = `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"x":"${'a'.repeat(maxHttpBodyBytes)}"}}`;
     const encoded = new TextEncoder().encode(raw);
     const streamed = await app.fetch(
       new Request(`${origin}${mcpPath}`, {
@@ -548,7 +640,7 @@ describe('the body of a request', () => {
 });
 
 describe('what the server writes', () => {
-  it('names no token and no value of the client in an answer or the log', async () => {
+  it('names no token, and no value of the client in its own refusals or the log', async () => {
     const { app, events } = setup();
     const canary = makeCanary('name').value;
     const headerCanary = `CANARY${String(Date.now())}header`;

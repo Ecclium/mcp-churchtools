@@ -330,6 +330,10 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     mcp_stdio_error: 'Die Verbindung über stdio meldete einen Fehler.',
     mcp_http_error:
       'Der Handler des MCP-SDK meldete beim Betrieb über HTTP einen Fehler. Die Meldung des SDK steht nicht in der Zeile, weil sie Text des Clients enthalten kann.',
+    http_host_refused:
+      'Eine Anfrage über HTTP nannte in `Host` einen Namen, für den der Server nicht antwortet. Sie erhielt 403, bevor die Anmeldung geprüft wurde.',
+    http_origin_refused:
+      'Eine Anfrage über HTTP kam mit einem `Origin`, den der Server nicht annimmt. Sie erhielt 403, bevor die Anmeldung geprüft wurde.',
     http_auth_refused:
       'Eine Anfrage über HTTP kam ohne gültige Anmeldung. Sie erhielt 401, bevor ihr Körper gelesen wurde.',
     http_body_not_json:

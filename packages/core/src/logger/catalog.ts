@@ -352,6 +352,8 @@ export const logEvents = Object.freeze({
   mcp_stdio_error: entry('error'),
   // The place ingress of the server over HTTP (ADR 0073).
   mcp_http_error: entry('error'),
+  http_host_refused: entry('warn'),
+  http_origin_refused: entry('warn'),
   http_auth_refused: entry('warn'),
   http_body_not_json: entry('warn'),
   http_body_unreadable: entry('warn'),

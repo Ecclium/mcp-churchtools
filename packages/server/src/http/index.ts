@@ -39,7 +39,7 @@ import {
   type McpRequestContext,
   readRequestBody,
 } from '@modelcontextprotocol/server';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 
 import {
   asksToListen,
@@ -127,8 +127,12 @@ const tooDeepEvent = 'http_body_too_deep';
 const listenRefusedEvent = 'http_listen_refused';
 const handlerErrorEvent = 'mcp_http_error';
 const internalErrorEvent = 'http_internal_error';
+const hostRefusedEvent = 'http_host_refused';
+const originRefusedEvent = 'http_origin_refused';
 
 type WarnEvent =
+  | typeof hostRefusedEvent
+  | typeof originRefusedEvent
   | typeof authRefusedEvent
   | typeof notJsonEvent
   | typeof unreadableEvent
@@ -140,6 +144,8 @@ type ErrorEvent = typeof handlerErrorEvent | typeof internalErrorEvent;
 
 // The answers the place ingress gives itself, each with a fixed sentence.
 const sentences = Object.freeze({
+  host: 'This server does not answer for this host.',
+  origin: 'This server does not answer requests from this origin.',
   auth: 'This server needs a valid sign-in.',
   notJson: 'The body must be JSON, with the content type application/json.',
   unreadable: 'The body of the request could not be read.',
@@ -167,6 +173,24 @@ const refusal = (
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const sources: readonly unknown[] = Object.freeze(['stdio', 'bearer', 'oauth']);
+const scopeNames: readonly unknown[] = Object.freeze(['read', 'write']);
+
+// Whether a check of the sign-in gave an identity of the form the mount
+// takes. Anything else counts as a refusal, so that a faulty check ends
+// with 401 and never with an identity the pipeline cannot read.
+const isIdentity = (value: unknown): value is Identity => {
+  if (!isRecord(value)) return false;
+  const { source, subject, scopes } = value;
+  return (
+    sources.includes(source) &&
+    typeof subject === 'string' &&
+    subject !== '' &&
+    Array.isArray(scopes) &&
+    scopes.every((scope) => scopeNames.includes(scope))
+  );
+};
+
 /**
  * Builds the server over HTTP: a Hono application with the first checks of
  * the adapter, the sign-in, the checks of the body and the handler of the
@@ -183,8 +207,12 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
  * - 404 for any other path, 500 with a fixed sentence when the application
  *   itself fails.
  *
- * Each refusal writes one fixed event without fields. Everything else the
- * handler of the SDK answers, `GET` and `DELETE` with 405.
+ * Each refusal of the place ingress except 404 writes one fixed event
+ * without fields, and none names a value of the request: the answers of
+ * the adapter for `Host` and `Origin`, which name the header, are replaced
+ * by fixed sentences. Everything else the handler of the SDK answers,
+ * `GET` and `DELETE` with 405; its errors may repeat what the signed-in
+ * client itself sent, such as a header that does not fit.
  *
  * @param options - What the mount needs, the check of the sign-in and the
  *   allowed host names.
@@ -273,13 +301,13 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
     });
 
   const serve = async (request: Request): Promise<Response> => {
-    let identity: Identity | undefined;
+    let identity: unknown;
     try {
       identity = await authenticate(request);
     } catch {
       identity = undefined;
     }
-    if (identity === undefined) {
+    if (!isIdentity(identity)) {
       warn(authRefusedEvent);
       return refusal(401, -32000, sentences.auth);
     }
@@ -290,6 +318,12 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
     if (!isJsonContentType(request.headers.get('content-type'))) {
       warn(notJsonEvent);
       return refusal(415, -32000, sentences.notJson);
+    }
+    // A declared length over the limit ends before anything is read, also
+    // before the copy below, which would start to read the stream.
+    if (Number(request.headers.get('content-length')) > maxHttpBodyBytes) {
+      warn(tooLargeEvent);
+      return refusal(413, -32000, sentences.tooLarge);
     }
     // Read from a copy, with the reader of the SDK, so that the checks
     // below and the SDK see the same message (ADR 0073).
@@ -324,11 +358,36 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
     );
   };
 
+  // Runs a check of the adapter and puts a fixed sentence in place of its
+  // refusal, which names the header the client sent.
+  const fixed =
+    (
+      check: MiddlewareHandler,
+      event: typeof hostRefusedEvent | typeof originRefusedEvent,
+      sentence: string,
+    ): MiddlewareHandler =>
+    async (context, next) => {
+      const seen = { passed: false };
+      const answer = await check(context, async () => {
+        seen.passed = true;
+        await next();
+      });
+      if (seen.passed) return answer;
+      warn(event);
+      return refusal(403, -32000, sentence);
+    };
+
   const app = new Hono();
   // The first layer of the checks against DNS rebinding, from the adapter:
   // host names only, without port and scheme (ADR 0073).
-  app.use('*', hostHeaderValidation(hostnames));
-  app.use('*', originValidation(hostnames));
+  app.use(
+    '*',
+    fixed(hostHeaderValidation(hostnames), hostRefusedEvent, sentences.host),
+  );
+  app.use(
+    '*',
+    fixed(originValidation(hostnames), originRefusedEvent, sentences.origin),
+  );
   app.all(mcpPath, (context) => serve(context.req.raw));
   app.notFound(() => new Response(null, { status: 404, headers: noStore }));
   app.onError(() => {
