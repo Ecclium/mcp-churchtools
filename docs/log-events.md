@@ -134,6 +134,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
 | `mcp_call_failed` | `error` | keine | Ein Aufruf eines Tools scheiterte im Mount, etwa an einem Ergebnis ohne die Marke der Maskierung. Der Client erhält `internal`. |
+| `mcp_http_error` | `error` | keine | Der Handler des MCP-SDK meldete beim Betrieb über HTTP einen Fehler. Die Meldung des SDK steht nicht in der Zeile, weil sie Text des Clients enthalten kann. |
 | `mcp_server_error` | `error` | keine | Das MCP-SDK meldete einen Fehler des Servers. Die Meldung des SDK steht nicht in der Zeile, weil sie Text des Clients enthalten kann. |
 | `mcp_stdio_error` | `error` | keine | Die Verbindung über stdio meldete einen Fehler. |
 | `mcp_validator_refused` | `error` | keine | Code wollte ein JSON Schema mit dem Prüfer des MCP-SDK übersetzen, was der Mount nie tut. Der Prüfer hat abgelehnt. |
@@ -263,10 +264,20 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
 | `http_aborted` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Die Anfrage wurde abgebrochen, etwa weil der Client den Aufruf beendet hat. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
+| `http_auth_refused` | `warn` | keine | Eine Anfrage über HTTP kam ohne gültige Anmeldung. Sie erhielt 401, bevor ihr Körper gelesen wurde. |
+| `http_body_not_json` | `warn` | keine | Ein `POST` über HTTP kam ohne JSON als Typ des Inhalts. Es erhielt 415. |
+| `http_body_too_deep` | `warn` | keine | Der Körper einer Anfrage über HTTP verschachtelte tiefer als 64 Ebenen. Sie erhielt 400. |
+| `http_body_too_large` | `warn` | keine | Der Körper einer Anfrage über HTTP war grösser als 1 MiB. Sie erhielt 413, ohne dass er ganz gelesen wurde. |
+| `http_body_unparsable` | `warn` | keine | Der Körper einer Anfrage über HTTP war kein gültiges JSON. Sie erhielt 400. |
+| `http_body_unreadable` | `warn` | keine | Der Körper einer Anfrage über HTTP liess sich nicht lesen, etwa weil die Verbindung abbrach. Sie erhielt 400. |
 | `http_connect` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Es kam keine Verbindung zu ChurchTools, zum Anbieter des Modells oder zum Dienst des Pings zustande. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
 | `http_encoding` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Die Antwort hatte eine Kodierung, die der ausgehende Weg nicht annimmt. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
 | `http_failed` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Die Anfrage scheiterte aus einem anderen Grund im Netz. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
+| `http_host_refused` | `warn` | keine | Eine Anfrage über HTTP nannte in `Host` einen Namen, für den der Server nicht antwortet. Sie erhielt 403, bevor die Anmeldung geprüft wurde. |
+| `http_internal_error` | `error` | keine | Die Anwendung des Servers über HTTP scheiterte selbst. Der Client erhielt 500 mit einem festen Satz. |
 | `http_interrupted` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Die Verbindung brach ab, bevor die Antwort ganz da war. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
+| `http_listen_refused` | `warn` | keine | Ein Client verlangte über HTTP `subscriptions/listen`. Der Server bietet keine Abonnements an und antwortete mit einem Fehler, bevor das SDK die Anfrage sah. |
+| `http_origin_refused` | `warn` | keine | Eine Anfrage über HTTP kam mit einem `Origin`, den der Server nicht annimmt. Sie erhielt 403, bevor die Anmeldung geprüft wurde. |
 | `http_proxy` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Der Proxy aus `ECCLIUM_EGRESS_PROXY` hat den Tunnel zu ChurchTools, zum Anbieter des Modells oder zum Dienst des Pings abgewiesen oder vor seiner Antwort abgebrochen, meist weil das Ziel nicht auf seiner Liste steht ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)). `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
 | `http_redirect` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | ChurchTools, der Anbieter des Modells oder der Dienst des Pings hat auf eine andere Adresse verwiesen. Der ausgehende Weg folgt keinem Verweis. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
 | `http_refused` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Der ausgehende Weg hat das Ziel einer Anfrage abgewiesen, bevor er etwas sendete. Das ist ein Fehler im Code, nie im Netz. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |

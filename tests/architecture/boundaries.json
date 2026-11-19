@@ -320,6 +320,11 @@
       "adr": "0034",
       "description": "The reader of schedules: the only module that imports croner, with five fields, a zone the configuration takes and never a job, a callback or a name, so that croner starts no timer, keeps no state and no other code reckons a trigger past the rules of a schedule. One file of the schedule of core.",
       "paths": ["packages/core/src/schedule/cron.ts"]
+    },
+    "ingress": {
+      "adr": "0073",
+      "description": "The way in of the server over HTTP: the only code that imports hono and the Hono adapter of the MCP SDK, and that will listen on a port. It checks sign-in, host, origin and body before the handler of the SDK sees a request. One folder of the server.",
+      "paths": ["packages/server/src/http/"]
     }
   }
 }

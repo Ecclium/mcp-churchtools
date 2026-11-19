@@ -186,9 +186,15 @@ importers:
       '@ecclium/mcp-churchtools-plugin-api':
         specifier: workspace:*
         version: link:../plugin-api
+      '@modelcontextprotocol/hono':
+        specifier: 2.0.2
+        version: 2.0.2(@modelcontextprotocol/server@2.4.0)(hono@4.13.18)
       '@modelcontextprotocol/server':
         specifier: 2.4.0
         version: 2.4.0
+      hono:
+        specifier: 4.13.18
+        version: 4.13.18
     devDependencies:
       '@ecclium/mcp-churchtools-testkit':
         specifier: workspace:*
@@ -396,6 +402,13 @@ packages:
   '@modelcontextprotocol/core@2.4.0':
     resolution: {integrity: sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==}
     engines: {node: '>=20'}
+
+  '@modelcontextprotocol/hono@2.0.2':
+    resolution: {integrity: sha512-hXtSVm0S6d0EJWMVoaeAWevATQLzHrHiPuPBLxW5vM5OQJG+SFlm7D9iJT5cG3p84DDahCD4bAuqcCPdgNFAEw==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@modelcontextprotocol/server': ^2.3.0
+      hono: ^4.11.4
 
   '@modelcontextprotocol/server@2.4.0':
     resolution: {integrity: sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==}
@@ -913,6 +926,10 @@ packages:
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
+
+  hono@4.13.18:
+    resolution: {integrity: sha512-H9q/E1XizaWstJxUW881dmLxEj+t/TrGGnyxINkm4+sK0qUwsMtFdo2BWI9Vs3cIS19MU6b6iCijoUoEf4f3DA==}
+    engines: {node: '>=16.9.0'}
 
   hookified@1.15.1:
     resolution: {integrity: sha512-MvG/clsADq1GPM2KGo2nyfaWVyn9naPiXrqIe4jYjXNZQt238kWyOGrsyc/DmRAQ+Re6yeo6yX/yoNCG5KAEVg==}
@@ -1571,6 +1588,11 @@ snapshots:
     dependencies:
       zod: 4.6.7
 
+  '@modelcontextprotocol/hono@2.0.2(@modelcontextprotocol/server@2.4.0)(hono@4.13.18)':
+    dependencies:
+      '@modelcontextprotocol/server': 2.4.0
+      hono: 4.13.18
+
   '@modelcontextprotocol/server@2.4.0':
     dependencies:
       '@modelcontextprotocol/core': 2.4.0
@@ -2092,6 +2114,8 @@ snapshots:
   hasown@2.0.4:
     dependencies:
       function-bind: 1.1.2
+
+  hono@4.13.18: {}
 
   hookified@1.15.1: {}
 

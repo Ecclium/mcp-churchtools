@@ -328,6 +328,28 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     mcp_call_failed:
       'Ein Aufruf eines Tools scheiterte im Mount, etwa an einem Ergebnis ohne die Marke der Maskierung. Der Client erhält `internal`.',
     mcp_stdio_error: 'Die Verbindung über stdio meldete einen Fehler.',
+    mcp_http_error:
+      'Der Handler des MCP-SDK meldete beim Betrieb über HTTP einen Fehler. Die Meldung des SDK steht nicht in der Zeile, weil sie Text des Clients enthalten kann.',
+    http_host_refused:
+      'Eine Anfrage über HTTP nannte in `Host` einen Namen, für den der Server nicht antwortet. Sie erhielt 403, bevor die Anmeldung geprüft wurde.',
+    http_origin_refused:
+      'Eine Anfrage über HTTP kam mit einem `Origin`, den der Server nicht annimmt. Sie erhielt 403, bevor die Anmeldung geprüft wurde.',
+    http_auth_refused:
+      'Eine Anfrage über HTTP kam ohne gültige Anmeldung. Sie erhielt 401, bevor ihr Körper gelesen wurde.',
+    http_body_not_json:
+      'Ein `POST` über HTTP kam ohne JSON als Typ des Inhalts. Es erhielt 415.',
+    http_body_unreadable:
+      'Der Körper einer Anfrage über HTTP liess sich nicht lesen, etwa weil die Verbindung abbrach. Sie erhielt 400.',
+    http_body_too_large:
+      'Der Körper einer Anfrage über HTTP war grösser als 1 MiB. Sie erhielt 413, ohne dass er ganz gelesen wurde.',
+    http_body_unparsable:
+      'Der Körper einer Anfrage über HTTP war kein gültiges JSON. Sie erhielt 400.',
+    http_body_too_deep:
+      'Der Körper einer Anfrage über HTTP verschachtelte tiefer als 64 Ebenen. Sie erhielt 400.',
+    http_listen_refused:
+      'Ein Client verlangte über HTTP `subscriptions/listen`. Der Server bietet keine Abonnements an und antwortete mit einem Fehler, bevor das SDK die Anfrage sah.',
+    http_internal_error:
+      'Die Anwendung des Servers über HTTP scheiterte selbst. Der Client erhielt 500 mit einem festen Satz.',
     prompt_served: 'Ein Prompt wurde abgerufen. `prompt` nennt ihn.',
     prompt_refused:
       'Ein Prompt wurde mit Argumenten abgerufen, die er nicht annimmt. `prompt` nennt ihn, nie den Wert eines Arguments.',

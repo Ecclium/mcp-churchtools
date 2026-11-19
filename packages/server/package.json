@@ -14,12 +14,19 @@
       "@ecclium/source": "./src/stdio/index.ts",
       "types": "./dist/stdio/index.d.ts",
       "default": "./dist/stdio/index.js"
+    },
+    "./http": {
+      "@ecclium/source": "./src/http/index.ts",
+      "types": "./dist/http/index.d.ts",
+      "default": "./dist/http/index.js"
     }
   },
   "dependencies": {
     "@ecclium/mcp-churchtools-core": "workspace:*",
     "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
-    "@modelcontextprotocol/server": "2.4.0"
+    "@modelcontextprotocol/hono": "2.0.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "hono": "4.13.18"
   },
   "devDependencies": {
     "@ecclium/mcp-churchtools-testkit": "workspace:*"
