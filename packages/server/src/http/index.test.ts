@@ -32,6 +32,7 @@ import {
   maxHttpBodyBytes,
   mcpPath,
 } from './index.js';
+import { withoutCors } from './app.js';
 import { asJsonWhenSingle, onlyMessageOf } from './stream.js';
 
 // Drives the server over HTTP in process, through its function fetch,
@@ -698,6 +699,86 @@ describe('the 2025 era over HTTP', () => {
         /event-stream/,
       );
     }
+  });
+});
+
+describe('the headers the server leaves alone and the ones it never sends', () => {
+  const corsOf = (response: Response): string[] =>
+    [...response.headers.keys()].filter((name) =>
+      name.startsWith('access-control-'),
+    );
+
+  it('sends no header for CORS on any answer, a preflight included', async () => {
+    const { app } = setup();
+    const preflight = {
+      origin: 'http://127.0.0.1:8787',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'authorization, content-type',
+    };
+    const answers = [
+      await modern(app, 'tools/list', {}, { origin: 'http://127.0.0.1:8787' }),
+      await send(app, undefined, {
+        method: 'OPTIONS',
+        headers: { ...preflight, authorization: '' },
+      }),
+      await send(app, undefined, { method: 'OPTIONS', headers: preflight }),
+      await send(app, undefined, {
+        method: 'GET',
+        headers: { 'mcp-protocol-version': '2025-11-25' },
+      }),
+      await send(app, {}, { headers: { host: 'evil.example.org' } }),
+      await send(app, {}, { path: '/other' }),
+    ];
+    expect(answers.map((response) => response.status)).toEqual([
+      200, 401, 405, 405, 403, 404,
+    ]);
+    expect(answers.flatMap(corsOf)).toEqual([]);
+  });
+
+  it('removes a header for CORS that a part of the server would set', async () => {
+    const answer = withoutCors(
+      Response.json(
+        { ok: true },
+        {
+          status: 201,
+          headers: {
+            'access-control-allow-origin': '*',
+            'Access-Control-Allow-Methods': 'GET',
+            'cache-control': 'no-store',
+          },
+        },
+      ),
+    );
+    expect(corsOf(answer)).toEqual([]);
+    expect(answer.status).toBe(201);
+    expect(answer.headers.get('cache-control')).toBe('no-store');
+    expect(await answer.json()).toEqual({ ok: true });
+    const plain = new Response('x');
+    expect(withoutCors(plain)).toBe(plain);
+  });
+
+  it('passes a protocol version that does not fit the body on unchanged, so the SDK answers 400', async () => {
+    const { app, calls } = setup();
+    // A body of the 2026 era with the header of the 2025 era, as a public
+    // report describes for some clients: the place ingress does not align
+    // the header, the replacement rule of ADR 0073 stays prepared only.
+    const mismatched = await modern(
+      app,
+      'tools/list',
+      {},
+      { 'mcp-protocol-version': '2025-11-25' },
+    );
+    expect(mismatched.status).toBe(400);
+    // And the other way round: initialize of the 2025 era with the header
+    // of the 2026 era.
+    const initializeMismatched = await legacy(app, 'initialize', initialize, {
+      'mcp-protocol-version': '2026-07-28',
+    });
+    expect(initializeMismatched.status).toBe(400);
+    expect(calls).toEqual([]);
+    // With headers that fit, the same requests pass.
+    expect((await modern(app, 'tools/list')).status).toBe(200);
+    expect((await legacy(app, 'initialize', initialize)).status).toBe(200);
   });
 });
 

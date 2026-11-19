@@ -220,6 +220,33 @@ const listedHosts = (
   );
 };
 
+/**
+ * Removes every header for CORS from an answer. The server serves no page
+ * a browser could load, and no answer may let a page of another origin
+ * read it, also not one from a helper of the SDK that sets such a header,
+ * as the one for the metadata of a protected resource does (ADR 0073).
+ *
+ * @param response - An answer of the application.
+ * @returns The same answer, or a copy without the headers for CORS.
+ * @example
+ * ```ts
+ * withoutCors(new Response(null, { headers: { 'access-control-allow-origin': '*' } }));
+ * ```
+ */
+export function withoutCors(response: Response): Response {
+  const names = [...response.headers.keys()].filter((name) =>
+    name.startsWith('access-control-'),
+  );
+  if (names.length === 0) return response;
+  const headers = new Headers(response.headers);
+  for (const name of names) headers.delete(name);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 // The port of a connection, when it has the form of one.
 const portOf = (connection: HttpConnection | undefined): number | undefined => {
   const port: unknown = connection?.localPort;
@@ -490,9 +517,11 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
     ): Promise<Response> => {
       try {
         const localPort = portOf(connection);
-        return await app.fetch(
-          request,
-          localPort === undefined ? {} : { localPort },
+        return withoutCors(
+          await app.fetch(
+            request,
+            localPort === undefined ? {} : { localPort },
+          ),
         );
       } catch {
         fail(internalErrorEvent);
