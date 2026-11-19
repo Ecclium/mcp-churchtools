@@ -323,7 +323,7 @@
     },
     "ingress": {
       "adr": "0073",
-      "description": "The way in of the server over HTTP: the only code that imports hono and the Hono adapter of the MCP SDK, and that will listen on a port. It checks sign-in, host, origin and body before the handler of the SDK sees a request. One folder of the server.",
+      "description": "The way in of the server over HTTP: the only code that imports hono and the Hono adapter of the MCP SDK, and the only code that listens on a port, with createServer of node:http and no other network module or name. It checks sign-in, host, origin and body before the handler of the SDK sees a request. One folder of the server.",
       "paths": ["packages/server/src/http/"]
     }
   }

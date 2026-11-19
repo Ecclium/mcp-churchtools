@@ -245,9 +245,19 @@ export function dependencyRules(
     {
       name: 'network-only-in-egress',
       severity: 'error',
-      comment: `${adr('egress')}: only the outbound path in core opens network connections, after it checks the host allow-list (draft ADR 0009). Imports for types only count as well.`,
-      from: { path: '^packages/', pathNot: at('egress') },
+      comment: `${adr('egress')}: only the outbound path in core opens network connections, after it checks the host allow-list (draft ADR 0009). The way in of the server has a rule of its own below. Imports for types only count as well.`,
+      from: {
+        path: '^packages/',
+        pathNot: [...at('egress'), ...at('ingress')],
+      },
       to: { path: [...networkTargets] },
+    },
+    {
+      name: 'ingress-listens-only',
+      severity: 'error',
+      comment: `${adr('ingress')}: the way in of the server over HTTP takes connections and opens none. Of the network modules it imports only node:http, and the ESLint rule [arch:listen] narrows that to createServer, a name dependency-cruiser does not see. https, http2 and undici stay out. Imports for types only count as well.`,
+      from: { path: at('ingress') },
+      to: { path: [...networkTargets], pathNot: String.raw`^(node:)?http$` },
     },
     {
       name: 'egress-internals',

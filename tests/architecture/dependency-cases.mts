@@ -1226,6 +1226,14 @@ export const cases: readonly Case[] = [
         "import type { Context } from 'hono';\nexport type Seen = Context;\n",
     },
   },
+  {
+    rule: 'ingress-listens-only',
+    name: 'the way in of the server imports node:https, which opens connections',
+    files: {
+      'packages/server/src/http/forbidden.ts':
+        "import { request } from 'node:https';\nexport const open = request;\n",
+    },
+  },
 ];
 
 // Imports the rules must let pass.
@@ -1235,6 +1243,13 @@ export const allowedCases: readonly Omit<Case, 'rule'>[] = [
     files: {
       'packages/server/src/http/allowed.ts':
         "import { Hono } from 'hono';\nimport { createMcpHonoApp } from '@modelcontextprotocol/hono';\nexport const build = (): Hono => createMcpHonoApp();\n",
+    },
+  },
+  {
+    name: 'the way in of the server listens with node:http',
+    files: {
+      'packages/server/src/http/allowed-listen.ts':
+        "import { createServer } from 'node:http';\nexport const listen = createServer;\n",
     },
   },
   {

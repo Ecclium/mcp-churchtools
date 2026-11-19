@@ -9,8 +9,9 @@ import { moduleStateRule } from './module-state-rule.mts';
 // console, reading the environment, loading modules past the import
 // checks, loading modules that make fd 1 or fd 2 non-blocking, starting
 // processes, importing the MCP SDK, registering with it, compiling JSON
-// schemas with it, opening network connections, keeping state at module
-// level and using the writes of the ChurchTools client.
+// schemas with it, opening network connections, listening on a port,
+// keeping state at module level and using the writes of the ChurchTools
+// client.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
 // message, so the tests can prove each one on its own. Several restrictions
@@ -40,6 +41,7 @@ export const concernIds = [
   'module-state',
   'client-writes',
   'ingress',
+  'listen',
 ] as const;
 
 type Concern = (typeof concernIds)[number];
@@ -95,6 +97,10 @@ const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['client-writes', 'writeGuard'],
   ['client-writes', 'rawClient'],
   ['ingress', 'ingress'],
+  // The outbound path may import every network module, node:http with
+  // createServer included; only the place ingress listens on a port.
+  ['listen', 'egress'],
+  ['listen', 'ingress'],
 ];
 
 /** The places of boundaries.json that lift a restriction. */
@@ -129,6 +135,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
     'client-writes': `[arch:client-writes] Only the write guard in core and the ChurchTools client itself use the writes of the client, so that nothing writes to ChurchTools past planning, confirmation and audit (${adr('writeGuard')}).`,
     ingress: `[arch:ingress] Only the place ingress of the server imports hono and the Hono adapter of the MCP SDK. It takes the requests over HTTP, with its checks of sign-in, host, origin and body before the handler of the SDK (${adr('ingress')}).`,
+    listen: `[arch:listen] Only the place ingress of the server listens on a port, with createServer from node:http and no other name of that module, so that no other code takes connections past its checks (${adr('ingress')}).`,
     diagnostics:
       '[arch:diagnostics] No code in the packages imports node:diagnostics_channel. undici publishes the headers of every request there, the token among them, and the answers as well, so a subscriber would read them past the Secret (ADR 0056).',
   };
@@ -205,6 +212,12 @@ const jsonSchemaNames =
  */
 const jsonSchemaPaths =
   '^@modelcontextprotocol/server/(validators|_shims)(/|$)';
+
+/**
+ * The one name of node:http the place ingress may import: it listens on a
+ * port and opens no connection (ADR 0073).
+ */
+const listenName = 'createServer';
 
 /** Globals that open network connections. */
 const networkGlobals = [
@@ -328,7 +341,35 @@ function restrictions(
           ...(forbid('stdout') ? whole('stdout', 'tty') : []),
           ...whole('require', 'module'),
           ...whole('subprocess', 'child_process', 'worker_threads', 'cluster'),
-          ...(forbid('network') ? whole('network', ...networkModules) : []),
+          ...(forbid('network')
+            ? [
+                ...whole(
+                  'network',
+                  ...networkModules.filter((name) => name !== 'http'),
+                ),
+                // node:http: createServer is the concern listen, which
+                // the place ingress lifts. Every other name, the default
+                // import and import * stay the concern network. An import
+                // without names is caught by no-restricted-syntax below,
+                // which allowImportNames does not report.
+                ...builtin('http').flatMap((name) => [
+                  ...(forbid('listen')
+                    ? [
+                        {
+                          name,
+                          importNames: [listenName],
+                          message: message.listen,
+                        },
+                      ]
+                    : []),
+                  {
+                    name,
+                    allowImportNames: [listenName],
+                    message: message.network,
+                  },
+                ]),
+              ]
+            : []),
         ],
         patterns: [
           ...(forbid('mcp-sdk')
@@ -502,6 +543,16 @@ function restrictions(
             selector,
             message: message.network,
           }))
+        : []),
+      ...(forbid('network')
+        ? [
+            {
+              // import 'node:http' and import {} from 'node:http' load the
+              // module without a name, which allowImportNames lets pass.
+              selector: String.raw`ImportDeclaration[specifiers.length=0][source.value=/^(node:)?http$/]`,
+              message: message.network,
+            },
+          ]
         : []),
       ...(forbid('network')
         ? ['ImportExpression', 'TSImportType'].flatMap((node) => [
