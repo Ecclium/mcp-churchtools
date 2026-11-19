@@ -35,7 +35,6 @@ import {
   type AuthInfo,
   createMcpHandler,
   isJsonContentType,
-  localhostAllowedHostnames,
   type McpRequestContext,
   readRequestBody,
 } from '@modelcontextprotocol/server';
@@ -47,9 +46,24 @@ import {
   nestsTooDeep,
   requestIdOf,
 } from './body.js';
+import {
+  type AllowedHost,
+  hostAllowed,
+  isAllowedHost,
+  loopbackHosts,
+  loopbackNames,
+  originAllowed,
+} from './hosts.js';
 import { asJsonWhenSingle } from './stream.js';
 
 export { maxHttpBodyBytes, maxHttpBodyDepth } from './body.js';
+export {
+  type AllowedHost,
+  type AllowedHostsResult,
+  loopbackHosts,
+  parseAllowedHost,
+  parseAllowedHosts,
+} from './hosts.js';
 
 /** The path of MCP. Every other path ends with 404. */
 export const mcpPath = '/mcp';
@@ -93,18 +107,38 @@ export interface HttpAppOptions {
    */
   readonly requestStateKey?: Uint8Array;
   /**
-   * The host names a request may name in `Host` and `Origin`, without a
-   * port; the names for loopback if left out.
+   * The hosts a request may name in `Host` and `Origin`, read with
+   * `parseAllowedHosts`, each with or without a port. Left out, only the
+   * names of loopback with the port the connection came in on (ADR 0073).
    */
-  readonly allowedHostnames?: readonly string[];
+  readonly allowedHosts?: readonly AllowedHost[];
+}
+
+/** What the server knows of the connection a request came in on. */
+export interface HttpConnection {
+  /** The port of the server the connection reached. */
+  readonly localPort: number;
 }
 
 /** The server over HTTP, as a function from a request to an answer. */
 export interface HttpApp {
-  /** Answers one request. It never rejects. */
-  readonly fetch: (request: Request) => Promise<Response>;
+  /**
+   * Answers one request. It never rejects. Without the connection and
+   * without a list of hosts, no `Host` matches: the port of the server is
+   * then unknown, and the check fails closed.
+   */
+  readonly fetch: (
+    request: Request,
+    connection?: HttpConnection,
+  ) => Promise<Response>;
   /** Ends what the handler of the SDK still runs. It never rejects. */
   readonly close: () => Promise<void>;
+}
+
+// What the application hands Hono for each request: the port of the
+// connection, when the bridge knows it.
+interface Bindings {
+  readonly localPort?: number;
 }
 
 // The key under which the checked identity of a request travels in the
@@ -173,6 +207,39 @@ const refusal = (
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+// The list of hosts as the application keeps it: left out, or at least one
+// entry of the form parseAllowedHosts gives, copied and frozen. An empty
+// list is an error, not the absence of one, so that a fault in the reading
+// of the configuration never widens the check to loopback by surprise.
+const listedHosts = (
+  hosts: readonly AllowedHost[] | undefined,
+): readonly AllowedHost[] | undefined => {
+  if (hosts === undefined) return undefined;
+  if (
+    !Array.isArray(hosts) ||
+    hosts.length === 0 ||
+    !hosts.every(isAllowedHost)
+  ) {
+    throw new TypeError(
+      'The allowed hosts must be at least one entry read with parseAllowedHosts.',
+    );
+  }
+  return Object.freeze(
+    hosts.map((host) => Object.freeze({ name: host.name, port: host.port })),
+  );
+};
+
+// The port of a connection, when it has the form of one.
+const portOf = (connection: HttpConnection | undefined): number | undefined => {
+  const port: unknown = connection?.localPort;
+  return typeof port === 'number' &&
+    Number.isInteger(port) &&
+    port >= 1 &&
+    port <= 65_535
+    ? port
+    : undefined;
+};
+
 const sources: readonly unknown[] = Object.freeze(['stdio', 'bearer', 'oauth']);
 const scopeNames: readonly unknown[] = Object.freeze(['read', 'write']);
 
@@ -199,7 +266,9 @@ const isIdentity = (value: unknown): value is Identity => {
  *
  * The answers of the place ingress itself:
  *
- * - 403 for a `Host` or `Origin` that is not allowed, from the adapter;
+ * - 403 for a `Host` or `Origin` that is not allowed: first the check of
+ *   the adapter, which knows names only, then the exact one, which knows
+ *   ports and schemes (ADR 0073);
  * - 401 without a sign-in, before the body is read;
  * - 415 for a `POST` without JSON as its content type, 413 for a body over
  *   1 MiB, 400 for one that is no JSON or nests deeper than 64 levels;
@@ -215,16 +284,17 @@ const isIdentity = (value: unknown): value is Identity => {
  * client itself sent, such as a header that does not fit.
  *
  * @param options - What the mount needs, the check of the sign-in and the
- *   allowed host names.
+ *   allowed hosts.
  * @returns The server, frozen: `fetch` and `close`.
- * @throws {TypeError} When the version breaks its form; the message never
+ * @throws {TypeError} When the version breaks its form or the list of
+ *   hosts is empty or holds an entry of another form; the message never
  *   holds the value.
  * @example
  * ```ts
  * const app = createHttpApp({ catalog, pipeline, authenticate, resolver,
  *   mode: 'interactive', redaction: 'standard', readOnly: true, logger,
  *   version: '0.1.0' });
- * const answer = await app.fetch(request);
+ * const answer = await app.fetch(request, { localPort: 8787 });
  * ```
  */
 export function createHttpApp(options: HttpAppOptions): HttpApp {
@@ -232,9 +302,18 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
   if (typeof authenticate !== 'function') {
     throw new TypeError('The server over HTTP needs a check of the sign-in.');
   }
-  const hostnames = [
-    ...(options.allowedHostnames ?? localhostAllowedHostnames()),
-  ];
+  const listed = listedHosts(options.allowedHosts);
+  // The first layer, the check of the adapter, knows names only, without
+  // port and scheme.
+  const hostnames =
+    listed === undefined
+      ? [...loopbackNames]
+      : [...new Set(listed.map((host) => host.name))];
+  // The exact layer: the list, or the names of loopback with the port the
+  // connection came in on. Without that port no Host matches.
+  const hostsFor = (localPort: number | undefined): readonly AllowedHost[] =>
+    listed ??
+    (localPort === undefined ? Object.freeze([]) : loopbackHosts(localPort));
 
   // A failing logger never breaks an answer. Each event has its level, so
   // that the check of the log lines sees which line is written where (ADR
@@ -365,7 +444,7 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
       check: MiddlewareHandler,
       event: typeof hostRefusedEvent | typeof originRefusedEvent,
       sentence: string,
-    ): MiddlewareHandler =>
+    ): MiddlewareHandler<{ Bindings: Bindings }> =>
     async (context, next) => {
       const seen = { passed: false };
       const answer = await check(context, async () => {
@@ -377,7 +456,7 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
       return refusal(403, -32000, sentence);
     };
 
-  const app = new Hono();
+  const app = new Hono<{ Bindings: Bindings }>();
   // The first layer of the checks against DNS rebinding, from the adapter:
   // host names only, without port and scheme (ADR 0073).
   app.use(
@@ -388,6 +467,23 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
     '*',
     fixed(originValidation(hostnames), originRefusedEvent, sentences.origin),
   );
+  // The exact layer: Host as the spelling of an entry, with its port or
+  // without one, and Origin only with https, for loopback also http. Two
+  // headers of the same name reach it joined by a comma and match nothing.
+  app.use('*', async (context, next) => {
+    const hosts = hostsFor(context.env.localPort);
+    const { headers } = context.req.raw;
+    if (!hostAllowed(headers.get('host'), hosts)) {
+      warn(hostRefusedEvent);
+      return refusal(403, -32000, sentences.host);
+    }
+    if (!originAllowed(headers.get('origin'), hosts)) {
+      warn(originRefusedEvent);
+      return refusal(403, -32000, sentences.origin);
+    }
+    await next();
+    return undefined;
+  });
   app.all(mcpPath, (context) => serve(context.req.raw));
   app.notFound(() => new Response(null, { status: 404, headers: noStore }));
   app.onError(() => {
@@ -397,9 +493,16 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
 
   return Object.freeze({
     __proto__: null,
-    fetch: async (request: Request): Promise<Response> => {
+    fetch: async (
+      request: Request,
+      connection?: HttpConnection,
+    ): Promise<Response> => {
       try {
-        return await app.fetch(request);
+        const localPort = portOf(connection);
+        return await app.fetch(
+          request,
+          localPort === undefined ? {} : { localPort },
+        );
       } catch {
         fail(internalErrorEvent);
         return refusal(500, -32603, sentences.internal);

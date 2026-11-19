@@ -24,9 +24,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { maxHttpBodyDepth, nestsTooDeep } from './body.js';
 import {
+  type AllowedHost,
   createHttpApp,
   type HttpApp,
   type HttpAppOptions,
+  type HttpConnection,
   maxHttpBodyBytes,
   mcpPath,
 } from './index.js';
@@ -116,6 +118,9 @@ const resolver: TenantResolver = Object.freeze({
 });
 
 const origin = 'http://127.0.0.1:8787';
+// The connection the bridge would hand on: without a list of hosts, the
+// port in Host must be this one.
+const connection = Object.freeze({ localPort: 8787 });
 
 const setup = (overrides: Partial<HttpAppOptions> = {}) => {
   const events: Logged[] = [];
@@ -203,6 +208,7 @@ const send = (
         ? {}
         : { body: raw ?? JSON.stringify(body) }),
     }),
+    connection,
   );
 
 /** A request of the 2026 era with the headers it needs. */
@@ -286,6 +292,7 @@ describe('the server over HTTP', () => {
           body,
           duplex: 'half',
         }),
+        connection,
       );
       expect(response.status).toBe(401);
       expect(at(await json(response), 'error', 'message')).toBe(
@@ -380,6 +387,176 @@ describe('the server over HTTP', () => {
     const response = await send(app, {}, { path: '/other' });
     expect(response.status).toBe(404);
     expect(await response.text()).toBe('');
+  });
+});
+
+describe('the exact check of Host and Origin', () => {
+  // A request of tools/list with the given headers, over the given
+  // connection, or without one for null.
+  const listWith = (
+    app: HttpApp,
+    headers: Readonly<Record<string, string>>,
+    via: HttpConnection | null = connection,
+  ): Promise<Response> =>
+    app.fetch(
+      new Request(`${origin}${mcpPath}`, {
+        method: 'POST',
+        headers: {
+          host: '127.0.0.1:8787',
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          authorization: `Bearer ${tokenA}`,
+          'mcp-protocol-version': '2026-07-28',
+          'mcp-method': 'tools/list',
+          ...headers,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/list',
+          params: { _meta: envelope },
+        }),
+      }),
+      via ?? undefined,
+    );
+
+  it('takes the names of loopback only with the port the connection came in on', async () => {
+    const { app } = setup();
+    const passed = await Promise.all(
+      ['127.0.0.1:8787', 'localhost:8787', 'LOCALHOST:8787', '[::1]:8787'].map(
+        async (host) => (await listWith(app, { host })).status,
+      ),
+    );
+    expect(passed).toEqual([200, 200, 200, 200]);
+    const refused = await Promise.all(
+      ['127.0.0.1:8788', 'localhost', '127.0.0.1', 'localhost.:8787'].map(
+        async (host) => (await listWith(app, { host })).status,
+      ),
+    );
+    expect(refused).toEqual([403, 403, 403, 403]);
+  });
+
+  it('refuses every Host without the port of the connection and without a list, before the sign-in', async () => {
+    let asked = 0;
+    const { app, events } = setup({
+      authenticate: () => {
+        asked += 1;
+        return Promise.resolve(identityA);
+      },
+    });
+    for (const via of [
+      null,
+      { localPort: 0 },
+      { localPort: 1.5 },
+      { localPort: 65_536 },
+      { localPort: '8787' } as unknown as HttpConnection,
+    ]) {
+      expect((await listWith(app, {}, via)).status).toBe(403);
+    }
+    expect(asked).toBe(0);
+    expect(new Set(events.map((event) => event.event))).toEqual(
+      new Set(['http_host_refused']),
+    );
+  });
+
+  it('takes the entries of a list as they stand, with their port or without one, and no loopback beside them', async () => {
+    const { app, events } = setup({
+      allowedHosts: [
+        { name: 'mcp.example.org', port: undefined },
+        { name: 'localhost', port: 9000 },
+      ],
+    });
+    const status = async (host: string): Promise<number> =>
+      (await listWith(app, { host })).status;
+    expect(await status('mcp.example.org')).toBe(200);
+    expect(await status('localhost:9000')).toBe(200);
+    // The adapter knows names only and lets these pass; the exact layer
+    // refuses them.
+    expect(await status('mcp.example.org:8443')).toBe(403);
+    expect(await status('mcp.example.org:443')).toBe(403);
+    expect(await status('localhost:9001')).toBe(403);
+    // Loopback with the port of the connection is no entry of the list.
+    expect(await status('127.0.0.1:8787')).toBe(403);
+    expect(events.map((event) => event.event)).toEqual([
+      'http_host_refused',
+      'http_host_refused',
+      'http_host_refused',
+      'http_host_refused',
+    ]);
+    expect(events.every((event) => event.fields === undefined)).toBe(true);
+  });
+
+  it('takes Origin only with https and the spelling of an entry, for loopback also with http', async () => {
+    const { app } = setup({
+      allowedHosts: [
+        { name: 'mcp.example.org', port: undefined },
+        { name: '127.0.0.1', port: 8787 },
+      ],
+    });
+    const status = async (
+      host: string,
+      originHeader: string,
+    ): Promise<number> =>
+      (await listWith(app, { host, origin: originHeader })).status;
+    expect(await status('mcp.example.org', 'https://mcp.example.org')).toBe(
+      200,
+    );
+    expect(await status('127.0.0.1:8787', 'http://127.0.0.1:8787')).toBe(200);
+    expect(await status('127.0.0.1:8787', 'https://127.0.0.1:8787')).toBe(200);
+    // Each of these passes the adapter, which ignores scheme and port.
+    expect(await status('mcp.example.org', 'http://mcp.example.org')).toBe(403);
+    expect(
+      await status('mcp.example.org', 'https://mcp.example.org:8443'),
+    ).toBe(403);
+    expect(await status('127.0.0.1:8787', 'http://127.0.0.1:8788')).toBe(403);
+    expect(await status('mcp.example.org', 'https://mcp.example.org/')).toBe(
+      403,
+    );
+  });
+
+  it('refuses two values of Host or Origin, which reach it joined', async () => {
+    const { app } = setup();
+    const twice = (name: string, first: string, second: string) => {
+      const headers = new Headers({
+        host: '127.0.0.1:8787',
+        'content-type': 'application/json',
+        authorization: `Bearer ${tokenA}`,
+      });
+      headers.delete(name);
+      headers.append(name, first);
+      headers.append(name, second);
+      return app.fetch(
+        new Request(`${origin}${mcpPath}`, {
+          method: 'POST',
+          headers,
+          body: '{}',
+        }),
+        connection,
+      );
+    };
+    expect(
+      (await twice('host', '127.0.0.1:8787', '127.0.0.1:8787')).status,
+    ).toBe(403);
+    expect(
+      (await twice('origin', 'http://127.0.0.1:8787', 'http://127.0.0.1:8787'))
+        .status,
+    ).toBe(403);
+  });
+
+  it.each([
+    ['an empty list', []],
+    ['an entry the grammar refuses', [{ name: '127.1', port: undefined }]],
+    ['a port out of range', [{ name: 'mcp.example.org', port: 0 }]],
+    ['no list at all', 'mcp.example.org'],
+  ])('cannot be built with %s', (_, allowedHosts) => {
+    expect(() =>
+      setup({ allowedHosts: allowedHosts as unknown as AllowedHost[] }),
+    ).toThrow(TypeError);
+    try {
+      setup({ allowedHosts: allowedHosts as unknown as AllowedHost[] });
+    } catch (error) {
+      expect(String(error)).not.toContain('127.1');
+    }
   });
 });
 
@@ -564,6 +741,7 @@ describe('the body of a request', () => {
         ),
         duplex: 'half',
       }),
+      connection,
     );
     expect(declared.status).toBe(413);
     expect(read).toBe(false);
@@ -587,6 +765,7 @@ describe('the body of a request', () => {
         }),
         duplex: 'half',
       }),
+      connection,
     );
     expect(streamed.status).toBe(413);
     expect(events.map((event) => event.event)).toEqual([
