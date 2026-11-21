@@ -351,9 +351,9 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     http_internal_error:
       'Die Anwendung des Servers über HTTP scheiterte selbst. Der Client erhielt 500 mit einem festen Satz.',
     http_request_malformed:
-      'Eine Anfrage über HTTP nannte kein Ziel in Form eines Pfads, etwa die vollständige Adresse, die nur ein Proxy annimmt, oder hatte Kopfzeilen oder eine Methode, die der Server nicht lesen kann. Sie erhielt 400.',
+      'Eine Anfrage über HTTP nannte kein Ziel in Form eines Pfads, etwa die vollständige Adresse, die nur ein Proxy annimmt, verlangte mit `CONNECT` einen Tunnel oder hatte Kopfzeilen oder eine Methode, die der Server nicht lesen kann. Sie erhielt 400.',
     http_client_error:
-      'Node.js konnte eine Anfrage über HTTP nicht lesen: Kopfzeilen über 16 KiB (431), Kopfzeilen nicht innerhalb von 10 Sekunden oder die ganze Anfrage nicht innerhalb von 120 Sekunden (408) oder eine Form, die das Protokoll nicht erlaubt (400). Ein Abbruch der Verbindung durch den Client schreibt keine Zeile.',
+      'Node.js konnte eine Anfrage über HTTP nicht lesen: Kopfzeilen über 16 KiB (431), zu lange Erweiterungen eines Stücks des Körpers (413), Kopfzeilen nicht innerhalb von 10 Sekunden oder die ganze Anfrage nicht innerhalb von 120 Sekunden (408) oder eine Form, die das Protokoll nicht erlaubt (400). Beendet oder kappt der Client die Verbindung mitten in einer Anfrage, schreibt das keine Zeile und erhält keine Antwort.',
     http_server_error:
       'Der Server über HTTP meldete nach dem Start einen Fehler, etwa weil keine Verbindung mehr angenommen werden konnte. Er läuft weiter.',
     prompt_served: 'Ein Prompt wurde abgerufen. `prompt` nennt ihn.',

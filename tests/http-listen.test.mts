@@ -215,6 +215,11 @@ const open = async () => {
     });
     const length = headers.find(([name]) => name === 'content-length')?.[1];
     const start = end + 4;
+    // An interim answer such as 100 Continue has no body.
+    if (status >= 100 && status < 200) {
+      state.buffer = state.buffer.subarray(start);
+      return { status, headers, body: '' };
+    }
     if (length === undefined) {
       if (!state.closed) return undefined;
       const body = state.buffer.subarray(start).toString('utf8');
@@ -495,6 +500,79 @@ describe('the server over HTTP on 127.0.0.1', () => {
     await started;
     client.end();
     await aborted;
+  });
+
+  it.each([
+    [
+      'in the middle of the headers',
+      (): string => `POST /mcp HTTP/1.1\r\nHost: ${host()}\r\nContent-Ty`,
+    ],
+    [
+      'in the middle of the body',
+      (): string =>
+        `POST /mcp HTTP/1.1\r\nHost: ${host()}\r\nContent-Type: application/json\r\nAuthorization: Bearer ${token}\r\nContent-Length: 1000\r\n\r\n{"jsonrpc"`,
+    ],
+  ])(
+    'writes no line for the client error when the client ends the connection %s',
+    async (_, text) => {
+      const before = logged.length;
+      const client = await open();
+      client.write(text());
+      // Give the bridge time to see the request before the end.
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      client.socket.end();
+      await client.closed();
+      // Let the error of the parser reach the bridge.
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      expect(logged.slice(before).map((entry) => entry.event)).not.toContain(
+        'http_client_error',
+      );
+    },
+  );
+
+  it('answers CONNECT with 400 and a line, and opens no tunnel', async () => {
+    const before = logged.length;
+    const client = await open();
+    client.write(
+      `CONNECT example.org:443 HTTP/1.1\r\nHost: example.org:443\r\n\r\n`,
+    );
+    const answer = await client.answer();
+    await client.closed();
+    expect(answer?.status).toBe(400);
+    expect(logged.slice(before).map((entry) => entry.event)).toEqual([
+      'http_request_malformed',
+    ]);
+  });
+
+  it('asks for the body of Expect: 100-continue only after the sign-in', async () => {
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/list',
+      params: { _meta: envelope },
+    });
+    const refusedClient = await open();
+    refusedClient.write(
+      `POST /mcp HTTP/1.1\r\nHost: ${host()}\r\nContent-Type: application/json\r\nExpect: 100-continue\r\nContent-Length: ${String(Buffer.byteLength(body))}\r\n\r\n`,
+    );
+    const refused = await refusedClient.answer();
+    refusedClient.end();
+    expect(refused?.status).toBe(401);
+    // The same request with Expect, first without its body.
+    const [head = ''] = post('tools/list')
+      .replace(
+        '\r\nContent-Length',
+        '\r\nExpect: 100-continue\r\nContent-Length',
+      )
+      .split('\r\n\r\n');
+    const client = await open();
+    client.write(`${head}\r\n\r\n`);
+    const leave = await client.answer();
+    expect(leave?.status).toBe(100);
+    client.write(body);
+    const answered = await client.answer();
+    client.end();
+    expect(answered?.status).toBe(200);
   });
 
   it('writes nothing past the logger and never names the token', () => {

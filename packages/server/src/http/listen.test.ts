@@ -198,6 +198,15 @@ describe('the answer the bridge writes', () => {
   });
 });
 
+describe('the answer to HEAD', () => {
+  it('has no length, which would have to be that of the same GET', async () => {
+    const answer = await answerOf(new Response(null, { status: 405 }), true);
+    expect(answer.headers).not.toContain('content-length');
+    const plain = await answerOf(new Response(null, { status: 405 }));
+    expect(plain.headers).toContain('content-length');
+  });
+});
+
 describe('the binding', () => {
   // The checks run before the application is built or a port opens, so
   // the options of the application need not be complete here.

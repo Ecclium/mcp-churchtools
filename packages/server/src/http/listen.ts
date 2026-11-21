@@ -176,9 +176,16 @@ const clientErrorAnswers: Readonly<Record<string, string>> = Object.freeze({
 const badRequestAnswer =
   'HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n';
 
-// A connection that ended under the client gives these codes; they are no
-// fault of the request and write no line.
-const goneCodes: readonly unknown[] = Object.freeze(['ECONNRESET', 'EPIPE']);
+// A connection the client ended or reset in the middle of a request gives
+// these codes: a reset, a broken pipe, or the end of the connection before
+// the request was complete, which is how fetch aborts an upload. They are
+// no fault of the request, write no line and get no answer, because no one
+// is left to read it.
+const goneCodes: readonly unknown[] = Object.freeze([
+  'ECONNRESET',
+  'EPIPE',
+  'HPE_INVALID_EOF_STATE',
+]);
 
 const malformedSentence =
   'This server takes only requests to a path, with headers it can read.';
@@ -222,14 +229,19 @@ const codeOf = (error: unknown): unknown =>
  * nothing reads the request before someone wants its body.
  *
  * @param incoming - The request.
+ * @param onFirstPull - Runs once, before the first chunk is asked for.
  * @returns A function that gives the next chunk, or `undefined` at the end.
  */
 function pullerOf(
   incoming: AsyncIterable<Uint8Array>,
+  onFirstPull: () => void,
 ): () => Promise<Uint8Array | undefined> {
   let chunks: AsyncIterator<Uint8Array> | undefined;
   return async () => {
-    chunks ??= incoming[Symbol.asyncIterator]();
+    if (chunks === undefined) {
+      onFirstPull();
+      chunks = incoming[Symbol.asyncIterator]();
+    }
     const step = await chunks.next();
     return step.done === true ? undefined : step.value;
   };
@@ -246,7 +258,7 @@ function pullerOf(
  * @returns The stream.
  * @example
  * ```ts
- * const body = bodyStreamOf(pullerOf(incoming), maxHttpBodyBytes);
+ * const body = bodyStreamOf(pull, maxHttpBodyBytes);
  * ```
  */
 export function bodyStreamOf(
@@ -330,22 +342,28 @@ export interface Answer {
 /**
  * Reads an answer of the application to its end and gives it as the
  * bridge writes it: in one piece, with `Content-Length`, without the
- * headers of one connection.
+ * headers of one connection. The answer to `HEAD` has no length, because
+ * it would have to be the length of the same `GET`, which the bridge does
+ * not know.
  *
  * @param response - What the application answered.
+ * @param head - Whether the request was `HEAD`.
  * @returns The answer to write.
  * @example
  * ```ts
  * const answer = await answerOf(Response.json({}));
  * ```
  */
-export async function answerOf(response: Response): Promise<Answer> {
+export async function answerOf(
+  response: Response,
+  head = false,
+): Promise<Answer> {
   const body = new Uint8Array(await response.arrayBuffer());
   const headers: string[] = [];
   response.headers.forEach((value, name) => {
     if (!hopByHop.includes(name)) headers.push(name, value);
   });
-  headers.push('content-length', String(body.byteLength));
+  if (!head) headers.push('content-length', String(body.byteLength));
   return Object.freeze({
     status: response.status,
     headers: Object.freeze(headers),
@@ -435,8 +453,20 @@ export async function listenHttp(
     outgoing.on('close', () => {
       if (!outgoing.writableFinished) controller.abort();
     });
-    const pull = pullerOf(incoming);
+    // With Expect: 100-continue the client waits for leave to send its
+    // body. It gets it only when the application starts to read, so a
+    // refused sign-in never asks for a body, and reading away after an
+    // answer asks for none either.
+    const pull = pullerOf(incoming, () => {
+      if (
+        !outgoing.headersSent &&
+        incoming.headers.expect?.toLowerCase() === '100-continue'
+      ) {
+        outgoing.writeContinue();
+      }
+    });
     const { socket } = incoming;
+    const head = incoming.method === 'HEAD';
 
     const answer = async (): Promise<Answer> => {
       const request = requestOf(
@@ -446,7 +476,7 @@ export async function listenHttp(
       );
       if (request === undefined) {
         warn('http_request_malformed');
-        return answerOf(refusalOf(400, malformedSentence));
+        return answerOf(refusalOf(400, malformedSentence), head);
       }
       const response = await app.fetch(
         request,
@@ -455,10 +485,10 @@ export async function listenHttp(
           : { localPort: socket.localPort },
       );
       try {
-        return await answerOf(response);
+        return await answerOf(response, head);
       } catch {
         fail('http_internal_error');
-        return answerOf(refusalOf(500, internalSentence));
+        return answerOf(refusalOf(500, internalSentence), head);
       }
     };
 
@@ -502,9 +532,27 @@ export async function listenHttp(
     );
   });
 
+  // Node.js answers Expect: 100-continue itself, before the application
+  // has checked the sign-in, unless someone listens here. The request goes
+  // on as any other, and the puller gives leave on the first read.
+  server.on('checkContinue', (incoming, outgoing) => {
+    server.emit('request', incoming, outgoing);
+  });
+
+  // CONNECT asks for a tunnel, which a server of MCP never opens. Without a
+  // listener Node.js would close the connection without an answer.
+  server.on('connect', (_incoming, socket) => {
+    warn('http_request_malformed');
+    socket.end(badRequestAnswer);
+  });
+
   server.on('clientError', (error, socket) => {
     const code = codeOf(error);
-    if (!goneCodes.includes(code)) warn('http_client_error');
+    if (goneCodes.includes(code)) {
+      socket.destroy();
+      return;
+    }
+    warn('http_client_error');
     if (socket.writable && !answering.has(socket)) {
       socket.write(
         typeof code === 'string' && Object.hasOwn(clientErrorAnswers, code)
