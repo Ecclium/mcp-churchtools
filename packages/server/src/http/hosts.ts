@@ -47,7 +47,10 @@ export const loopbackNames: readonly string[] = Object.freeze([
 // One label of a DNS name: letters, digits and hyphens, at most 63, no
 // hyphen at either end.
 const label = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-const decimal = /^[0-9]+$/;
+// What a URL parser reads as a number at the end of a name: decimal
+// digits, or 0x with hex digits or none (the rule ends-in-a-number of the
+// WHATWG URL standard).
+const number = /^(?:[0-9]+|0x[0-9a-f]*)$/;
 const octet = /^(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$/;
 const port = /^[1-9][0-9]{0,4}$/;
 const ipv6Characters = /^[0-9a-f:.]{2,45}$/;
@@ -65,7 +68,7 @@ const isDnsName = (text: string): boolean => {
   if (text.length > 253) return false;
   const labels = text.split('.');
   const last = labels.at(-1) ?? '';
-  return labels.every((part) => label.test(part)) && !decimal.test(last);
+  return labels.every((part) => label.test(part)) && !number.test(last);
 };
 
 // An IPv6 address only in the form a URL parser writes it, compressed and
