@@ -34,6 +34,9 @@ const testFile = String.raw`\.test\.ts$`;
  */
 export const networkTargets: readonly string[] = [
   '^(node:)?(http|https|http2|net|tls|dgram|dns|inspector)(/promises)?$',
+  // The internal modules behind http and tls, which Node.js still lets
+  // code import by name.
+  '^(node:)?_(http|tls)_[a-z]+$',
   '(^|/)node_modules/undici/',
 ];
 

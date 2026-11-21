@@ -496,6 +496,13 @@ export const cases: readonly Case[] = [
   })),
   {
     rule: 'network-only-in-egress',
+    name: 'tools imports _http_client, the module behind node:http',
+    files: {
+      'packages/tools/src/forbidden.ts': "import '_http_client';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'network-only-in-egress',
     name: 'a folder next to the outbound path imports node:https',
     files: {
       'packages/core/src/httpx/forbidden.ts':

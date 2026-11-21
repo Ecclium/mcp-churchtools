@@ -563,6 +563,11 @@ const probes: readonly {
     concerns: ['network'],
   },
   { code: "import 'node:http';", concerns: ['network'] },
+  { code: "export {} from 'node:http';", concerns: ['network'] },
+  { code: "import http = require('node:http');", concerns: ['network'] },
+  { code: "import tls = require('tls');", concerns: ['network'] },
+  { code: "import { Server } from '_http_server';", concerns: ['network'] },
+  { code: "import '_tls_wrap';", concerns: ['network'] },
   { code: "import {} from 'http';", concerns: ['network'] },
   { code: "await import('node:http');", concerns: ['network'] },
   {

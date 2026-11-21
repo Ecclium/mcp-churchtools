@@ -44,6 +44,10 @@ const temporaryFolders = temporaryFoldersOfFile();
 // nothing for as long as the packages keep the rules. The test below fails
 // as soon as one of these paths matches.
 const notYetMatched: readonly string[] = [
+  // No code imports the internal modules behind http and tls; the two
+  // network rules forbid them all the same.
+  'network-only-in-egress.to: ^(node:)?_(http|tls)_[a-z]+$',
+  'ingress-listens-only.to: ^(node:)?_(http|tls)_[a-z]+$',
   'no-process-module.to: ^(node:)?process$',
   'no-diagnostics-channel.to: ^(node:)?diagnostics_channel$',
 ];

@@ -135,7 +135,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
     'client-writes': `[arch:client-writes] Only the write guard in core and the ChurchTools client itself use the writes of the client, so that nothing writes to ChurchTools past planning, confirmation and audit (${adr('writeGuard')}).`,
     ingress: `[arch:ingress] Only the place ingress of the server imports hono and the Hono adapter of the MCP SDK. It takes the requests over HTTP, with its checks of sign-in, host, origin and body before the handler of the SDK (${adr('ingress')}).`,
-    listen: `[arch:listen] Only the place ingress of the server listens on a port, with createServer from node:http and no other name of that module, so that no other code takes connections past its checks (${adr('ingress')}).`,
+    listen: `[arch:listen] Besides the outbound path, which may import every network module, only the place ingress of the server listens on a port, with createServer from node:http and no other name of that module, so that no other code takes connections past its checks (${adr('ingress')}).`,
     diagnostics:
       '[arch:diagnostics] No code in the packages imports node:diagnostics_channel. undici publishes the headers of every request there, the token among them, and the answers as well, so a subscriber would read them past the Secret (ADR 0056).',
   };
@@ -157,6 +157,16 @@ const networkModules = [
   'dns/promises',
   'inspector',
   'inspector/promises',
+  // The internal modules behind http and tls, which Node.js still lets
+  // code import by name.
+  '_http_agent',
+  '_http_client',
+  '_http_common',
+  '_http_incoming',
+  '_http_outgoing',
+  '_http_server',
+  '_tls_common',
+  '_tls_wrap',
 ] as const;
 
 /**
@@ -547,9 +557,17 @@ function restrictions(
       ...(forbid('network')
         ? [
             {
-              // import 'node:http' and import {} from 'node:http' load the
-              // module without a name, which allowImportNames lets pass.
-              selector: String.raw`ImportDeclaration[specifiers.length=0][source.value=/^(node:)?http$/]`,
+              // import 'node:http', import {} from 'node:http' and
+              // export {} from 'node:http' load the module without a
+              // name, which allowImportNames lets pass.
+              selector: String.raw`:matches(ImportDeclaration, ExportNamedDeclaration)[specifiers.length=0][source.value=/^(node:)?http$/]`,
+              message: message.network,
+            },
+            {
+              // import http = require('node:http') of TypeScript, which
+              // no-restricted-imports does not see, for every network
+              // module.
+              selector: `TSImportEqualsDeclaration > TSExternalModuleReference[expression.value=/^(node:)?(${networkNames})$/]`,
               message: message.network,
             },
           ]
