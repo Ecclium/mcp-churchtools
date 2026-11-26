@@ -80,6 +80,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   egressProxy: 'Proxy nach aussen',
   egress: 'Grenze im Netz',
   egressAllowLan: 'Lokale Ziele',
+  httpTokensFile: 'Bearer-Tokens',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -180,6 +181,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'nicht abgeschaltet' };
       case 'egressAllowLan':
         return { text: 'keine' };
+      case 'httpTokensFile':
+        return { text: 'keine Datei' };
       default:
         throw new TypeError(inconsistent);
     }

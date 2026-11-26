@@ -183,6 +183,10 @@ describe('renderConfigReport', () => {
         'Lokale Ziele',
         'keine (‹ECCLIUM_EGRESS_ALLOW_LAN› ist nicht gesetzt)',
       ),
+      row(
+        'Bearer-Tokens',
+        'keine Datei (‹ECCLIUM_HTTP_TOKENS_FILE› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,

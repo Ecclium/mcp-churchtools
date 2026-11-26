@@ -266,6 +266,13 @@ export interface EccliumConfig {
    * private address.
    */
   readonly egressAllowLan: readonly string[];
+  /**
+   * The file of the bearer tokens of the server over HTTP, an absolute
+   * normalised path, or undefined when the variable is not set (ADR 0074).
+   * The start checks the form of the path alone; the server over HTTP and
+   * `ecclium token` read the file.
+   */
+  readonly httpTokensFile: string | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -299,6 +306,7 @@ export type SettingKey =
   | 'egressProxy'
   | 'egress'
   | 'egressAllowLan'
+  | 'httpTokensFile'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -2072,6 +2080,33 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     warnings.add('egress_allow_lan_unused');
   }
 
+  // The file of the bearer tokens (ADR 0074): only the form of its path
+  // here. The runner refuses the variable through its row.
+  const httpTokensName = 'ECCLIUM_HTTP_TOKENS_FILE';
+  const httpTokensRead = read(row(httpTokensName));
+  let httpTokensFile: string | undefined;
+  let httpTokensValid = true;
+  if (httpTokensRead.state === 'unset') {
+    setting('httpTokensFile', httpTokensName, 'unset', shownNone);
+  } else if (
+    httpTokensRead.state === 'set' &&
+    fitsVariable(httpTokensName, httpTokensRead.value)
+  ) {
+    httpTokensFile = httpTokensRead.value;
+    setting(
+      'httpTokensFile',
+      httpTokensName,
+      'environment',
+      record({ kind: 'path', value: httpTokensRead.value }),
+    );
+  } else {
+    if (httpTokensRead.state === 'set') {
+      report('http_tokens_file_invalid', httpTokensName);
+    }
+    httpTokensValid = false;
+    setting('httpTokensFile', httpTokensName, 'invalid', shownNone);
+  }
+
   // The subject must fit the pattern, and the placeholder of the audit is
   // refused although it fits.
   const subjectName = 'ECCLIUM_STDIO_SUBJECT';
@@ -2145,6 +2180,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !proxyValid ||
     !egressValid ||
     !lanValid ||
+    !httpTokensValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -2183,6 +2219,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       egressProxy,
       egressOff,
       egressAllowLan,
+      httpTokensFile,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),
@@ -2342,5 +2379,122 @@ export function loadAuditConfig(
   return record({
     ok: true as const,
     config: record({ stateDir, auditRetentionMonths: retention }),
+  });
+}
+
+/**
+ * The configuration of `ecclium token` (ADR 0074): the file of the bearer
+ * tokens, nothing more.
+ */
+export interface TokenCommandConfig {
+  /** The file of the tokens, an absolute normalised path. */
+  readonly httpTokensFile: string;
+}
+
+/** The configuration of `ecclium token`, or the problems that stop it. */
+export type TokenCommandConfigResult =
+  | { readonly ok: true; readonly config: TokenCommandConfig }
+  | {
+      readonly ok: false;
+      /** The first {@link maxReportedProblems} problems. */
+      readonly problems: readonly ConfigProblem[];
+      /** The problems beyond them. */
+      readonly omittedProblems: number;
+    };
+
+/** What the loader of `ecclium token` reads. */
+export interface TokenCommandConfigSources {
+  /** The environment, which the loader never changes. */
+  readonly environment: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Loads the configuration of the commands for the bearer tokens. It sorts
+ * every name with the prefix as the start does, so that an unknown,
+ * miscased or later name stops them as well, but it reads the value of
+ * `ECCLIUM_HTTP_TOKENS_FILE` alone, which must be set. It needs neither the
+ * address of ChurchTools nor the token and never opens a file; the
+ * variables of Node.js play no part.
+ *
+ * @param sources - The environment.
+ * @returns The path of the file, or the problems.
+ * @throws {TypeError} When the sources or the environment are no plain
+ *   record, or a variable with the prefix is no string or has a getter.
+ *   Never for a wrong value.
+ * @example
+ * ```ts
+ * const loaded = loadTokenCommandConfig({ environment });
+ * if (loaded.ok) readBearerTokensFile(loaded.config.httpTokensFile);
+ * ```
+ */
+export function loadTokenCommandConfig(
+  sources: TokenCommandConfigSources,
+): TokenCommandConfigResult {
+  if (!isRecord(sources)) throw new TypeError(invalidSources);
+  const environment = ownData(sources, 'environment');
+  if (!isRecord(environment)) throw new TypeError(invalidSources);
+
+  const ranked: Ranked[] = [];
+  const add = (
+    code: ConfigProblemCode,
+    rank: number,
+    variable?: string,
+  ): void => {
+    ranked.push({
+      rank,
+      name: variable ?? '',
+      problem: record(variable === undefined ? { code } : { code, variable }),
+    });
+  };
+  const report = (code: ConfigProblemCode, name: VariableName): void => {
+    add(code, variableNames.indexOf(name), name);
+  };
+
+  const given = new Map<VariableName, string>();
+  for (const key of Object.keys(environment)) {
+    if (asciiUpper(key.slice(0, variablePrefix.length)) !== variablePrefix) {
+      continue;
+    }
+    const value = ownData(environment, key);
+    if (value === undefined) continue;
+    if (typeof value !== 'string') throw new TypeError(invalidSources);
+    const sorted = sortName(key);
+    if (sorted.kind === 'known') given.set(sorted.name, value);
+    else add(sorted.code, sorted.rank, sorted.variable);
+  }
+
+  const name = 'ECCLIUM_HTTP_TOKENS_FILE';
+  const value = given.get(name);
+  let file: string | undefined;
+  if (value === undefined) {
+    report('http_tokens_file_required', name);
+  } else if (value === '') {
+    report('empty_value', name);
+  } else if (value.length > row(name).maxLength) {
+    report('value_too_long', name);
+  } else if (fitsVariable(name, value)) {
+    file = value;
+  } else {
+    report('http_tokens_file_invalid', name);
+  }
+
+  if (ranked.length > 0 || file === undefined) {
+    const sorted = ranked.sort(
+      (left, right) =>
+        left.rank - right.rank ||
+        (left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+    );
+    const problems = Object.freeze(
+      sorted.slice(0, maxReportedProblems).map((entry) => entry.problem),
+    );
+    return record({
+      ok: false as const,
+      problems,
+      omittedProblems: sorted.length - problems.length,
+    });
+  }
+  return record({
+    ok: true as const,
+    config: record({ httpTokensFile: file }),
   });
 }

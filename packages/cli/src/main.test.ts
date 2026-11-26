@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  bearerTokenFormProblem,
+  hashBearerToken,
   loadConfig,
+  readBearerTokensFile,
   tokenVariableName,
   type Transport,
 } from '@ecclium/mcp-churchtools-core';
@@ -1101,6 +1104,129 @@ describe('ecclium init egress in the command line', () => {
     expect(usageLine).toContain('| ecclium init egress |');
     expect(capture(['init', 'egress', '--help'], {}).stdout).toBe(
       result.stdout,
+    );
+  });
+});
+
+describe('ecclium token in the command line', () => {
+  // The command reads and writes a file, so run gives a promise for it;
+  // its own tests stand in token/token.test.ts.
+  const runAsync = async (
+    args: readonly string[],
+    environment: Environment,
+    options: RunOptions = {},
+  ) => {
+    const taken = new Map<number, number[]>();
+    const writeSync: WriteSyncFn = (fd, buffer, offset, length) => {
+      const bytes = taken.get(fd) ?? [];
+      bytes.push(...buffer.subarray(offset, offset + length));
+      taken.set(fd, bytes);
+      return length;
+    };
+    const code = await run(args, environment, [], { ...options, writeSync });
+    const text = (fd: number): string =>
+      decoder.decode(new Uint8Array(taken.get(fd) ?? []));
+    return { code, stdout: text(1), stderr: text(2) };
+  };
+
+  it.each([
+    [['token'], 'command'],
+    [['token', 'create'], 'command'],
+    [['token', 'list', 'buero'], 'command'],
+    [['token', 'create', 'a', 'b'], 'command'],
+    [['token', 'create', 'buero', '--days'], 'value'],
+    [['token', 'create', 'buero', '--write=yes'], 'value'],
+    [['token', 'revoke', 'buero', '--write'], 'option'],
+    [['token', 'rotate', 'buero', '--write'], 'option'],
+    [['token', 'list', '--days', '3'], 'option'],
+    [['token', 'create', 'buero', '--days', '3', '--days', '4'], 'repeated'],
+    [['config', 'check', '--write'], 'option'],
+  ] as const)('refuses %j with 64', (args, problem) => {
+    const result = capture(args, {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(`${usageProblemTexts[problem]}\n${usageLine}\n`);
+  });
+
+  it('hands the call to the command, which refuses a name without repeating it', async () => {
+    const name = `Token${plain()}`;
+    const result = await runAsync(['token', 'create', name], {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).not.toContain(name);
+    expect(result.stdout).toBe('');
+  });
+
+  it('hands name, --write and --days to the command', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'ecclium-cli-token-'));
+    chmodSync(folder, 0o700);
+    const path = join(folder, 'http-tokens.yaml');
+    try {
+      const result = await runAsync(
+        ['token', 'create', 'buero', '--write', '--days', '7'],
+        { ECCLIUM_HTTP_TOKENS_FILE: path },
+        { token: { clock: { now: () => Date.UTC(2026, 10, 26, 12) } } },
+      );
+      expect(result.code).toBe(exitCodes.ok);
+      const token = result.stdout.trimEnd();
+      expect(bearerTokenFormProblem(token)).toBeUndefined();
+      const read = readBearerTokensFile(path);
+      expect(read.ok && read.entries).toEqual([
+        {
+          name: 'buero',
+          sha256: hashBearerToken(token),
+          scopes: ['read', 'write'],
+          createdAt: '2026-11-26',
+          expiresAt: '2026-12-03',
+        },
+      ]);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+
+  it('loads its own configuration and needs only the file of the tokens', async () => {
+    const result = await runAsync(['token', 'list'], {
+      ECCLIUM_CHURCHTOOLS_URL: 'not an address',
+    });
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stderr).toContain('‹ECCLIUM_HTTP_TOKENS_FILE›');
+    expect(result.stderr).not.toContain('ECCLIUM_CHURCHTOOLS_URL');
+  });
+
+  it('turns a failure of the command into the internal error', async () => {
+    const result = await runAsync(
+      ['token', 'list'],
+      { ECCLIUM_HTTP_TOKENS_FILE: '/path/to/http-tokens.yaml' },
+      {
+        token: {
+          clock: {
+            now: () => {
+              throw new TypeError(plain());
+            },
+          },
+        },
+      },
+    );
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
+  });
+
+  it('lists the token commands in the help', () => {
+    const lines = capture(['--help'], {}).stdout.split('\n');
+    for (const command of [
+      'create <Name>',
+      'rotate <Name>',
+      'revoke <Name>',
+      'list',
+    ]) {
+      expect(lines.some((line) => line.startsWith(`  token ${command} `))).toBe(
+        true,
+      );
+    }
+    expect(usageLine).toContain('| ecclium token list');
+    expect(helpLines).toContain(
+      '    --write             mit dem Scope ‹write› für Schreib-Tools, sonst nur ‹read›',
     );
   });
 });

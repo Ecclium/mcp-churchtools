@@ -29,7 +29,8 @@ import { environmentSchema } from '../packages/core/src/config/variables.ts';
 // and of the notices and the metrics file, which only the runner needs, and
 // the folder of its tokens (ADR 0033), and the proxy, the switch for a
 // runner without it and the targets in the local network, which have no
-// default (ADR 0035). The zone
+// default (ADR 0035), and the file of the bearer tokens, which only the
+// server over HTTP and `ecclium token` read (ADR 0074). The zone
 // of the texts has no default either: a copied zone that is not the one of
 // the installation would refuse the wrong times as whole days.
 
@@ -52,6 +53,7 @@ const commentedOnly: readonly string[] = [
   'ECCLIUM_EGRESS_PROXY',
   'ECCLIUM_EGRESS',
   'ECCLIUM_EGRESS_ALLOW_LAN',
+  'ECCLIUM_HTTP_TOKENS_FILE',
 ];
 
 const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');

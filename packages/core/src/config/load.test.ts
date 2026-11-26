@@ -27,6 +27,7 @@ import {
 import {
   type ConfigResult,
   loadAuditConfig,
+  loadTokenCommandConfig,
   loadConfig,
   maxReportedProblems,
   type Transport,
@@ -716,6 +717,7 @@ describe('loadConfig with a good configuration', () => {
       ['egressProxy', 'ECCLIUM_EGRESS_PROXY', 'unset', { kind: 'none' }],
       ['egress', 'ECCLIUM_EGRESS', 'unset', { kind: 'none' }],
       ['egressAllowLan', 'ECCLIUM_EGRESS_ALLOW_LAN', 'unset', { kind: 'none' }],
+      ['httpTokensFile', 'ECCLIUM_HTTP_TOKENS_FILE', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -3379,6 +3381,62 @@ describe.each([
 // The runner of routines (ADR 0033, ADR 0034): its own account from the
 // folder of the tokens, never the token of the server (ADR 0023), and the
 // settings a server may leave out.
+describe('loadConfig and the file of the bearer tokens (ADR 0074)', () => {
+  const tokensPath = '/path/to/http-tokens.yaml';
+
+  it('takes the path in its form, shows it masked as a path and never opens the file', () => {
+    const files = memoryFiles();
+    const result = load(
+      { ...valid(), ECCLIUM_HTTP_TOKENS_FILE: tokensPath },
+      'http',
+      files.fs,
+    );
+    expect(result.ok && result.config.httpTokensFile).toBe(tokensPath);
+    expect(setting(result, 'httpTokensFile')).toEqual({
+      key: 'httpTokensFile',
+      variable: 'ECCLIUM_HTTP_TOKENS_FILE',
+      origin: 'environment',
+      shown: { kind: 'path', value: tokensPath },
+    });
+    expect(files.opened).not.toContain(tokensPath);
+  });
+
+  it('leaves it undefined when the variable is not set', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.httpTokensFile).toBeUndefined();
+    expect(setting(result, 'httpTokensFile')).toMatchObject({
+      origin: 'unset',
+    });
+  });
+
+  it('refuses a path that is not absolute or not in its normalised form', () => {
+    for (const value of [
+      'http-tokens.yaml',
+      '/path/to/../tokens.yaml',
+      '/path//tokens.yaml',
+      '/path/to/',
+    ]) {
+      const result = load({ ...valid(), ECCLIUM_HTTP_TOKENS_FILE: value });
+      expect(problems(result)).toEqual([
+        ['http_tokens_file_invalid', 'ECCLIUM_HTTP_TOKENS_FILE'],
+      ]);
+      expect(setting(result, 'httpTokensFile')).toMatchObject({
+        origin: 'invalid',
+        shown: { kind: 'none' },
+      });
+    }
+  });
+
+  it('is refused for the runner, which takes no requests of clients', () => {
+    const result = asRunner({
+      extra: { ECCLIUM_HTTP_TOKENS_FILE: tokensPath },
+    });
+    expect(problems(result)).toEqual([
+      ['runner_stdio_only', 'ECCLIUM_HTTP_TOKENS_FILE'],
+    ]);
+  });
+});
+
 describe('loadConfig for the runner', () => {
   it('loads with the token file of its own account', () => {
     const own = memoryFiles();
@@ -3846,6 +3904,22 @@ describe('loadConfig and its problems', () => {
       load({ ...valid(), ECCLIUM_NOTIFY_FILE: 'notify.jsonl' }),
     metrics_file_invalid: () =>
       load({ ...valid(), ECCLIUM_RUNNER_METRICS_FILE: 'runner.prom' }),
+    http_tokens_file_invalid: () =>
+      load({ ...valid(), ECCLIUM_HTTP_TOKENS_FILE: 'http-tokens.yaml' }),
+    // Only the loader of `ecclium token` reports it.
+    http_tokens_file_required: () => {
+      const loaded = loadTokenCommandConfig({ environment: {} });
+      return {
+        ok: false,
+        report: {
+          transport: 'stdio',
+          settings: [],
+          problems: loaded.ok ? [] : loaded.problems,
+          omittedProblems: 0,
+          warnings: [],
+        },
+      };
+    },
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),
