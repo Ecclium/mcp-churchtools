@@ -858,6 +858,128 @@ const withoutIdentity = (options: McpMountOptions): McpMountOptions => {
   return copy as unknown as McpMountOptions;
 };
 
+describe('the scopes of the identity', () => {
+  // A catalog with the write tool of the example, as on a server that may
+  // write (ADR 0074).
+  const writing = createToolCatalog({
+    core: examplePlugin,
+    plugins: [],
+    readOnly: false,
+    toolsets: new Set(['wiki'] as const),
+  });
+  const writeTool = 'ct_example_note_write';
+  const allNames = writing.list().map((entry) => entry.name);
+  const readNames = writing
+    .list()
+    .filter((entry) => entry.meta.capability !== 'write')
+    .map((entry) => entry.name);
+  const bearer = (scopes: unknown) =>
+    Object.freeze({ source: 'bearer', subject: 'claude-code-office', scopes });
+  const listed = async (
+    era: Era,
+    identityOf: McpMountOptions['identityOf'],
+  ): Promise<readonly unknown[]> => {
+    const { options } = setup();
+    const factory = createMcpMount({
+      ...withoutIdentity(options),
+      catalog: writing,
+      identityOf,
+    }).factory;
+    const connection = await era.open(factory);
+    const reply = await era.ask(connection, 'tools/list');
+    const tools = at(reply, 'result', 'tools') as readonly Json[];
+    return tools.map((tool) => tool['name']);
+  };
+
+  it('holds a write tool in the catalog of the tests', () => {
+    expect(allNames).toContain(writeTool);
+    expect(readNames).not.toContain(writeTool);
+    expect(readNames.length).toBeGreaterThan(0);
+  });
+
+  it.each(eras)(
+    'lists the write tools only to an identity with the scope write in the $name era',
+    async (era) => {
+      await expect(
+        listed(era, () => bearer(['read', 'write']) as never),
+      ).resolves.toEqual(allNames);
+      await expect(
+        listed(era, () => bearer(['read']) as never),
+      ).resolves.toEqual(readNames);
+    },
+  );
+
+  it.each([
+    ['no identity', () => undefined],
+    ['scopes behind a proxy', () => bearer(new Proxy(['write'], {}))],
+    ['an unknown scope', () => bearer(['read', 'admin', 'write'])],
+    [
+      'a reader that throws',
+      () => {
+        throw new Error('no');
+      },
+    ],
+  ])('lists no write tool for %s', async (_name, identityOf) => {
+    await expect(listed(modern, identityOf as never)).resolves.toEqual(
+      readNames,
+    );
+  });
+
+  it('lists the write tools over stdio exactly when the server may write', async () => {
+    const { options } = setup();
+    for (const readOnly of [false, true]) {
+      const factory = createMcpMount({
+        ...options,
+        catalog: writing,
+        identity: createStdioIdentity({
+          stdioSubject: 'local-stdio',
+          readOnly,
+        }),
+      }).factory;
+      const connection = await modern.open(factory);
+      const reply = await modern.ask(connection, 'tools/list');
+      const names = (at(reply, 'result', 'tools') as readonly Json[]).map(
+        (tool) => tool['name'],
+      );
+      expect(names).toEqual(readOnly ? readNames : allNames);
+    }
+  });
+
+  it('hands the scopes of the identity to the pipeline, as a frozen copy', async () => {
+    const requests: unknown[] = [];
+    const pipeline: ToolPipeline = {
+      ...noQueue,
+      undo: noUndo,
+      adopt: noUndo,
+      call: (_name, _input, request) => {
+        requests.push(request.scopes);
+        return Promise.resolve(
+          Object.freeze({
+            ok: false,
+            error: Object.freeze({
+              code: 'permission',
+              message: 'refused',
+            }),
+          }) as ToolOutcome,
+        );
+      },
+    };
+    const { options } = setup();
+    for (const scopes of [['read'], ['read', 'write'], ['root']]) {
+      const factory = createMcpMount({
+        ...withoutIdentity(options),
+        catalog: writing,
+        pipeline,
+        identityOf: () => bearer(scopes) as never,
+      }).factory;
+      const connection = await modern.open(factory);
+      await call(modern, connection, writeTool, {});
+    }
+    expect(requests).toEqual([['read'], ['read', 'write'], []]);
+    for (const scopes of requests) expect(Object.isFrozen(scopes)).toBe(true);
+  });
+});
+
 describe('the identity of a request', () => {
   const identity = createStdioIdentity({
     stdioSubject: 'local-stdio',

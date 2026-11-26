@@ -109,6 +109,9 @@ const request = (extra: Partial<ToolRequest> = {}): ToolRequest => ({
   mode: 'interactive',
   redaction: 'standard',
   readOnly: true,
+  // A sign-in that may write, so that the other checks of the gate show;
+  // the tests of the scopes take them away (ADR 0074).
+  scopes: ['read', 'write'],
   features: [],
   signal: new AbortController().signal,
   ...extra,
@@ -379,6 +382,136 @@ describe('the gate', () => {
       writeState: 'denied',
       tool: 'ct_example_note_write',
     });
+  });
+
+  // A sign-in that may only read (ADR 0074): the gate refuses a write tool
+  // before anything else, as a refused call with the code permission.
+  const noteInput = {
+    categoryId: 12,
+    guid: '00000000-0000-4000-8000-000000000001',
+    baseVersion: 3,
+    note: 'x',
+  };
+  const scopeRefused = {
+    ok: false,
+    error: {
+      code: 'permission',
+      message:
+        'This sign-in may only read. A write tool needs the scope write.',
+    },
+  };
+
+  it('refuses a write tool without the scope write as a refused call, before its input is checked', async () => {
+    const { double, pipeline, events, logs } = setup([], false);
+    for (const input of [noteInput, { note: 42 }]) {
+      const outcome = await pipeline.call(
+        'ct_example_note_write',
+        input,
+        request({ readOnly: false, scopes: ['read'] }),
+      );
+      expect(outcome).toEqual(scopeRefused);
+    }
+    expect(events()).toHaveLength(2);
+    for (const event of events()) {
+      expect(event).toMatchObject({
+        type: 'tool_call',
+        tool: 'ct_example_note_write',
+        actor: { kind: 'user', id: 'stdio:local-stdio' },
+        outcome: 'denied',
+        errorCode: 'permission',
+        writeState: 'denied',
+      });
+    }
+    expect(logs()).toEqual(['tool_call', 'tool_call']);
+    expect(double.calls()).toEqual([]);
+  });
+
+  it('refuses it before the other checks of the gate, also in another mode', async () => {
+    const { pipeline } = setup([], false);
+    for (const mode of ['unattended', 'operator'] as const) {
+      const outcome = await pipeline.call(
+        'ct_example_note_write',
+        noteInput,
+        request({ readOnly: false, mode, scopes: ['read'] }),
+      );
+      expect(outcome).toEqual(scopeRefused);
+    }
+  });
+
+  // Whatever is not an array of known scopes counts as none, so that a
+  // request built wrong never writes. Each one has a getter or a trap that
+  // would claim write, if the pipeline ran it.
+  const withGetter = (): unknown[] => {
+    const scopes: unknown[] = [];
+    Object.defineProperty(scopes, '0', {
+      get: () => 'write',
+      enumerable: true,
+    });
+    return scopes;
+  };
+  it.each([
+    ['no scopes at all', undefined],
+    ['an empty list', []],
+    ['an unknown scope', ['read', 'admin']],
+    ['write in other case', ['read', 'Write']],
+    ['write twice', ['write', 'write']],
+    ['a string', 'write'],
+    ['an object like an array', { 0: 'write', length: 1 }],
+    ['a proxy of an array', new Proxy(['read', 'write'], {})],
+    ['an element behind a getter', withGetter()],
+  ])('counts %s as no scope', async (_name, scopes) => {
+    const { pipeline, events } = setup([], false);
+    const built: Record<string, unknown> = {
+      ...request({ readOnly: false }),
+    };
+    if (scopes === undefined) delete built['scopes'];
+    else built['scopes'] = scopes;
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      noteInput,
+      built as unknown as ToolRequest,
+    );
+    expect(outcome).toEqual(scopeRefused);
+    expect(events()[0]).toMatchObject({ errorCode: 'permission' });
+  });
+
+  it('counts scopes behind a getter of the request as none', async () => {
+    const { pipeline } = setup([], false);
+    const given: Record<string, unknown> = { ...request({ readOnly: false }) };
+    delete given['scopes'];
+    Object.defineProperty(given, 'scopes', {
+      get: () => ['read', 'write'],
+      enumerable: true,
+    });
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      noteInput,
+      given as unknown as ToolRequest,
+    );
+    expect(outcome).toEqual(scopeRefused);
+  });
+
+  it('counter-check: passes a write tool with the scope write on to the write guard, also with write alone', async () => {
+    for (const scopes of [['read', 'write'], ['write']] as const) {
+      const { pipeline } = setup([], false);
+      const outcome = await pipeline.call(
+        'ct_example_note_write',
+        noteInput,
+        request({ readOnly: false, scopes }),
+      );
+      // Without a folder of kill switches the write guard refuses it.
+      expect(!outcome.ok && outcome.error.code).toBe('policy_denied');
+    }
+  });
+
+  it('runs a read tool with the scope read', async () => {
+    const { pipeline } = setup([], false);
+    const outcome = await pipeline.call(
+      'ct_example_echo',
+      { email: 'max.mustermann@example.org', notes: [] },
+      request({ readOnly: false, scopes: ['read'] }),
+    );
+    expect(outcome.ok).toBe(true);
   });
 
   it('refuses a tool that never runs unattended outside interactive mode', async () => {

@@ -405,6 +405,8 @@ const request = (elicitation: boolean): ToolRequest => ({
   mode: 'interactive',
   redaction: 'standard',
   readOnly: false,
+  // The sign-in of these tests may write (ADR 0074).
+  scopes: ['read', 'write'],
   features: [],
   signal: new AbortController().signal,
   elicitation,

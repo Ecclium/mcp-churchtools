@@ -141,6 +141,9 @@ const request = (extra: Partial<ToolRequest> = {}): ToolRequest => ({
   mode: 'interactive',
   redaction: 'standard',
   readOnly: false,
+  // The sign-in of these tests may write; the gate of the scopes has
+  // tests of its own in pipeline.test.ts (ADR 0074).
+  scopes: ['read', 'write'],
   features: [],
   signal: new AbortController().signal,
   ...extra,
