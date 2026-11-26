@@ -1,11 +1,14 @@
 import {
   chmodSync,
+  closeSync,
+  constants,
+  fstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  openSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -21,6 +24,17 @@ import {
   type WriterFileSystem,
   writeTokensFile,
 } from './write.js';
+
+// The mode of a file, read through one descriptor: a check by path before
+// a use by path is a race that CodeQL reports (js/file-system-race).
+const modeOf = (target: string): number => {
+  const fd = openSync(target, constants.O_RDONLY);
+  try {
+    return fstatSync(fd).mode & 0o777;
+  } finally {
+    closeSync(fd);
+  }
+};
 
 const root = mkdtempSync(join(tmpdir(), 'ecclium-token-write-'));
 afterAll(() => {
@@ -58,7 +72,7 @@ describe('writeTokensFile', () => {
       'written',
     );
     expect(readFileSync(path, 'utf8')).toBe('version: 1\ntokens: []\n');
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(modeOf(path)).toBe(0o600);
     expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
   });
 
@@ -69,7 +83,7 @@ describe('writeTokensFile', () => {
     if (before === undefined) throw new Error('Expected a file.');
     expect(writeTokensFile(path, 'new\n', before)).toBe('written');
     expect(readFileSync(path, 'utf8')).toBe('new\n');
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(modeOf(path)).toBe(0o600);
   });
 
   it('refuses a file that changed or appeared since the read', () => {

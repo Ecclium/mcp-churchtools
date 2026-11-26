@@ -2,7 +2,6 @@ import {
   chmodSync,
   closeSync,
   constants,
-  existsSync,
   fstatSync,
   mkdirSync,
   mkdtempSync,
@@ -11,7 +10,6 @@ import {
   readFileSync,
   readSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -54,6 +52,17 @@ const nodeConfigFiles: ConfigFileSystem = {
   },
   getuid: () => process.getuid?.(),
   constants,
+};
+
+// The mode of a file, read through one descriptor: a check by path before
+// a use by path is a race that CodeQL reports (js/file-system-race).
+const modeOf = (target: string): number => {
+  const fd = openSync(target, constants.O_RDONLY);
+  try {
+    return fstatSync(fd).mode & 0o777;
+  } finally {
+    closeSync(fd);
+  }
 };
 
 // A fixed instant of the clock, so that no test depends on the calendar.
@@ -142,7 +151,7 @@ describe('ecclium token create', () => {
         expiresAt: '2027-05-25',
       },
     ]);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(modeOf(path)).toBe(0o600);
     expect(readFileSync(path, 'utf8')).not.toContain(token);
     expect(result.stderr).toEqual([
       'Das Token ‹claude-code-office› ist angelegt, mit den Scopes ‹read›, gültig bis und mit 25.05.2027 (UTC). Es steht nur in dieser Ausgabe, in keiner Datei: Legen Sie es jetzt beim Client ab.',
@@ -187,7 +196,7 @@ describe('ecclium token create', () => {
       expect(result.stderr).toEqual([tokenTexts.nameInvalid]);
       expect(result.stderr.join('\n')).not.toContain(token.slice(12, 30));
     }
-    expect(existsSync(path)).toBe(false);
+    expect(readdirSync(folder)).toEqual([]);
   });
 
   it('refuses --days outside 1 to 365 or of another form with 64', () => {
@@ -388,7 +397,7 @@ describe('ecclium token rotate', () => {
     const missing = capture({ action: 'rotate', name: 'buero' });
     expect(missing.code).toBe(exitCodes.noInput);
     expect(missing.stderr).toEqual([tokenTexts.missingForChange]);
-    expect(existsSync(path)).toBe(false);
+    expect(readdirSync(folder)).toEqual([]);
     writeEntries([entry({ name: 'other' })]);
     const unknown = capture({ action: 'rotate', name: 'buero' });
     expect(unknown.code).toBe(exitCodes.dataError);
@@ -479,7 +488,7 @@ describe('ecclium token and its files', () => {
     expect(loose.stderr[0]).toContain('Gruppe oder andere Benutzer dürfen');
     expect(loose.stdout).toEqual([]);
     expect(readFileSync(path, 'utf8')).toBe(before);
-    expect(statSync(path).mode & 0o777).toBe(0o666);
+    expect(modeOf(path)).toBe(0o666);
     expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
     chmodSync(path, 0o600);
     const target = join(folder, 'target.yaml');
@@ -557,12 +566,12 @@ describe('ecclium token and its files', () => {
   });
 
   it('holds the lock from before the read until after the write and releases it', () => {
-    const lock = join(folder, '.http-tokens.yaml.lock');
+    const lockName = '.http-tokens.yaml.lock';
     const seen: boolean[] = [];
     const watching: WriterFileSystem = {
       ...nodeWriterFileSystem,
       renameSync: (from, to) => {
-        seen.push(existsSync(lock));
+        seen.push(readdirSync(folder).includes(lockName));
         nodeWriterFileSystem.renameSync(from, to);
       },
     };
@@ -573,14 +582,14 @@ describe('ecclium token and its files', () => {
       readFiles: {
         ...nodeConfigFiles,
         openSync: (target, flags) => {
-          seen.push(existsSync(lock));
+          seen.push(readdirSync(folder).includes(lockName));
           return nodeConfigFiles.openSync(target, flags);
         },
       },
     });
     expect(result.code).toBe(exitCodes.ok);
     expect(seen).toEqual([true, true]);
-    expect(existsSync(lock)).toBe(false);
+    expect(readdirSync(folder)).not.toContain(lockName);
   });
 
   it('writes nothing and gives 75 when the file changes during the read', () => {
