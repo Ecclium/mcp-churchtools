@@ -8,9 +8,9 @@ import { describe, expect, it } from 'vitest';
 
 import { jobsOf } from '../support/workflows.mts';
 
-// Build and checks of the jobs check, compat and minimum, and the tests with
-// coverage of coverage-security-core, run in a network namespace with
-// loopback only (ADR 0052). These tests read the workflows
+// Build and checks of the jobs check, compat and minimum, the tests with
+// coverage of coverage-security-core and the architecture tests of the job
+// architecture run in a network namespace with loopback only (ADR 0052). These tests read the workflows
 // and the wrapper as text, run shellcheck over the wrapper, and in CI check
 // from inside the namespace that only loopback is there. A text check sees
 // only the spellings it knows; the review sees the rest.
@@ -19,6 +19,7 @@ const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const wrapper = 'scripts/ci/without-network.sh';
 const wrapped = `bash ${wrapper} pnpm run ci:check`;
 const wrappedCoverage = `bash ${wrapper} pnpm run ci:coverage`;
+const wrappedArchitecture = `bash ${wrapper} pnpm run ci:architecture`;
 // Each job of ci.yml that must run the checks or the tests, with the one
 // wrapped command it runs.
 const checkJobs: Readonly<Record<string, string>> = {
@@ -26,10 +27,12 @@ const checkJobs: Readonly<Record<string, string>> = {
   compat: wrapped,
   minimum: wrapped,
   'coverage-security-core': wrappedCoverage,
+  architecture: wrappedArchitecture,
 };
+const wrappedCommands = new Set(Object.values(checkJobs));
 // Any way to run the checks or the tests of the repository.
 const runsChecks =
-  /\bci:(?:check|coverage)\b|\bpnpm\s+(?:run\s+)?(?:check|test|coverage:security)\b|\bvitest\b/;
+  /\bci:(?:check|coverage|architecture)\b|\bpnpm\s+(?:run\s+)?(?:check|test|coverage:security)\b|\bvitest\b/;
 
 // GitHub runs workflow files ending in .yml and .yaml alike.
 export const workflowFile = /\.ya?ml$/;
@@ -72,7 +75,7 @@ export function namespaceViolations(
         const block = /^ {6}(?:- | {2})run: [|>]/m.test(step);
         if (!block && !runsChecks.test(run)) continue;
         if (block && !runsChecks.test(step)) continue;
-        if (run !== wrapped && run !== wrappedCoverage) {
+        if (!wrappedCommands.has(run)) {
           found.push(`${where}: runs the checks with network`);
           continue;
         }
@@ -161,7 +164,7 @@ export function wrapperViolations(text: string): string[] {
 }
 
 describe('the network namespace of the check jobs', () => {
-  it('runs the checks of check, compat, minimum and coverage-security-core only without network', () => {
+  it('runs the checks of check, compat, minimum, coverage-security-core and architecture only without network', () => {
     expect(namespaceViolations(workflows())).toEqual([]);
   });
 
@@ -169,6 +172,8 @@ describe('the network namespace of the check jobs', () => {
   const compat = jobsOf(ci).find(([job]) => job === 'compat')?.[1] ?? '';
   const coverage =
     jobsOf(ci).find(([job]) => job === 'coverage-security-core')?.[1] ?? '';
+  const architecture =
+    jobsOf(ci).find(([job]) => job === 'architecture')?.[1] ?? '';
 
   it.each([
     [
@@ -207,6 +212,31 @@ describe('the network namespace of the check jobs', () => {
       ),
     ],
     ['no coverage job', ci.replace(coverage, '')],
+    [
+      'the architecture job without the wrapper',
+      ci.replace(
+        architecture,
+        architecture.replace(
+          `run: ${wrappedArchitecture}`,
+          'run: pnpm run ci:architecture',
+        ),
+      ),
+    ],
+    [
+      'the architecture job running the checks instead',
+      ci.replace(
+        architecture,
+        architecture.replace(`run: ${wrappedArchitecture}`, `run: ${wrapped}`),
+      ),
+    ],
+    [
+      'a check job that runs the architecture tests instead',
+      ci.replace(
+        compat,
+        compat.replace(`run: ${wrapped}`, `run: ${wrappedArchitecture}`),
+      ),
+    ],
+    ['no architecture job', ci.replace(architecture, '')],
     [
       'tests with coverage in another job',
       ci.replace(

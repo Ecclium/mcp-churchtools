@@ -162,7 +162,8 @@ jobs:
   # check, compat and minimum run the same steps on different versions of
   # Node.js (ADR 0019): the development version from mise.toml, the next line
   # from mise.compat.toml and the oldest supported version from
-  # mise.minimum.toml.
+  # mise.minimum.toml. The tests in tests/architecture/ run once, in the job
+  # architecture below.
   check:
     name: check
     runs-on: ubuntu-24.04
@@ -289,6 +290,39 @@ jobs:
         env:
           MISE_OFFLINE: 1
         run: bash scripts/ci/without-network.sh pnpm run ci:coverage
+      - name: Check that the tests changed no tracked file
+        run: git diff --exit-code
+
+  # The tests in tests/architecture/, once, with the development version of
+  # Node.js (ADR 0019). They read sources and configuration and run no code
+  # of the packages, so they need no build. Each case of the dependency rules
+  # cruises a full copy of the packages (ADR 0022); in check, compat and
+  # minimum they took two thirds of the time of all test files.
+  architecture:
+    name: architecture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Node.js, pnpm and the tools
+        uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          version: 2026.10.24
+          cache: false
+      - name: Install the dependencies from the lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Check that the install changed no tracked file
+        run: git diff --exit-code
+      - name: Run the architecture tests without network
+        # The same network namespace as the check jobs (ADR 0052).
+        env:
+          MISE_OFFLINE: 1
+        run: bash scripts/ci/without-network.sh pnpm run ci:architecture
       - name: Check that the tests changed no tracked file
         run: git diff --exit-code
 
