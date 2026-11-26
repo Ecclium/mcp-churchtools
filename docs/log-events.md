@@ -21,6 +21,7 @@ In dieser Reihenfolge, jedes nur, wenn es einen Wert hat. Die Felder des Kerns b
 | `tool` | Kern | Name des Tools des Aufrufs. |
 | `prompt` | Aufruf | Name eines Prompts aus dem Katalog, nie der Wert eines Arguments. |
 | `code` | Aufruf | Stabiler Fehlercode, etwa `upstream` oder `policy_denied`, nie eine Meldung. |
+| `reason` | Aufruf | Grund einer abgewiesenen Anmeldung über HTTP, einer aus fester Liste: `missing`, `scheme`, `form`, `checksum`, `unknown`, `expired`, `not_yet_valid`, `tokens_file`, `failed`. Nie ein Wert der Anfrage. |
 | `mode` | Kern | Wie der Aufruf lief: interaktiv, unbeaufsichtigt oder durch den Betreiber. |
 | `redaction` | Kern | Stufe der Maskierung des Aufrufs. |
 | `readOnly` | Kern | Ob der Aufruf nur lesen durfte. |
@@ -264,7 +265,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
 | `http_aborted` | `warn` | `code`, `durationMs`, `method`, `purpose`, `status` | Die Anfrage wurde abgebrochen, etwa weil der Client den Aufruf beendet hat. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. |
-| `http_auth_refused` | `warn` | keine | Eine Anfrage über HTTP kam ohne gültige Anmeldung. Sie erhielt 401, bevor ihr Körper gelesen wurde. |
+| `http_auth_refused` | `warn` | `reason` | Eine Anfrage über HTTP kam ohne gültige Anmeldung. Sie erhielt 401, bevor ihr Körper gelesen wurde. `reason` nennt den Grund: ohne Kopfzeile `Authorization` (`missing`), mit einem anderen Verfahren als `Bearer` (`scheme`), ein Token in falscher Form (`form`) oder mit falscher Prüfsumme (`checksum`), unbekannt oder widerrufen (`unknown`), abgelaufen (`expired`), noch nicht gültig (`not_yet_valid`), die Datei der Tokens fehlt, ist nicht lesbar oder ungültig (`tokens_file`, `ecclium token list` nennt das Problem), oder die Prüfung selbst scheiterte (`failed`). Der Client erhält bei jedem Grund dieselbe Antwort. |
 | `http_body_not_json` | `warn` | keine | Ein `POST` über HTTP kam ohne JSON als Typ des Inhalts. Es erhielt 415. |
 | `http_body_too_deep` | `warn` | keine | Der Körper einer Anfrage über HTTP verschachtelte tiefer als 64 Ebenen. Sie erhielt 400. |
 | `http_body_too_large` | `warn` | keine | Der Körper einer Anfrage über HTTP war grösser als 1 MiB. Sie erhielt 413, ohne dass er ganz gelesen wurde. |

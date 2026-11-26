@@ -43,6 +43,7 @@ const order = [
   'tool',
   'prompt',
   'code',
+  'reason',
   'mode',
   'redaction',
   'readOnly',
@@ -141,6 +142,7 @@ describe('a log line', () => {
       method: 'PATCH',
       count: 3,
       durationMs: 12,
+      reason: 'expired',
       code: 'not_found',
       prompt: 'dienstplan_wochenende',
       note: 'x',
@@ -154,6 +156,7 @@ describe('a log line', () => {
       ...fullBound,
       prompt: 'dienstplan_wochenende',
       code: 'not_found',
+      reason: 'expired',
       durationMs: 12,
       count: 3,
       method: 'PATCH',
@@ -165,7 +168,7 @@ describe('a log line', () => {
     expect(lines[0]).not.toMatch(/[\n\r]/);
   });
 
-  it('is at most 781 characters long', () => {
+  it('is at most 824 characters long', () => {
     // The longest name of the catalog, not 64 characters: no other name
     // reaches a line (ADR 0054).
     const longest = Object.keys(logEvents).reduce((a, b) =>
@@ -191,15 +194,17 @@ describe('a log line', () => {
       hash: 'f'.repeat(64),
       prompt: `a${'b'.repeat(62)}`,
       code: 'confirmation_required',
+      reason: 'not_yet_valid',
       durationMs: 86_400_000,
       count: 1_000_000,
       method: 'DELETE',
+      purpose: 'model',
       status: 599,
       attempt: 10,
     };
     for (let key = 0; key < maxDropped; key += 1) fields[key] = 0;
     log.debug(longest, fields as never);
-    expect(lines[0]).toHaveLength(781);
+    expect(lines[0]).toHaveLength(824);
   });
 });
 
@@ -733,6 +738,23 @@ describe('the fields of a call', () => {
       null,
       null,
     ]);
+  });
+
+  it('keep only a reason of a refused sign-in from the fixed list, compared exactly', () => {
+    const { log, parsed } = make();
+    for (const reason of [
+      'expired',
+      'tokens_file',
+      'EXPIRED',
+      'toString',
+      'ecclium_mcp_',
+      7,
+    ]) {
+      log.warn('http_auth_refused', { reason });
+    }
+    expect(
+      parsed().map((line) => line['reason'] ?? line['dropped'] ?? null),
+    ).toEqual(['expired', 'tokens_file', 1, 1, 1, 1]);
   });
 
   it('keep only one of the five methods of the outbound path, in capitals', () => {

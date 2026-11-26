@@ -22,6 +22,11 @@ export {
   serializeBearerTokens,
 } from './file.js';
 export {
+  type BearerSignIn,
+  type BearerSignInOptions,
+  createBearerSignIn,
+} from './sign-in.js';
+export {
   type BearerLookup,
   type BearerRefusal,
   type BearerScope,

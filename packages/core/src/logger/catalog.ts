@@ -29,6 +29,7 @@ export type LogLevel = (typeof logLevels)[number];
 export type LogCallField =
   | 'prompt'
   | 'code'
+  | 'reason'
   | 'durationMs'
   | 'count'
   | 'method'
@@ -354,7 +355,9 @@ export const logEvents = Object.freeze({
   mcp_http_error: entry('error'),
   http_host_refused: entry('warn'),
   http_origin_refused: entry('warn'),
-  http_auth_refused: entry('warn'),
+  // A refused sign-in names its reason from the fixed list, never a value
+  // of the request (ADR 0074).
+  http_auth_refused: entry('warn', 'reason'),
   http_body_not_json: entry('warn'),
   http_body_unreadable: entry('warn'),
   http_body_too_large: entry('warn'),

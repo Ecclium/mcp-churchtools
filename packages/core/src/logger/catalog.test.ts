@@ -48,6 +48,7 @@ describe('the catalog of the log lines', () => {
     const values: Record<string, string | number> = {
       prompt: 'dienstplan_wochenende',
       code: 'internal',
+      reason: 'expired',
       durationMs: 1,
       count: 1,
       method: 'GET',

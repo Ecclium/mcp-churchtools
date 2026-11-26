@@ -35,6 +35,7 @@ import {
   isUuid,
   toTimestamp,
 } from './fields.js';
+import { isSignInRefusal } from '../identity/refusals.js';
 import { isLogEvent, type LogLevel, logLevels } from './catalog.js';
 import type { LineWriter } from './line-writer.js';
 
@@ -121,6 +122,8 @@ const fields: readonly Field[] = Object.freeze(
     // request that runs no tool and has no tenant (ADR 0065).
     { name: 'prompt', bound: false, check: isPromptName },
     { name: 'code', bound: false, check: isErrorCode },
+    // Why a sign-in over HTTP was refused, from the fixed list (ADR 0074).
+    { name: 'reason', bound: false, check: isSignInRefusal },
     { name: 'mode', bound: true, check: isMode },
     { name: 'redaction', bound: true, check: isRedactionLevel },
     { name: 'readOnly', bound: true, check: isBoolean },
@@ -278,8 +281,8 @@ const timestamp = (clock: Clock): string => {
  * Creates a logger. Each call writes one line with `ts`, `level` and
  * `event`, then the bound fields and the fields of the call in a fixed
  * order, then `dropped` if fields were dropped. A call may set only
- * `prompt`, with a name from `prompts`, `code`, `durationMs`, `count`,
- * `method`, `status` and `attempt`, and with `anchors` also `file`, `seq` and
+ * `prompt`, with a name from `prompts`, `code`, `reason`, `durationMs`,
+ * `count`, `method`, `status` and `attempt`, and with `anchors` also `file`, `seq` and
  * `hash`; everything else is dropped and counted. An event name that
  * breaks the pattern or is not in the catalog `logEvents` becomes
  * `invalid_event`. Fields are read as own data properties of a plain
