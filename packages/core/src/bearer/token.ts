@@ -24,6 +24,8 @@ import { Buffer } from 'node:buffer';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { crc32 } from 'node:zlib';
 
+import { isIsoDate } from '@ecclium/mcp-churchtools-plugin-api';
+
 /** The prefix of every token, which `.gitleaks.toml` looks for. */
 export const bearerTokenPrefix = 'ecclium_mcp_';
 
@@ -80,10 +82,12 @@ export interface BearerTokenEntry {
 
 /**
  * Why a presented token is refused: it has not the form of a token, its
- * checksum is wrong, no entry has its hash, or the entry has expired. A
- * revoked token has no entry any more, so it is unknown.
+ * checksum is wrong, no entry has its hash, the entry has expired, or its
+ * first day lies ahead. A revoked token has no entry any more, so it is
+ * unknown.
  */
-export type BearerRefusal = 'form' | 'checksum' | 'unknown' | 'expired';
+export type BearerRefusal =
+  'form' | 'checksum' | 'unknown' | 'expired' | 'not_yet_valid';
 
 /** The entry of a presented token, or why there is none. */
 export type BearerLookup =
@@ -200,13 +204,18 @@ export function hashBearerToken(token: string): string {
 /**
  * Looks up a presented token among the entries of the file. The form comes
  * first, then the hash, compared with every entry in constant time, then
- * the day: a token holds until the end of the UTC day `expiresAt`.
+ * the days: a token holds from the UTC day `createdAt` until the end of
+ * the UTC day `expiresAt`. An entry whose first day lies ahead, written on
+ * a host whose clock ran ahead or by hand, holds not yet, so that neither
+ * the limit of 365 days nor the one of a rotation can be stretched.
  *
  * @param entries - The entries of the file of the tokens, as read.
  * @param presented - What the client presented, of any type.
  * @param today - The current UTC day, `YYYY-MM-DD`.
  * @returns The entry, or the reason of the refusal. It never throws for a
  *   presented value, and never names it.
+ * @throws {TypeError} When the day is no day of the calendar, so that a
+ *   fault of the caller never lets an expired token pass.
  * @example
  * ```ts
  * const found = findBearerToken(entries, presented, '2026-11-26');
@@ -218,6 +227,9 @@ export function findBearerToken(
   presented: unknown,
   today: string,
 ): BearerLookup {
+  if (!isIsoDate(today)) {
+    throw new TypeError('The current day is no day of the calendar.');
+  }
   const problem = bearerTokenFormProblem(presented);
   if (problem !== undefined) {
     return Object.freeze({ __proto__: null, ok: false, reason: problem });
@@ -239,6 +251,13 @@ export function findBearerToken(
   }
   if (today > found.expiresAt) {
     return Object.freeze({ __proto__: null, ok: false, reason: 'expired' });
+  }
+  if (today < found.createdAt) {
+    return Object.freeze({
+      __proto__: null,
+      ok: false,
+      reason: 'not_yet_valid',
+    });
   }
   return Object.freeze({ __proto__: null, ok: true, entry: found });
 }

@@ -240,6 +240,28 @@ describe('findBearerToken', () => {
     });
   });
 
+  it('refuses an entry whose first day lies ahead as not yet valid', () => {
+    const token = createBearerToken();
+    const entries = [
+      entry(token, { createdAt: '2026-11-27', expiresAt: '2027-05-26' }),
+    ];
+    expect(findBearerToken(entries, token, '2026-11-26')).toEqual({
+      ok: false,
+      reason: 'not_yet_valid',
+    });
+    expect(findBearerToken(entries, token, '2026-11-27').ok).toBe(true);
+  });
+
+  it('refuses a day that is none, so that an expired token never passes', () => {
+    const token = createBearerToken();
+    const entries = [entry(token, { expiresAt: '2026-11-25' })];
+    for (const day of ['', '26.11.2026', '2026-02-30', 20261126, new Date()]) {
+      expect(() =>
+        findBearerToken(entries, token, day as unknown as string),
+      ).toThrow(TypeError);
+    }
+  });
+
   it('compares the hash with every entry, also after a match', () => {
     const token = createBearerToken();
     const entries = [
