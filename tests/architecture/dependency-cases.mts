@@ -177,22 +177,59 @@ export async function cruiseCopy(
   }
 }
 
+/** A source file of a package in a language that dependency-cruiser follows. */
+const sourceCode = /^packages\/[^/]+\/src\/.+\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+/**
+ * Throws when a cruise did not follow a source file of a package or listed a
+ * module twice. dependency-cruiser 18.7.2 keeps the set of extensions it
+ * follows across cruises in one process and takes it from the first import it
+ * resolves there. When that import is a `.js` path it resolves to TypeScript,
+ * the set narrows to `.ts`, `.tsx` and `.d.ts`, and every later cruise of the
+ * process stops at an `.mts` file, which can hide a violation behind it.
+ * Today the first import is a package and the set is whole; this check turns
+ * a narrowed set into a failing case instead of a passing one.
+ *
+ * @param result - The result of a cruise.
+ * @throws {Error} When a module is listed twice or a source file of a
+ *   package was not followed.
+ */
+export function assertSourcesFollowed(result: ICruiseResult): void {
+  const seen = new Set<string>();
+  for (const module of result.modules) {
+    if (seen.has(module.source)) {
+      throw new Error(`dependency-cruiser listed ${module.source} twice`);
+    }
+    seen.add(module.source);
+    for (const dependency of module.dependencies) {
+      if (sourceCode.test(dependency.resolved) && !dependency.followable) {
+        throw new Error(
+          `dependency-cruiser did not follow ${dependency.resolved}, its set of followable extensions is narrowed`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Cruises the packages of a folder with the configuration of the workspace.
  *
  * Without the resolve option bustTheCache, as `pnpm check:arch` runs. That
  * option builds a new resolver and empties the cache of the file system for
- * every single import, which about doubled the time of each case. It is
- * not needed between cases: dependency-cruiser empties its caches at the
- * start and at the end of every cruise, and every case cruises a folder of
- * its own, so no path of one copy occurs in another.
+ * every single import, which about doubled the time of each case. Without
+ * it, dependency-cruiser still clears its resolvers and its caches of
+ * parsers and manifests at the start and at the end of every cruise and
+ * builds a new cache of the file system for each. The one thing it keeps is
+ * the set of followable extensions, which assertSourcesFollowed checks.
  *
  * @param baseDir - The workspace or a copy of it.
  * @returns The result of the cruise.
+ * @throws {Error} When the cruise did not follow a source file of a package.
  */
 export async function cruiseFolder(baseDir: string): Promise<ICruiseResult> {
   const { output } = await cruise(['packages'], { ...options, baseDir });
   if (typeof output === 'string') throw new Error('expected a cruise result');
+  assertSourcesFollowed(output);
   return output;
 }
 
