@@ -160,17 +160,24 @@ entropy = 3.0
 keywords = ["bearer"]
 tags = ["secret"]
 
-# Static bearer tokens of the HTTP server get a fixed prefix with checksum so
-# they can be recognised without context (ADR 0037). Once the format is fixed,
-# add a dedicated rule here, and the same pattern as a custom pattern for
-# GitHub push protection, for example:
-#
-# [[rules]]
-# id = "ecclium-mcp-bearer-token"
-# description = "Static bearer token of the Ecclium MCP HTTP server"
-# regex = '''\b(<prefix>_[A-Za-z0-9]{43}[A-Za-z0-9]{6})\b'''
-# keywords = ["<prefix>_"]
-# tags = ["secret", "ecclium"]
+# Static bearer tokens of the HTTP server have a fixed prefix with checksum so
+# they can be recognised without context (ADR 0037, ADR 0074): ecclium_mcp_,
+# 43 characters of Base62 from 32 random bytes, 6 characters of Base62 with
+# the CRC32 of those. gitleaks cannot check the checksum, so the rule matches
+# the form; a made-up string of that form is reported as well, which is the
+# safe side. There is no word boundary before the prefix, so that a name
+# glued to it, such as TOKEN_ecclium_mcp_..., hides nothing; the one after
+# the 49 characters keeps a longer string of letters from passing as a token.
+# tests/hooks/gitleaks-bearer-rule.test.mts holds the cases. Once the package
+# is public, the same pattern goes to GitHub as a custom pattern for push
+# protection and to the Secret Scanning Partner Program:
+#   ecclium_mcp_[0-9A-Za-z]{49}
+[[rules]]
+id = "ecclium-mcp-bearer-token"
+description = "Static bearer token of the Ecclium MCP server over HTTP"
+regex = '''ecclium_mcp_[0-9A-Za-z]{49}\b'''
+keywords = ["ecclium_mcp_"]
+tags = ["secret", "ecclium"]
 
 [[rules]]
 id = "url-with-credentials"
