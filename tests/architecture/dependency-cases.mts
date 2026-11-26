@@ -180,15 +180,18 @@ export async function cruiseCopy(
 /**
  * Cruises the packages of a folder with the configuration of the workspace.
  *
+ * Without the resolve option bustTheCache, as `pnpm check:arch` runs. That
+ * option builds a new resolver and empties the cache of the file system for
+ * every single import, which about doubled the time of each case. It is
+ * not needed between cases: dependency-cruiser empties its caches at the
+ * start and at the end of every cruise, and every case cruises a folder of
+ * its own, so no path of one copy occurs in another.
+ *
  * @param baseDir - The workspace or a copy of it.
  * @returns The result of the cruise.
  */
 export async function cruiseFolder(baseDir: string): Promise<ICruiseResult> {
-  const { output } = await cruise(
-    ['packages'],
-    { ...options, baseDir },
-    { bustTheCache: true },
-  );
+  const { output } = await cruise(['packages'], { ...options, baseDir });
   if (typeof output === 'string') throw new Error('expected a cruise result');
   return output;
 }
