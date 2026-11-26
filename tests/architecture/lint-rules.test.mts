@@ -533,6 +533,48 @@ const probes: readonly {
   { code: "import https from 'node:https';", concerns: ['network'] },
   { code: "import { connect } from 'net';", concerns: ['network'] },
   { code: "import type { Agent } from 'node:http';", concerns: ['network'] },
+  // node:http: only createServer is the concern listen, which the place
+  // ingress lifts; everything else of the module stays network there too.
+  {
+    code: "import { createServer } from 'node:http';\nexport const server = createServer();",
+    concerns: ['listen'],
+  },
+  {
+    code: "import { createServer as listen } from 'http';\nexport const server = listen();",
+    concerns: ['listen'],
+  },
+  { code: "export { createServer } from 'node:http';", concerns: ['listen'] },
+  {
+    code: "import { createServer, request } from 'node:http';\nexport { createServer, request };",
+    concerns: ['listen', 'network'],
+  },
+  { code: "import { request } from 'node:http';", concerns: ['network'] },
+  { code: "import { get } from 'http';", concerns: ['network'] },
+  { code: "import { Agent } from 'node:http';", concerns: ['network'] },
+  { code: "import http from 'node:http';", concerns: ['network'] },
+  {
+    code: "import * as http from 'node:http';",
+    concerns: ['listen', 'network'],
+  },
+  { code: "export * from 'node:http';", concerns: ['listen', 'network'] },
+  { code: "export { request } from 'node:http';", concerns: ['network'] },
+  {
+    code: "import type { IncomingMessage } from 'node:http';",
+    concerns: ['network'],
+  },
+  { code: "import 'node:http';", concerns: ['network'] },
+  { code: "export {} from 'node:http';", concerns: ['network'] },
+  { code: "import http = require('node:http');", concerns: ['network'] },
+  { code: "import tls = require('tls');", concerns: ['network'] },
+  { code: "import { Server } from '_http_server';", concerns: ['network'] },
+  { code: "import '_tls_wrap';", concerns: ['network'] },
+  { code: "import {} from 'http';", concerns: ['network'] },
+  { code: "await import('node:http');", concerns: ['network'] },
+  {
+    code: "export type Server = typeof import('node:http');",
+    concerns: ['network'],
+  },
+  { code: "import { createServer } from 'node:https';", concerns: ['network'] },
   { code: "export * from 'node:http2';", concerns: ['network'] },
   { code: "import { createSocket } from 'dgram';", concerns: ['network'] },
   { code: "await import('node:tls');", concerns: ['network'] },
@@ -662,20 +704,21 @@ const locations: readonly {
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
   {
     path: 'packages/server/src/http/probe.ts',
-    allowed: ['mcp-sdk', 'ingress'],
+    allowed: ['mcp-sdk', 'ingress', 'listen'],
   },
   {
     path: 'packages/server/src/http/probe.test.ts',
     allowed: [
       'mcp-sdk',
       'ingress',
+      'listen',
       'mcp-json-schema',
       'module-state',
       'util-module',
     ],
   },
   { path: 'packages/server/src/httpx/probe.ts', allowed: ['mcp-sdk'] },
-  { path: 'packages/core/src/http/probe.ts', allowed: ['network'] },
+  { path: 'packages/core/src/http/probe.ts', allowed: ['network', 'listen'] },
   { path: 'packages/core/src/write/probe.ts', allowed: ['client-writes'] },
   {
     path: 'packages/core/src/write/probe.test.ts',
