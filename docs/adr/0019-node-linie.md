@@ -56,5 +56,6 @@ Für Ecclium zählen ausserdem einzelne Fähigkeiten, belegt in den Release Note
 - `engines.node` im Wurzel-`package.json`: `^24.15.0 || >=26.0.0`.
 - `tsconfig.base.json`: `target` und `lib` auf `es2025`, ohne DOM. `@types/node` in Version 24.
 - CI prüft in den Jobs `check`, `compat` und `minimum` von `.github/workflows/ci.yml`. `tests/toolchain.test.mts` prüft, dass `mise.minimum.toml` die untere Grenze von `engines.node` nennt.
+- Seit dem 26.11.2026 laufen die Tests unter `tests/architecture/` nur noch im Job `architecture`, mit der Version für die Entwicklung. Sie prüfen Quelltext und Konfiguration und laden ein Paket, wo überhaupt, aus seinen Quellen. Im Log von `check` zu #269 brauchten sie zwei Drittel der Zeit aller Testdateien. Einen Fehler dieser Tests, der nur mit der nächsten Linie oder der Mindestversion auftritt, findet CI damit nicht mehr. Build, `pnpm check:arch`, ESLint, die Typprüfung und alle übrigen Tests laufen weiter in allen drei Jobs. `tests/workflows/architecture-job.test.mts` hält beide Hälften auf demselben Ordner.
 - `.github/renovate.json5` schlägt keine neue Hauptversion von Node.js vor, lässt `mise.minimum.toml` unverändert und hält `@types/node` bei der Linie 24.
 - Die Container-Images folgen in Phase 7.

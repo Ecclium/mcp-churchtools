@@ -177,19 +177,68 @@ export async function cruiseCopy(
   }
 }
 
+/** A file of code in a language that dependency-cruiser follows. */
+const codeFile = /\.(?:[cm]?[jt]s|[jt]sx)$/;
+
+/**
+ * Throws when a cruise did not follow a file of code that it found and was
+ * allowed to follow. dependency-cruiser 18.7.2 keeps the set of extensions
+ * it follows across cruises in one process and takes it from the first
+ * import it resolves there. When that import is a `.js` path it resolves to
+ * TypeScript, the set narrows to `.ts`, `.tsx` and `.d.ts`, and every later
+ * cruise of the process stops at an `.mts` or `.mjs` file, which can hide a
+ * violation behind it. Today the first import is a package and the set is
+ * whole. Not followed may only be built-in modules, imports that do not
+ * resolve and what doNotFollow names (npm packages and builds); any other
+ * file of code that was not followed fails the case.
+ *
+ * @param result - The result of a cruise.
+ * @throws {Error} When a resolved file of code outside doNotFollow was not
+ *   followed.
+ */
+export function assertCodeFollowed(result: ICruiseResult): void {
+  const doNotFollow = [options.doNotFollow]
+    .flatMap((value) =>
+      typeof value === 'object' && !Array.isArray(value) ? value.path : value,
+    )
+    .flatMap((path) => (path === undefined ? [] : [new RegExp(path)]));
+  for (const module of result.modules) {
+    for (const dependency of module.dependencies) {
+      if (
+        !dependency.followable &&
+        !dependency.coreModule &&
+        !dependency.couldNotResolve &&
+        codeFile.test(dependency.resolved) &&
+        !doNotFollow.some((pattern) => pattern.test(dependency.resolved))
+      ) {
+        throw new Error(
+          `dependency-cruiser did not follow ${dependency.resolved}, its set of followable extensions is narrowed`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Cruises the packages of a folder with the configuration of the workspace.
  *
+ * Without the resolve option bustTheCache, as `pnpm check:arch` runs. That
+ * option builds a new resolver and empties the cache of the file system for
+ * every single import, which about doubled the time of each case. Without
+ * it, dependency-cruiser still clears its resolvers and its caches of
+ * parsers and manifests at the start and at the end of every cruise and
+ * builds a new cache of the file system for each. The one thing it keeps is
+ * the set of followable extensions, which assertCodeFollowed checks.
+ *
  * @param baseDir - The workspace or a copy of it.
  * @returns The result of the cruise.
+ * @throws {Error} When the cruise did not follow a file of code it should
+ *   have followed.
  */
 export async function cruiseFolder(baseDir: string): Promise<ICruiseResult> {
-  const { output } = await cruise(
-    ['packages'],
-    { ...options, baseDir },
-    { bustTheCache: true },
-  );
+  const { output } = await cruise(['packages'], { ...options, baseDir });
   if (typeof output === 'string') throw new Error('expected a cruise result');
+  assertCodeFollowed(output);
   return output;
 }
 

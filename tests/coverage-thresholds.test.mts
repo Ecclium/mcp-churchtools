@@ -64,8 +64,8 @@ describe('the thresholds of coverage', () => {
       readFileSync(`${workspace}package.json`, 'utf8'),
     ) as { scripts: Record<string, string> };
     // The architecture tests run no code of the packages and, under the
-    // instrumentation of coverage, run past their own time limits; the
-    // check jobs run them.
+    // instrumentation of coverage, run past their own time limits; the job
+    // architecture runs them (tests/workflows/architecture-job.test.mts).
     expect(scripts['coverage:security']).toBe(
       "vitest run --coverage --exclude 'tests/architecture/**'",
     );
