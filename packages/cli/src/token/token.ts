@@ -255,7 +255,8 @@ export function runToken(options: TokenOptions): ExitCode {
   let next: BearerTokenEntry[];
   let token: string | undefined;
   let scopes: readonly BearerScope[] = ['read'];
-  let oldUntil = today;
+  // The last day of the old tokens of the name, after the rotation.
+  let oldUntil = '';
   switch (action) {
     case 'create':
     case 'rotate': {
@@ -336,7 +337,11 @@ export function runToken(options: TokenOptions): ExitCode {
   output.stderr(
     action === 'create'
       ? createdText(checkedName, scopes, expiresAt)
-      : rotatedText(checkedName, expiresAt, oldUntil),
+      : rotatedText(
+          checkedName,
+          expiresAt,
+          oldUntil < today ? undefined : oldUntil,
+        ),
   );
   return exitCodes.ok;
 }

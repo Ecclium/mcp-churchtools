@@ -33,6 +33,7 @@ const dynamic: readonly string[] = [
   createdText('buero', ['read'], '2027-05-25'),
   createdText('buero', ['read', 'write'], '2027-05-25'),
   rotatedText('buero', '2027-05-25', '2026-12-03'),
+  rotatedText('buero', '2027-05-25', undefined),
 ];
 
 // The same rules as for the other texts of the command line

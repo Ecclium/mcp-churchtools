@@ -230,6 +230,17 @@ describe('ecclium token rotate', () => {
     ]);
   });
 
+  it('says so when the old token had expired already, and leaves it as it is', () => {
+    const old = entry({ name: 'buero', expiresAt: '2026-11-20' });
+    writeEntries([old]);
+    const result = capture({ action: 'rotate', name: 'buero' });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(entriesOf()[0]).toEqual(old);
+    expect(result.stderr).toEqual([
+      'Das neue Token ‹buero› gilt bis und mit 25.05.2027 (UTC). Das bisherige war schon abgelaufen. Legen Sie das neue jetzt beim Client ab: Es steht nur in dieser Ausgabe.',
+    ]);
+  });
+
   it('leaves an old token that ends sooner as it is', () => {
     const old = entry({ name: 'buero', expiresAt: '2026-11-28' });
     writeEntries([old]);

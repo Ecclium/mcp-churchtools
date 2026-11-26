@@ -137,7 +137,8 @@ export function createdText(
  *
  * @param name - The checked name.
  * @param expiresAt - The last day of the new token.
- * @param oldExpiresAt - The last day of the old ones.
+ * @param oldExpiresAt - The last day of the old ones, or undefined when
+ *   they have expired already.
  * @returns One line for stderr.
  * @example
  * ```ts
@@ -147,9 +148,13 @@ export function createdText(
 export function rotatedText(
   name: string,
   expiresAt: string,
-  oldExpiresAt: string,
+  oldExpiresAt: string | undefined,
 ): string {
-  return `Das neue Token ‹${name}› gilt bis und mit ${germanDay(expiresAt)} (UTC). Das bisherige gilt noch bis und mit ${germanDay(oldExpiresAt)}, danach nicht mehr. Legen Sie das neue jetzt beim Client ab: Es steht nur in dieser Ausgabe.`;
+  const old =
+    oldExpiresAt === undefined
+      ? 'Das bisherige war schon abgelaufen.'
+      : `Das bisherige gilt noch bis und mit ${germanDay(oldExpiresAt)}, danach nicht mehr.`;
+  return `Das neue Token ‹${name}› gilt bis und mit ${germanDay(expiresAt)} (UTC). ${old} Legen Sie das neue jetzt beim Client ab: Es steht nur in dieser Ausgabe.`;
 }
 
 /**
