@@ -27,7 +27,7 @@ export const tokenTexts = Object.freeze({
   full: 'Die Datei hält schon 64 Einträge, mehr nimmt Ecclium nicht an. Es ist nichts geschrieben. Widerrufen Sie Tokens, die niemand mehr braucht, mit ‹ecclium token revoke›.',
   changed:
     'Die Datei hat sich geändert, während der Befehl lief, vermutlich durch einen zweiten Befehl. Es ist nichts geschrieben, damit keine Änderung verloren geht. Rufen Sie den Befehl noch einmal auf.',
-  unsafeFolder: `Der Ordner der Datei aus ${file} gehört einem anderen Benutzer, Gruppe oder andere Benutzer dürfen darin schreiben, oder an der Stelle der Datei liegt ein Ordner. Es ist nichts geschrieben. Wer dort schreiben darf, könnte die Datei austauschen und damit bestimmen, wer den Server benutzen darf. Geben Sie dem Ordner etwa die Rechte 700 oder 755.`,
+  unsafeFolder: `Der Ordner der Datei aus ${file} gehört einem anderen Benutzer, oder Gruppe und andere Benutzer dürfen darin schreiben, oder an der Stelle der Datei liegt ein Ordner. Es ist nichts geschrieben. Wer dort schreiben darf, könnte die Datei austauschen und damit bestimmen, wer den Server benutzen darf. Geben Sie dem Ordner etwa die Rechte 700 oder 755.`,
   unavailable: `Die Datei aus ${file} konnte nicht geschrieben werden, etwa weil der Ordner fehlt, nur lesbar ist oder die Platte voll ist. Es ist nichts geschrieben. Ecclium zeigt keine Meldung des Systems, weil sie den Pfad nennt. Prüfen Sie den Ordner und rufen Sie den Befehl noch einmal auf.`,
   tokenNotShown:
     'Das Token konnte nicht ausgegeben werden. In der Datei steht es trotzdem: Widerrufen Sie es mit ‹ecclium token revoke› und legen Sie ein neues an.',
@@ -81,8 +81,9 @@ export function tokensFileText(
       return `Die Datei aus ${file} ist grösser als 64 KiB. So viel hält eine Datei mit höchstens 64 Tokens nie. ${check}`;
     case 'bearer_tokens_file_bom':
     case 'bearer_tokens_file_encoding':
-    case 'bearer_tokens_file_unsafe':
       return `Die Datei aus ${file} ist kein Text in UTF-8 ohne Byte Order Mark. ${check}`;
+    case 'bearer_tokens_file_unsafe':
+      return `Die Datei aus ${file} liess sich nicht sicher öffnen. Das Dateisystem meldete einen Fehler, den Ecclium nicht zeigt, weil er den Pfad nennt. Prüfen Sie den Pfad und die Ordner darüber.`;
     case 'bearer_tokens_yaml_syntax':
     case 'bearer_tokens_yaml_unsupported':
       return `Die Datei aus ${file} ist kein YAML, das Ecclium annimmt${at}. Anker, Verweise, Tags und mehrere Dokumente nimmt Ecclium nicht an. ${check}`;
