@@ -92,6 +92,9 @@ describe(`the rule ${rule} of gitleaks`, () => {
     ['in a setting of YAML', (token: string) => `token: "${token}"`],
     ['in a variable', (token: string) => `MCP_TOKEN=${token}`],
     ['glued to a name', (token: string) => `TOKEN_${token}`],
+    ['followed by an underscore', (token: string) => `${token}_old`],
+    ['followed by a hyphen', (token: string) => `${token}-old`],
+    ['at the end of a sentence', (token: string) => `Token: ${token}.`],
     ['in a list of JSON', (token: string) => `["${token}"]`],
   ])(
     'reports a token %s',
@@ -109,6 +112,7 @@ describe(`the rule ${rule} of gitleaks`, () => {
       for (const line of [
         token.slice(0, -1),
         `${token}x`,
+        `${token}9`,
         `ecclium_mcq_${tail}`,
         'ecclium_mcp_',
       ]) {

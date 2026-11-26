@@ -165,17 +165,21 @@ tags = ["secret"]
 # 43 characters of Base62 from 32 random bytes, 6 characters of Base62 with
 # the CRC32 of those. gitleaks cannot check the checksum, so the rule matches
 # the form; a made-up string of that form is reported as well, which is the
-# safe side. There is no word boundary before the prefix, so that a name
-# glued to it, such as TOKEN_ecclium_mcp_..., hides nothing; the one after
-# the 49 characters keeps a longer string of letters from passing as a token.
-# tests/hooks/gitleaks-bearer-rule.test.mts holds the cases. Once the package
-# is public, the same pattern goes to GitHub as a custom pattern for push
-# protection and to the Secret Scanning Partner Program:
+# safe side. Nothing is demanded before the prefix, so that a name glued to
+# it, such as TOKEN_ecclium_mcp_..., hides nothing. After the 49 characters
+# comes any other character than a letter or a digit, or the end: a longer
+# string of letters and digits is no token, but an underscore after a token,
+# as in ..._old, must not hide it, which a word boundary would. The finding
+# is the token alone (secretGroup). tests/hooks/gitleaks-bearer-rule.test.mts
+# holds the cases. Once the package is public, the same pattern goes to
+# GitHub as a custom pattern for push protection and to the Secret Scanning
+# Partner Program:
 #   ecclium_mcp_[0-9A-Za-z]{49}
 [[rules]]
 id = "ecclium-mcp-bearer-token"
 description = "Static bearer token of the Ecclium MCP server over HTTP"
-regex = '''ecclium_mcp_[0-9A-Za-z]{49}\b'''
+regex = '''(ecclium_mcp_[0-9A-Za-z]{49})(?:[^0-9A-Za-z]|$)'''
+secretGroup = 1
 keywords = ["ecclium_mcp_"]
 tags = ["secret", "ecclium"]
 
