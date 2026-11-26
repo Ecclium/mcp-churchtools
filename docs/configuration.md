@@ -38,6 +38,7 @@ Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Be
 | `ECCLIUM_EGRESS_PROXY` | Adresse wie `http://egress:3128` | keine | nein | nein | ja |
 | `ECCLIUM_EGRESS` | `off` | keine | nein | nein | ja |
 | `ECCLIUM_EGRESS_ALLOW_LAN` | Liste aus Name und Port wie `modell.example.org:8443`, mit Komma getrennt | keine | nein | nein | ja |
+| `ECCLIUM_HTTP_TOKENS_FILE` | absoluter Pfad | keine | nein | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja | nein |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein | ja |
 
@@ -152,6 +153,10 @@ Nur `off`: Der Runner startet ohne Proxy und damit ohne Grenze im Netz ([ADR 003
 ## `ECCLIUM_EGRESS_ALLOW_LAN`
 
 Ziele im lokalen Netz für die Grenze im Netz des Runners, als Liste aus höchstens 16 Zielen `Name:Port` mit Komma, etwa `modell.example.org:8443` ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md), `docs/betrieb/egress.md`). Jedes Ziel muss Name und Port der Adresse von ChurchTools oder des Endpunkts eines Anbieters sein, mit ausgeschriebenem Port, auch 443, sonst bricht der Start ab. Wie für jede Adresse der Konfiguration nimmt Ecclium einen Namen mit Punkt in kleinen Buchstaben an, keine IP-Adresse und kein `localhost`. Die Variable wirkt nur über die Liste, die `ecclium init egress` für Squid erzeugt: Dort darf ein solches Ziel einen anderen Port als 443 haben und an einer privaten Adresse liegen, alle anderen Ziele nicht. Unspezifiziert, Loopback, Link-Local, Multicast und reserviert sperrt die Vorlage auch für sie. Den Host der Ping-URL nimmt die Variable nicht, er braucht Port 443. Ein Runner mit `ECCLIUM_EGRESS=off` warnt, wenn die Variable gesetzt ist. Nicht gesetzt: Jedes Ziel braucht Port 443 und eine öffentliche Adresse.
+
+## `ECCLIUM_HTTP_TOKENS_FILE`
+
+Absoluter Pfad der Datei mit den Bearer-Tokens, mit denen sich Clients am Server über HTTP anmelden, etwa `/config/http-tokens.yaml`. Die Datei hält je Token nur seinen Namen, den SHA-256 des Tokens, die Scopes `read` oder `read` und `write` und die Tage, an denen es entstand und zuletzt gilt, nie das Token selbst. `ecclium token create`, `rotate` und `revoke` schreiben sie und legen sie mit den Rechten 600 an, `ecclium token list` zeigt, was darin steht. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, weil darin steht, wer den Server benutzen darf. Für den Runner nicht erlaubt.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

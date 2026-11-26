@@ -46,6 +46,10 @@ export const configProblemCodes = Object.freeze([
   'notify_file_overlap',
   'metrics_file_invalid',
   'metrics_file_overlap',
+  // The file of the bearer tokens of the server over HTTP (ADR 0074): its
+  // path has another form, or `ecclium token` runs without it.
+  'http_tokens_file_invalid',
+  'http_tokens_file_required',
   // The file with the address of the ping of the runner (ADR 0009).
   ...pingUrlFileCodes,
   // The proxy of outbound connections and the switch for the runner

@@ -366,6 +366,17 @@ describe('the catalog of messages', () => {
     expect(textOf(message)).not.toMatch(/HTTP|TOKEN_FILE/);
   });
 
+  it('names the server over HTTP when the runner gets the file of the bearer tokens', () => {
+    const message = problemMessage({
+      code: 'runner_stdio_only',
+      variable: 'ECCLIUM_HTTP_TOKENS_FILE',
+    });
+    expect(message.what).toBe(
+      '‹ECCLIUM_HTTP_TOKENS_FILE› gilt für den Server über HTTP und für ‹ecclium token›, nicht für den Runner.',
+    );
+    expect(textOf(message)).not.toContain('stdio');
+  });
+
   it('gives a text of the runner for a name it does not show', () => {
     expect(
       problemMessage({ code: 'runner_stdio_only', variable: 'not a name' })

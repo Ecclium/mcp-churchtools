@@ -187,6 +187,7 @@ const draftsDir = quote('ECCLIUM_DRAFTS_DIR');
 const notifyFile = quote('ECCLIUM_NOTIFY_FILE');
 const metricsFile = quote('ECCLIUM_RUNNER_METRICS_FILE');
 const pingUrlFile = quote('ECCLIUM_RUNNER_PING_URL_FILE');
+const httpTokensFile = quote('ECCLIUM_HTTP_TOKENS_FILE');
 const egressProxy = quote('ECCLIUM_EGRESS_PROXY');
 const egress = quote('ECCLIUM_EGRESS');
 const allowLan = quote('ECCLIUM_EGRESS_ALLOW_LAN');
@@ -633,6 +634,19 @@ const problems: Readonly<
       `Der Pfad in ${name} ist nicht absolut, nicht in seiner eindeutigen Form geschrieben, oder der Name der Datei hat andere Zeichen als die einer privaten Datei von Ecclium.`,
       'Ecclium normalisiert nichts, damit der Runner genau die Datei ersetzt, die Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
       'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›. Der Name der Datei beginnt mit einem Buchstaben oder einer Ziffer und hat höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich, etwa ‹runner.prom›.',
+    ),
+  // The file of the bearer tokens of the server over HTTP (ADR 0074).
+  http_tokens_file_invalid: (name = httpTokensFile) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit Server und ‹ecclium token› genau die Datei lesen, die Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›, etwa ‹/config/http-tokens.yaml›.',
+    ),
+  http_tokens_file_required: (name = httpTokensFile) =>
+    message(
+      `${name} ist nicht gesetzt.`,
+      '‹ecclium token› legt die Bearer-Tokens in dieser Datei ab, und nur dort sucht der Server über HTTP nach ihnen.',
+      'Setzen Sie die Variable auf den absoluten Pfad der Datei, etwa ‹/config/http-tokens.yaml›. Fehlt die Datei, legt ‹ecclium token create› sie an.',
     ),
   // The proxy of outbound connections and the switch for a runner without
   // one (ADR 0035).
@@ -1265,6 +1279,12 @@ const problems: Readonly<
         return message(
           `${quote(raw)} gilt nur für den Start über stdio, nicht für den Runner.`,
           'Der Akteur eines Laufs ist die Routine selbst, ‹runner:› mit ihrer Kennung.',
+          'Entfernen Sie die Variable aus der Umgebung des Runners.',
+        );
+      case 'ECCLIUM_HTTP_TOKENS_FILE':
+        return message(
+          `${quote(raw)} gilt für den Server über HTTP und für ‹ecclium token›, nicht für den Runner.`,
+          'Der Runner nimmt keine Anfragen von Clients an und braucht deshalb keine Bearer-Tokens.',
           'Entfernen Sie die Variable aus der Umgebung des Runners.',
         );
       default:

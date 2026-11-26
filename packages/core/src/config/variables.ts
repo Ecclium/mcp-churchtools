@@ -61,6 +61,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_EGRESS_PROXY',
   'ECCLIUM_EGRESS',
   'ECCLIUM_EGRESS_ALLOW_LAN',
+  'ECCLIUM_HTTP_TOKENS_FILE',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -854,6 +855,20 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
+  // The file of the static bearer tokens of the server over HTTP (ADR
+  // 0074). It holds hashes only, no secret. `ecclium token` reads and
+  // writes it, `ecclium serve-http` reads it; every other start checks the
+  // form of the path alone. The runner never serves over HTTP.
+  row({
+    name: 'ECCLIUM_HTTP_TOKENS_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: false,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -1010,6 +1025,11 @@ export const variableSchemas: Readonly<
     .string()
     .max(allowLanLength)
     .refine((value) => readAllowLanList(value) !== undefined),
+  ECCLIUM_HTTP_TOKENS_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -1058,6 +1078,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_EGRESS_PROXY: variableSchemas.ECCLIUM_EGRESS_PROXY.optional(),
   ECCLIUM_EGRESS: variableSchemas.ECCLIUM_EGRESS.optional(),
   ECCLIUM_EGRESS_ALLOW_LAN: variableSchemas.ECCLIUM_EGRESS_ALLOW_LAN.optional(),
+  ECCLIUM_HTTP_TOKENS_FILE: variableSchemas.ECCLIUM_HTTP_TOKENS_FILE.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

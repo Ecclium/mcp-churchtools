@@ -134,6 +134,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_EGRESS_PROXY', undefined, false, false, true],
       ['ECCLIUM_EGRESS', undefined, false, false, true],
       ['ECCLIUM_EGRESS_ALLOW_LAN', undefined, false, false, true],
+      ['ECCLIUM_HTTP_TOKENS_FILE', undefined, false, false, false],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true, false],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false, true],
     ]);
@@ -424,6 +425,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_EGRESS_PROXY', 'http://egress'],
         ['ECCLIUM_EGRESS', 'OFF'],
         ['ECCLIUM_EGRESS_ALLOW_LAN', '192.0.2.5:8443'],
+        ['ECCLIUM_HTTP_TOKENS_FILE', 'http-tokens.yaml'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
       ];
