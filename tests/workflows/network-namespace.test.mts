@@ -10,10 +10,11 @@ import { jobsOf } from '../support/workflows.mts';
 
 // Build and checks of the jobs check, compat and minimum, the tests with
 // coverage of coverage-security-core and the architecture tests of the job
-// architecture run in a network namespace with loopback only (ADR 0052). These tests read the workflows
-// and the wrapper as text, run shellcheck over the wrapper, and in CI check
-// from inside the namespace that only loopback is there. A text check sees
-// only the spellings it knows; the review sees the rest.
+// architecture run in a network namespace with loopback only (ADR 0052).
+// These tests read the workflows and the wrapper as text, run shellcheck over
+// the wrapper, and in CI check from inside the namespace that only loopback
+// is there. A text check sees only the spellings it knows; the review sees
+// the rest.
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const wrapper = 'scripts/ci/without-network.sh';

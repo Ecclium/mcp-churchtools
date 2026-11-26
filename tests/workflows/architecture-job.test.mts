@@ -21,6 +21,7 @@ const folder = 'tests/architecture';
  * tests, `ci:architecture` runs only those.
  */
 const expected: Readonly<Record<string, string>> = {
+  test: 'vitest run',
   'test:architecture': `vitest run ${folder}/`,
   'test:without-architecture': `vitest run --exclude '${folder}/**'`,
   'ci:architecture': 'pnpm run test:architecture',
@@ -80,6 +81,11 @@ describe('the job architecture', () => {
       'a local check without the architecture tests',
       'check',
       'pnpm run check:static && pnpm run test:without-architecture',
+    ],
+    [
+      'a local test run without the architecture tests',
+      'test',
+      "vitest run --exclude 'tests/architecture/**'",
     ],
     [
       'a local run of CI without the architecture tests',
