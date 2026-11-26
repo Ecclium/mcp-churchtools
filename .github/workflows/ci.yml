@@ -294,10 +294,11 @@ jobs:
         run: git diff --exit-code
 
   # The tests in tests/architecture/, once, with the development version of
-  # Node.js (ADR 0019). They read sources and configuration and run no code
-  # of the packages, so they need no build. Each case of the dependency rules
-  # cruises a full copy of the packages (ADR 0022); in check, compat and
-  # minimum they took two thirds of the time of all test files.
+  # Node.js (ADR 0019). They check sources and configuration and load a
+  # package, if at all, from its sources, so they need no build. Each case of
+  # the dependency rules cruises a full copy of the packages (ADR 0022). In
+  # the log of check for #269, these tests took two thirds of the time of all
+  # test files.
   architecture:
     name: architecture
     runs-on: ubuntu-24.04
