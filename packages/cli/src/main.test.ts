@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  bearerTokenFormProblem,
+  hashBearerToken,
   loadConfig,
+  readBearerTokensFile,
   tokenVariableName,
   type Transport,
 } from '@ecclium/mcp-churchtools-core';
@@ -1151,6 +1154,34 @@ describe('ecclium token in the command line', () => {
     expect(result.code).toBe(exitCodes.usage);
     expect(result.stderr).not.toContain(name);
     expect(result.stdout).toBe('');
+  });
+
+  it('hands name, --write and --days to the command', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'ecclium-cli-token-'));
+    chmodSync(folder, 0o700);
+    const path = join(folder, 'http-tokens.yaml');
+    try {
+      const result = await runAsync(
+        ['token', 'create', 'buero', '--write', '--days', '7'],
+        { ECCLIUM_HTTP_TOKENS_FILE: path },
+        { token: { clock: { now: () => Date.UTC(2026, 10, 26, 12) } } },
+      );
+      expect(result.code).toBe(exitCodes.ok);
+      const token = result.stdout.trimEnd();
+      expect(bearerTokenFormProblem(token)).toBeUndefined();
+      const read = readBearerTokensFile(path);
+      expect(read.ok && read.entries).toEqual([
+        {
+          name: 'buero',
+          sha256: hashBearerToken(token),
+          scopes: ['read', 'write'],
+          createdAt: '2026-11-26',
+          expiresAt: '2026-12-03',
+        },
+      ]);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 
   it('loads its own configuration and needs only the file of the tokens', async () => {

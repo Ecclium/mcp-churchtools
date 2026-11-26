@@ -1,10 +1,15 @@
 import {
   chmodSync,
+  closeSync,
+  constants,
   existsSync,
+  fstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -16,6 +21,7 @@ import { join } from 'node:path';
 import {
   bearerTokenFormProblem,
   type BearerTokenEntry,
+  type ConfigFileSystem,
   createBearerToken,
   hashBearerToken,
   readBearerTokensFile,
@@ -36,6 +42,19 @@ const root = mkdtempSync(join(tmpdir(), 'ecclium-token-command-'));
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
+
+// The file functions of Node.js for the reader, to replace one of them.
+const nodeConfigFiles: ConfigFileSystem = {
+  openSync: (target, flags) => openSync(target, flags),
+  fstatSync: (fd) => fstatSync(fd),
+  readSync: (fd, buffer, offset, length, position) =>
+    readSync(fd, buffer, offset, length, position),
+  closeSync: (fd) => {
+    closeSync(fd);
+  },
+  getuid: () => process.getuid?.(),
+  constants,
+};
 
 // A fixed instant of the clock, so that no test depends on the calendar.
 const now = Date.UTC(2026, 10, 26, 12, 0, 0);
@@ -183,6 +202,42 @@ describe('ecclium token create', () => {
     expect(entriesOf()[0]?.expiresAt).toBe('2027-11-26');
   });
 
+  it('takes a 64th entry', () => {
+    writeEntries(
+      Array.from({ length: 63 }, (_, index) =>
+        entry({ name: `client-${String(index)}` }),
+      ),
+    );
+    expect(capture({ action: 'create', name: 'buero' }).code).toBe(
+      exitCodes.ok,
+    );
+    expect(entriesOf()).toHaveLength(64);
+  });
+
+  it('shows the token only once its hash is in the file', () => {
+    const seen: boolean[] = [];
+    const output: Output = {
+      stdout: (text) => {
+        const read = readBearerTokensFile(path);
+        seen.push(
+          read.ok &&
+            read.entries.some(({ sha256 }) => sha256 === hashBearerToken(text)),
+        );
+        return true;
+      },
+      stderr: () => true,
+    };
+    const code = runToken({
+      environment: { ECCLIUM_HTTP_TOKENS_FILE: path },
+      action: 'create',
+      name: 'buero',
+      clock,
+      output,
+    });
+    expect(code).toBe(exitCodes.ok);
+    expect(seen).toEqual([true]);
+  });
+
   it('refuses a file with 64 entries', () => {
     writeEntries(
       Array.from({ length: 64 }, (_, index) =>
@@ -241,6 +296,49 @@ describe('ecclium token rotate', () => {
     ]);
   });
 
+  it('takes the scopes of the newest entry of the name and clamps every old one', () => {
+    const older = entry({ name: 'buero', expiresAt: '2026-12-02' });
+    const newer = entry({
+      name: 'buero',
+      scopes: ['read', 'write'],
+      expiresAt: '2027-03-01',
+    });
+    writeEntries([newer, older]);
+    const result = capture({ action: 'rotate', name: 'buero' });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(entriesOf()).toEqual([
+      { ...newer, expiresAt: '2026-12-03' },
+      older,
+      expect.objectContaining({
+        scopes: ['read', 'write'],
+        createdAt: today,
+      }),
+    ]);
+  });
+
+  it('refuses to rotate in a file with 64 entries', () => {
+    writeEntries(
+      Array.from({ length: 64 }, (_, index) =>
+        entry({ name: index === 0 ? 'buero' : `client-${String(index)}` }),
+      ),
+    );
+    const before = readFileSync(path, 'utf8');
+    const result = capture({ action: 'rotate', name: 'buero' });
+    expect(result.code).toBe(exitCodes.dataError);
+    expect(result.stderr).toEqual([tokenTexts.full]);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('gives 74 when the new token cannot be shown, with the rotation in the file', () => {
+    const old = entry({ name: 'buero', expiresAt: '2027-03-01' });
+    writeEntries([old]);
+    const result = capture({ action: 'rotate', name: 'buero' }, false);
+    expect(result.code).toBe(exitCodes.ioError);
+    expect(result.stderr).toEqual([tokenTexts.tokenNotShown]);
+    expect(entriesOf()).toHaveLength(2);
+    expect(entriesOf()[0]?.expiresAt).toBe('2026-12-03');
+  });
+
   it('leaves an old token that ends sooner as it is', () => {
     const old = entry({ name: 'buero', expiresAt: '2026-11-28' });
     writeEntries([old]);
@@ -278,6 +376,14 @@ describe('ecclium token revoke', () => {
       'Ab der nächsten Anfrage nimmt der Server kein Token mit dem Namen ‹buero› mehr an. Entfernt: 2 Einträge.',
     ]);
     expect(entriesOf()).toEqual([other]);
+  });
+
+  it('counts a single entry in the singular', () => {
+    writeEntries([entry({ name: 'buero' })]);
+    expect(capture({ action: 'revoke', name: 'buero' }).stderr).toEqual([
+      'Ab der nächsten Anfrage nimmt der Server kein Token mit dem Namen ‹buero› mehr an. Entfernt: 1 Eintrag.',
+    ]);
+    expect(entriesOf()).toEqual([]);
   });
 
   it('refuses a name without a token with 65', () => {
@@ -332,10 +438,14 @@ describe('ecclium token and its files', () => {
 
   it('refuses a file that others may write, and a link, with 78 and writes nothing', () => {
     writeEntries([entry({ name: 'other' })], 0o666);
+    const before = readFileSync(path, 'utf8');
     const loose = capture({ action: 'create', name: 'buero' });
     expect(loose.code).toBe(exitCodes.invalidConfig);
     expect(loose.stderr[0]).toContain('Gruppe oder andere Benutzer dürfen');
-    expect(entriesOf.bind(null)).toThrow();
+    expect(loose.stdout).toEqual([]);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+    expect(statSync(path).mode & 0o777).toBe(0o666);
+    expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
     chmodSync(path, 0o600);
     const target = join(folder, 'target.yaml');
     writeFileSync(target, serializeBearerTokens([]), { mode: 0o600 });
@@ -344,6 +454,103 @@ describe('ecclium token and its files', () => {
     const link = capture({ action: 'list' });
     expect(link.code).toBe(exitCodes.invalidConfig);
     expect(link.stderr[0]).toContain('symbolischer Link');
+  });
+
+  it('refuses a folder at the path with 78 and an unreadable file with 74', () => {
+    mkdirSync(path);
+    const folderThere = capture({ action: 'create', name: 'buero' });
+    expect(folderThere.code).toBe(exitCodes.invalidConfig);
+    expect(folderThere.stderr[0]).toContain('keine gewöhnliche Datei');
+    rmSync(path, { recursive: true });
+    writeEntries([entry({ name: 'other' })]);
+    const before = readFileSync(path, 'utf8');
+    const unreadable = capture({
+      action: 'create',
+      name: 'buero',
+      readFiles: {
+        ...nodeConfigFiles,
+        openSync: () => {
+          throw Object.assign(new Error('failed'), { code: 'EACCES' });
+        },
+      },
+    });
+    expect(unreadable.code).toBe(exitCodes.ioError);
+    expect(unreadable.stderr[0]).toContain('konnte nicht gelesen werden');
+    expect(unreadable.stdout).toEqual([]);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('gives 74 and shows no token when the file cannot get its name', () => {
+    writeEntries([entry({ name: 'other' })]);
+    const before = readFileSync(path, 'utf8');
+    const result = capture({
+      action: 'create',
+      name: 'buero',
+      writeFiles: {
+        ...nodeWriterFileSystem,
+        renameSync: () => {
+          throw Object.assign(new Error('refused'), { code: 'EACCES' });
+        },
+      },
+    });
+    expect(result.code).toBe(exitCodes.ioError);
+    expect(result.stderr).toEqual([tokenTexts.unavailable]);
+    expect(result.stdout).toEqual([]);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+    expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
+  });
+
+  it('writes nothing and gives 75 when the file changes during the read', () => {
+    writeEntries([entry({ name: 'other' })]);
+    const before = readFileSync(path, 'utf8');
+    let looks = 0;
+    // The second look, right after the read, sees another file.
+    const changing: WriterFileSystem = {
+      ...nodeWriterFileSystem,
+      lstatSync: (target) => {
+        const stats = nodeWriterFileSystem.lstatSync(target);
+        looks += 1;
+        return looks === 2
+          ? {
+              ...stats,
+              isFile: () => true,
+              isDirectory: () => false,
+              ino: stats.ino + 1,
+            }
+          : stats;
+      },
+    };
+    const result = capture({
+      action: 'create',
+      name: 'buero',
+      writeFiles: changing,
+    });
+    expect(result.code).toBe(exitCodes.tempFail);
+    expect(result.stderr).toEqual([tokenTexts.changed]);
+    expect(result.stdout).toEqual([]);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('writes nothing and gives 75 when a file appears during the read of a missing one', () => {
+    let looks = 0;
+    const appearing: WriterFileSystem = {
+      ...nodeWriterFileSystem,
+      lstatSync: (target) => {
+        looks += 1;
+        if (looks === 2) {
+          writeEntries([entry({ name: 'other' })]);
+        }
+        return nodeWriterFileSystem.lstatSync(target);
+      },
+    };
+    const result = capture({
+      action: 'create',
+      name: 'buero',
+      writeFiles: appearing,
+    });
+    expect(result.code).toBe(exitCodes.tempFail);
+    expect(result.stdout).toEqual([]);
+    expect(entriesOf().map(({ name }) => name)).toEqual(['other']);
   });
 
   it('refuses a folder that others may write with 78 and leaves no file', () => {

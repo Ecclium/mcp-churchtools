@@ -1,6 +1,11 @@
 import {
   chmodSync,
+  closeSync,
+  constants,
+  fstatSync,
   mkdtempSync,
+  openSync,
+  readSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -256,6 +261,27 @@ describe('readBearerTokensFile', () => {
     expect(readBearerTokensFile('tokens.yaml')).toEqual({
       ok: false,
       code: 'bearer_tokens_file_relative',
+    });
+  });
+
+  it('refuses a file of another user and something other than a file', () => {
+    const path = fileWith(serializeBearerTokens([entry()]));
+    expect(
+      readBearerTokensFile(path, {
+        openSync: (target, flags) => openSync(target, flags),
+        fstatSync: (fd) => fstatSync(fd),
+        readSync: (fd, buffer, offset, length, position) =>
+          readSync(fd, buffer, offset, length, position),
+        closeSync: (fd) => {
+          closeSync(fd);
+        },
+        getuid: () => (process.getuid?.() ?? 0) + 1,
+        constants,
+      }),
+    ).toEqual({ ok: false, code: 'bearer_tokens_file_owner' });
+    expect(readBearerTokensFile(folder)).toEqual({
+      ok: false,
+      code: 'bearer_tokens_file_not_regular',
     });
   });
 

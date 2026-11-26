@@ -128,6 +128,70 @@ describe('writeTokensFile', () => {
     expect(readdirSync(folder)).toEqual([]);
   });
 
+  it('refuses a temporary file it did not make, and gives unavailable when it cannot make one', () => {
+    const foreignTemporary: WriterFileSystem = {
+      ...nodeWriterFileSystem,
+      fstatSync: (fd) => {
+        const stats = nodeWriterFileSystem.fstatSync(fd);
+        return stats.isFile()
+          ? {
+              ...stats,
+              isFile: () => true,
+              isDirectory: () => false,
+              uid: stats.uid + 1,
+            }
+          : stats;
+      },
+    };
+    expect(writeTokensFile(path, 'x\n', 'missing', foreignTemporary)).toBe(
+      'unsafe',
+    );
+    const noOpen: WriterFileSystem = {
+      ...nodeWriterFileSystem,
+      openSync: (target, flags, mode) => {
+        if (mode !== undefined) {
+          throw Object.assign(new Error('full'), { code: 'ENOSPC' });
+        }
+        return nodeWriterFileSystem.openSync(target, flags);
+      },
+    };
+    expect(writeTokensFile(path, 'x\n', 'missing', noOpen)).toBe('unavailable');
+    expect(readdirSync(folder)).toEqual([]);
+  });
+
+  it('refuses a folder at the name of the file as unsafe', () => {
+    const folderAtName: WriterFileSystem = {
+      ...nodeWriterFileSystem,
+      renameSync: () => {
+        throw Object.assign(new Error('folder'), { code: 'EISDIR' });
+      },
+    };
+    expect(writeTokensFile(path, 'x\n', 'missing', folderAtName)).toBe(
+      'unsafe',
+    );
+    expect(readdirSync(folder)).toEqual([]);
+  });
+
+  it('counts the file as written when only the flush of the folder fails after the rename', () => {
+    let opens = 0;
+    const noFlush: WriterFileSystem = {
+      ...nodeWriterFileSystem,
+      openSync: (target, flags, mode) => {
+        // The folder is opened twice: for its check and for its flush.
+        if (target === folder) {
+          opens += 1;
+          if (opens === 2) {
+            throw Object.assign(new Error('failed'), { code: 'EIO' });
+          }
+        }
+        return nodeWriterFileSystem.openSync(target, flags, mode);
+      },
+    };
+    expect(writeTokensFile(path, 'new\n', 'missing', noFlush)).toBe('written');
+    expect(readFileSync(path, 'utf8')).toBe('new\n');
+    expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
+  });
+
   it('continues a partial write and gives unavailable when a write stops', () => {
     let calls = 0;
     const partial: WriterFileSystem = {
