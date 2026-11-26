@@ -29,6 +29,7 @@ export const tokenTexts = Object.freeze({
     'Die Datei hat sich geändert, während der Befehl lief, vermutlich durch einen zweiten Befehl. Es ist nichts geschrieben, damit keine Änderung verloren geht. Rufen Sie den Befehl noch einmal auf.',
   unsafeFolder: `Der Ordner der Datei aus ${file} gehört einem anderen Benutzer, oder Gruppe und andere Benutzer dürfen darin schreiben, oder an der Stelle der Datei liegt ein Ordner. Es ist nichts geschrieben. Wer dort schreiben darf, könnte die Datei austauschen und damit bestimmen, wer den Server benutzen darf. Geben Sie dem Ordner etwa die Rechte 700 oder 755.`,
   unavailable: `Die Datei aus ${file} konnte nicht geschrieben werden, etwa weil der Ordner fehlt, nur lesbar ist oder die Platte voll ist. Es ist nichts geschrieben. Ecclium zeigt keine Meldung des Systems, weil sie den Pfad nennt. Prüfen Sie den Ordner und rufen Sie den Befehl noch einmal auf.`,
+  busy: 'Ein anderer Befehl ‹ecclium token› ändert die Datei gerade. Es ist nichts geschrieben. Rufen Sie den Befehl gleich noch einmal auf. Die Sperre eines Befehls, der abgebrochen ist, übernimmt Ecclium nach einer Minute.',
   tokenNotShown:
     'Das Token konnte nicht ausgegeben werden. In der Datei steht es trotzdem: Widerrufen Sie es mit ‹ecclium token revoke› und legen Sie ein neues an.',
   empty: 'Die Datei enthält kein Token.',

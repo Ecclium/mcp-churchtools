@@ -7,12 +7,15 @@
  * puts it in the place of the old file whole, and the folder is flushed
  * after it. The new file has the mode 0600.
  *
- * Two commands at once must not lose a change of the other. The command
- * notes what the file was when it read it, its device, inode, size and
- * time of change, and the writer gives it its name only if the file is
- * still that one, or still missing when it was missing. Between this check
- * and the rename a second command could still slip in; that gap is a few
- * system calls wide.
+ * Two commands at once must not lose a change of the other, least of all a
+ * revocation. A command that changes the file holds a lock file beside it,
+ * made with `O_EXCL`, from before its read until after the rename; a second
+ * command finds it and stops. A lock older than a minute, left by a command
+ * that died, is taken over: no command holds it longer than a few
+ * milliseconds. A person who edits the file by hand takes no lock, so the
+ * command also notes what the file was when it read it, its device, inode,
+ * size and time of change, and the writer gives it its name only if the
+ * file is still that one, or still missing when it was missing.
  *
  * The folder must be a folder of the user that group and others cannot
  * write, as the reader of the files of the configuration demands of the
@@ -302,4 +305,103 @@ export function writeTokensFile(
       }
     }
   }
+}
+
+/** How long a lock may stand before a command takes it over: one minute. */
+export const staleLockMilliseconds = 60_000;
+
+/** The lock of a command that changes the file, or why there is none. */
+export type TokensLock =
+  | { readonly ok: true; readonly release: () => void }
+  | { readonly ok: false; readonly reason: 'busy' | 'unsafe' | 'unavailable' };
+
+const lockPathOf = (path: string): string =>
+  join(dirname(path), `.${basename(path)}.lock`);
+
+/**
+ * Takes the lock of the file of the tokens for one command that changes
+ * it. The lock is an empty file beside it, made with `O_EXCL`, so that of
+ * two commands only one gets it.
+ *
+ * @param path - The absolute path of the file of the tokens.
+ * @param now - The current time in milliseconds, to tell a stale lock.
+ * @param fs - The file functions, only for tests.
+ * @returns The lock with its release, or why there is none: `busy` while
+ *   another command holds it, `unsafe` when the folder is not safe.
+ * @example
+ * ```ts
+ * const lock = lockTokensFile(path, Date.now());
+ * if (lock.ok) try { change() } finally { lock.release() }
+ * ```
+ */
+export function lockTokensFile(
+  path: string,
+  now: number,
+  fs: WriterFileSystem = nodeWriterFileSystem,
+): TokensLock {
+  const uid = fs.getuid();
+  if (uid === undefined) {
+    return Object.freeze({ ok: false, reason: 'unavailable' });
+  }
+  const unsafeFolder = folderSafe(fs, dirname(path), uid);
+  if (unsafeFolder !== undefined) {
+    return Object.freeze({
+      ok: false,
+      reason: unsafeFolder === 'unsafe' ? 'unsafe' : 'unavailable',
+    });
+  }
+  const lock = lockPathOf(path);
+  const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = constants;
+  const take = (): 'taken' | 'exists' | 'failed' => {
+    try {
+      fs.closeSync(
+        fs.openSync(
+          lock,
+          O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW,
+          tokensFileMode,
+        ),
+      );
+      return 'taken';
+    } catch (error) {
+      return errorCode(error) === 'EEXIST' ? 'exists' : 'failed';
+    }
+  };
+  let taken = take();
+  if (taken === 'exists') {
+    // A lock of a command that died stays; after a minute it is taken
+    // over. Only a regular file counts as a lock.
+    let stale: boolean;
+    try {
+      const stats = fs.lstatSync(lock);
+      stale = stats.isFile() && now - stats.mtimeMs > staleLockMilliseconds;
+    } catch {
+      stale = false;
+    }
+    if (!stale) return Object.freeze({ ok: false, reason: 'busy' });
+    try {
+      fs.unlinkSync(lock);
+    } catch {
+      return Object.freeze({ ok: false, reason: 'busy' });
+    }
+    taken = take();
+  }
+  if (taken !== 'taken') {
+    return Object.freeze({
+      ok: false,
+      reason: taken === 'exists' ? 'busy' : 'unavailable',
+    });
+  }
+  let released = false;
+  return Object.freeze({
+    ok: true,
+    release: (): void => {
+      if (released) return;
+      released = true;
+      try {
+        fs.unlinkSync(lock);
+      } catch {
+        // A lock left behind is taken over after a minute.
+      }
+    },
+  });
 }

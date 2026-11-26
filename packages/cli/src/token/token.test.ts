@@ -285,19 +285,54 @@ describe('ecclium token rotate', () => {
     ]);
   });
 
-  it('says so when the old token had expired already, and leaves it as it is', () => {
+  it('removes an old token that had expired already and says so', () => {
     const old = entry({ name: 'buero', expiresAt: '2026-11-20' });
-    writeEntries([old]);
+    const other = entry({ name: 'other' });
+    writeEntries([old, other]);
     const result = capture({ action: 'rotate', name: 'buero' });
     expect(result.code).toBe(exitCodes.ok);
-    expect(entriesOf()[0]).toEqual(old);
+    expect(entriesOf()).toEqual([
+      other,
+      expect.objectContaining({ name: 'buero', createdAt: today }),
+    ]);
     expect(result.stderr).toEqual([
       'Das neue Token ‹buero› gilt bis und mit 25.05.2027 (UTC). Das bisherige war schon abgelaufen. Legen Sie das neue jetzt beim Client ab: Es steht nur in dieser Ausgabe.',
     ]);
   });
 
-  it('takes the scopes of the newest entry of the name and clamps every old one', () => {
-    const older = entry({ name: 'buero', expiresAt: '2026-12-02' });
+  it('keeps the file small however often a name rotates', () => {
+    writeEntries([entry({ name: 'buero' })]);
+    let day = Date.UTC(2026, 10, 26, 12);
+    for (let round = 0; round < 70; round += 1) {
+      day += 3 * 86_400_000;
+      const at = day;
+      const result = capture({
+        action: 'rotate',
+        name: 'buero',
+        clock: { now: () => at },
+      });
+      expect(result.code).toBe(exitCodes.ok);
+    }
+    expect(entriesOf().length).toBeLessThanOrEqual(4);
+  });
+
+  it('never lets an old token outlive the new one', () => {
+    const old = entry({ name: 'buero', expiresAt: '2027-03-01' });
+    writeEntries([old]);
+    const result = capture({ action: 'rotate', name: 'buero', days: '2' });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(entriesOf().map(({ expiresAt }) => expiresAt)).toEqual([
+      '2026-11-28',
+      '2026-11-28',
+    ]);
+  });
+
+  it('takes the scopes of the youngest entry of the name and clamps every old one', () => {
+    const older = entry({
+      name: 'buero',
+      createdAt: '2026-05-01',
+      expiresAt: '2026-12-02',
+    });
     const newer = entry({
       name: 'buero',
       scopes: ['read', 'write'],
@@ -498,6 +533,54 @@ describe('ecclium token and its files', () => {
     expect(result.stdout).toEqual([]);
     expect(readFileSync(path, 'utf8')).toBe(before);
     expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
+  });
+
+  it('gives 75 while another command holds the lock and takes over a lock older than a minute', () => {
+    writeEntries([entry({ name: 'other' })]);
+    const before = readFileSync(path, 'utf8');
+    const lock = join(folder, '.http-tokens.yaml.lock');
+    writeFileSync(lock, '', { mode: 0o600 });
+    const busy = capture({ action: 'create', name: 'buero' });
+    expect(busy.code).toBe(exitCodes.tempFail);
+    expect(busy.stderr).toEqual([tokenTexts.busy]);
+    expect(busy.stdout).toEqual([]);
+    expect(readFileSync(path, 'utf8')).toBe(before);
+    // A list reads without the lock.
+    expect(capture({ action: 'list' }).code).toBe(exitCodes.ok);
+    const stale = capture({
+      action: 'create',
+      name: 'buero',
+      clock: { now: () => Date.now() + 61_000 },
+    });
+    expect(stale.code).toBe(exitCodes.ok);
+    expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
+  });
+
+  it('holds the lock from before the read until after the write and releases it', () => {
+    const lock = join(folder, '.http-tokens.yaml.lock');
+    const seen: boolean[] = [];
+    const watching: WriterFileSystem = {
+      ...nodeWriterFileSystem,
+      renameSync: (from, to) => {
+        seen.push(existsSync(lock));
+        nodeWriterFileSystem.renameSync(from, to);
+      },
+    };
+    const result = capture({
+      action: 'create',
+      name: 'buero',
+      writeFiles: watching,
+      readFiles: {
+        ...nodeConfigFiles,
+        openSync: (target, flags) => {
+          seen.push(existsSync(lock));
+          return nodeConfigFiles.openSync(target, flags);
+        },
+      },
+    });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(seen).toEqual([true, true]);
+    expect(existsSync(lock)).toBe(false);
   });
 
   it('writes nothing and gives 75 when the file changes during the read', () => {

@@ -1,8 +1,11 @@
 /**
  * `ecclium token` (ADR 0074): the static bearer tokens of the server over
  * HTTP. `create` makes a token and enters its hash, `rotate` makes a new
- * token for a name and lets the old ones hold seven more days at most,
+ * token for a name and lets the old ones hold seven more days at most and
+ * never longer than the new one, removing those that expired already,
  * `revoke` removes every entry of a name, and `list` shows the entries.
+ * A command that changes the file holds a lock beside it from before its
+ * read until after its write.
  *
  * A token appears once, alone on stdout, so that `> file` takes it without
  * a text; every other line goes to stderr. It appears only after its hash
@@ -12,9 +15,10 @@
  * The exit codes follow sysexits: 0 when done, 64 for a wrong call, 65
  * when the file has the name already, lacks it or is full, 66 when the
  * file is missing for a command that changes or lists it, 74 when it could
- * not be read or written or the token could not be shown, 75 when it
- * changed while the command ran, 78 for an invalid configuration or a
- * file of another form or with other rights.
+ * not be read or written or the token could not be shown, 75 when another
+ * command holds the lock or the file changed while the command ran, 78
+ * for an invalid configuration or a file or folder of another form or
+ * with other rights.
  *
  * @packageDocumentation
  */
@@ -53,8 +57,10 @@ import {
 import {
   type FileIdentity,
   identityOf,
+  lockTokensFile,
   nodeWriterFileSystem,
   sameIdentity,
+  type TokensLock,
   type WriteOutcome,
   type WriterFileSystem,
   writeTokensFile,
@@ -129,17 +135,35 @@ const writeText: Readonly<Record<Exclude<WriteOutcome, 'written'>, string>> =
     unavailable: tokenTexts.unavailable,
   });
 
-// The last entry of a name: the one that holds longest.
-const newestOf = (
+// The youngest entry of a name: the last to come into being, of two on one
+// day the one that holds longer. A rotation takes its scopes.
+const youngestOf = (
   entries: readonly BearerTokenEntry[],
 ): BearerTokenEntry | undefined =>
   entries.reduce<BearerTokenEntry | undefined>(
-    (newest, entry) =>
-      newest === undefined || entry.expiresAt > newest.expiresAt
+    (youngest, entry) =>
+      youngest === undefined ||
+      entry.createdAt > youngest.createdAt ||
+      (entry.createdAt === youngest.createdAt &&
+        entry.expiresAt > youngest.expiresAt)
         ? entry
-        : newest,
+        : youngest,
     undefined,
   );
+
+type LockRefusal = Exclude<TokensLock, { ok: true }>['reason'];
+
+const lockTexts: Readonly<Record<LockRefusal, string>> = Object.freeze({
+  busy: tokenTexts.busy,
+  unsafe: tokenTexts.unsafeFolder,
+  unavailable: tokenTexts.unavailable,
+});
+
+const lockExitCodes: Readonly<Record<LockRefusal, ExitCode>> = Object.freeze({
+  busy: exitCodes.tempFail,
+  unsafe: exitCodes.invalidConfig,
+  unavailable: exitCodes.ioError,
+});
 
 const pad = (text: string, width: number): string =>
   text + ' '.repeat(Math.max(0, width - text.length));
@@ -212,7 +236,33 @@ export function runToken(options: TokenOptions): ExitCode {
   }
   const path = loaded.config.httpTokensFile;
   const writeFiles = options.writeFiles ?? nodeWriterFileSystem;
-  const today = dayOf((options.clock ?? systemTime).now());
+  const now = (options.clock ?? systemTime).now();
+  if (action === 'list') return onFile(options, days, path, writeFiles, now);
+  // A command that changes the file holds its lock from before the read
+  // until after the write, so that no second command undoes its change.
+  const lock = lockTokensFile(path, now, writeFiles);
+  if (!lock.ok) {
+    output.stderr(lockTexts[lock.reason]);
+    return lockExitCodes[lock.reason];
+  }
+  try {
+    return onFile(options, days, path, writeFiles, now);
+  } finally {
+    lock.release();
+  }
+}
+
+// The read, the change and the write of one command, under its lock when
+// it changes the file. The name and the days passed their checks.
+function onFile(
+  options: TokenOptions,
+  days: number,
+  path: string,
+  writeFiles: WriterFileSystem,
+  now: number,
+): ExitCode {
+  const { output, action, name } = options;
+  const today = dayOf(now);
 
   // What the file is before and after the read: a change in between would
   // make the entries read a mix of two files.
@@ -264,13 +314,9 @@ export function runToken(options: TokenOptions): ExitCode {
         output.stderr(tokenTexts.nameTaken);
         return exitCodes.dataError;
       }
-      const newest = newestOf(own);
-      if (action === 'rotate' && newest === undefined) {
+      const youngest = youngestOf(own);
+      if (action === 'rotate' && youngest === undefined) {
         output.stderr(tokenTexts.nameUnknown);
-        return exitCodes.dataError;
-      }
-      if (entries.length >= maxBearerTokens) {
-        output.stderr(tokenTexts.full);
         return exitCodes.dataError;
       }
       scopes =
@@ -278,16 +324,26 @@ export function runToken(options: TokenOptions): ExitCode {
           ? options.write === true
             ? ['read', 'write']
             : ['read']
-          : (newest?.scopes ?? ['read']);
-      // A rotation lets the old tokens hold seven more days at most, never
-      // before the day they came into being.
-      const limit = addDays(today, bearerRotationDays);
-      const kept = own.map((entry) => {
-        const until = entry.expiresAt < limit ? entry.expiresAt : limit;
-        const expiresAt = until < entry.createdAt ? entry.createdAt : until;
-        if (expiresAt > oldUntil) oldUntil = expiresAt;
-        return { ...entry, expiresAt };
-      });
+          : (youngest?.scopes ?? ['read']);
+      const expiresAt = addDays(today, days);
+      // A rotation lets the old tokens hold seven more days at most and
+      // never longer than the new one, never before the day they came
+      // into being. An old token that has expired can never hold again,
+      // so it leaves the file, which would fill up otherwise.
+      const sevenDays = addDays(today, bearerRotationDays);
+      const limit = sevenDays < expiresAt ? sevenDays : expiresAt;
+      const kept = own
+        .filter((entry) => entry.expiresAt >= today)
+        .map((entry) => {
+          const until = entry.expiresAt < limit ? entry.expiresAt : limit;
+          const last = until < entry.createdAt ? entry.createdAt : until;
+          if (last > oldUntil) oldUntil = last;
+          return { ...entry, expiresAt: last };
+        });
+      if (others.length + kept.length >= maxBearerTokens) {
+        output.stderr(tokenTexts.full);
+        return exitCodes.dataError;
+      }
       token = createBearerToken(options.random);
       next = [
         ...others,
@@ -297,7 +353,7 @@ export function runToken(options: TokenOptions): ExitCode {
           sha256: hashBearerToken(token),
           scopes,
           createdAt: today,
-          expiresAt: addDays(today, days),
+          expiresAt,
         },
       ];
       break;
@@ -340,7 +396,7 @@ export function runToken(options: TokenOptions): ExitCode {
       : rotatedText(
           checkedName,
           expiresAt,
-          oldUntil < today ? undefined : oldUntil,
+          oldUntil === '' ? undefined : oldUntil,
         ),
   );
   return exitCodes.ok;
