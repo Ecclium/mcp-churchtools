@@ -8,7 +8,9 @@
  * and `reject` (ADR 0029, ADR 0031), `ecclium run-once` with `--due`, a
  * routine or a routine and `--preview`, and the daemon `ecclium runner`
  * (ADR 0033, ADR 0034), `ecclium init egress` and `ecclium doctor`
- * (ADR 0035). Wrong calls get fixed German texts on stderr,
+ * (ADR 0035), and `ecclium token create`, `rotate`, `revoke` and `list`
+ * for the bearer tokens of the server over HTTP (ADR 0074). Wrong calls
+ * get fixed German texts on stderr,
  * never an argument, and every exit code comes from `exit-codes.ts`.
  *
  * @packageDocumentation
@@ -49,6 +51,7 @@ import type { WriteSyncFn } from './send.js';
 import type { QueueOptions } from './queue/queue.js';
 import type { RunnerDaemonOptions } from './runner/daemon.js';
 import type { RunOnceOptions } from './runner/run-once.js';
+import type { TokenOptions } from './token/token.js';
 import type { UndoOptions } from './undo/undo.js';
 
 /** Replacements for tests. */
@@ -90,6 +93,11 @@ export interface RunOptions {
   readonly doctor?: Omit<
     DoctorOptions,
     'environment' | 'execArgv' | 'output' | 'showValues'
+  >;
+  /** Replacements for `token`, such as the clock and the file functions. */
+  readonly token?: Pick<
+    TokenOptions,
+    'clock' | 'random' | 'readFiles' | 'writeFiles'
   >;
 }
 
@@ -136,6 +144,11 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['run-once'], options: ['due'] },
     { words: ['run-once'], options: ['preview'], argument: true },
     { words: ['runner'], options: [] },
+    // The bearer tokens of the server over HTTP (ADR 0074).
+    { words: ['token', 'create'], options: ['write', 'days'], argument: true },
+    { words: ['token', 'rotate'], options: ['days'], argument: true },
+    { words: ['token', 'revoke'], options: [], argument: true },
+    { words: ['token', 'list'], options: [] },
   ].map((entry) =>
     Object.freeze({
       words: Object.freeze(entry.words),
@@ -162,6 +175,8 @@ const options = Object.freeze({
   runner: Object.freeze({ type: 'boolean' }),
   due: Object.freeze({ type: 'boolean' }),
   preview: Object.freeze({ type: 'boolean' }),
+  write: Object.freeze({ type: 'boolean' }),
+  days: Object.freeze({ type: 'string' }),
 } as const);
 
 // The only option that may stand more than once.
@@ -213,7 +228,15 @@ type Call =
   | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] }
   | { readonly kind: 'daemon' }
   | { readonly kind: 'egress' }
-  | { readonly kind: 'doctor'; readonly showValues: boolean };
+  | { readonly kind: 'doctor'; readonly showValues: boolean }
+  | {
+      readonly kind: 'token';
+      readonly action: TokenOptions['action'];
+      /** The name as given; the command checks it and never repeats it. */
+      readonly name: string | undefined;
+      readonly write: boolean;
+      readonly days: string | undefined;
+    };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -377,6 +400,17 @@ const readCall = (args: readonly string[]): Call => {
       return { kind: 'egress' };
     case 'doctor':
       return { kind: 'doctor', showValues: values['show-values'] === true };
+    case 'token create':
+    case 'token rotate':
+    case 'token revoke':
+    case 'token list':
+      return {
+        kind: 'token',
+        action: chosen.words[1] as TokenOptions['action'],
+        name: positionals[2],
+        write: values.write === true,
+        days: values.days,
+      };
     default:
       return {
         kind: 'check',
@@ -399,7 +433,8 @@ const readCall = (args: readonly string[]): Call => {
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
  * @returns The exit code, or for `policy init`, `undo`, `queue`,
- *   `run-once`, `runner`, `init egress` and `doctor`, a promise of it.
+ *   `run-once`, `runner`, `init egress`, `doctor` and `token`, a promise
+ *   of it.
  * @example
  * ```ts
  * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);
@@ -613,6 +648,27 @@ export function run(
               environment: taken,
               execArgv,
               showValues,
+              output: out,
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'token': {
+        // Loaded only for this command: it reads and writes the file of
+        // the bearer tokens.
+        const out = output;
+        return import('./token/token.js')
+          .then(({ runToken }) =>
+            runToken({
+              ...runOptions.token,
+              environment: taken,
+              action: call.action,
+              name: call.name,
+              write: call.write,
+              days: call.days,
               output: out,
             }),
           )

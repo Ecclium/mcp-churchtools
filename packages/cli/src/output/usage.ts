@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium doctor [--show-values] | ecclium undo <Kennung> [--overwrite] [--runner] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list [--runner] | ecclium queue show <Kennung> [--runner] | ecclium queue approve <Kennung> [--runner] | ecclium queue reject <Kennung> [--runner] | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium doctor [--show-values] | ecclium undo <Kennung> [--overwrite] [--runner] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list [--runner] | ecclium queue show <Kennung> [--runner] | ecclium queue approve <Kennung> [--runner] | ecclium queue reject <Kennung> [--runner] | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner | ecclium token create <Name> [--write] [--days <Tage>] | ecclium token rotate <Name> [--days <Tage>] | ecclium token revoke <Name> | ecclium token list';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -46,6 +46,12 @@ export const helpLines: readonly string[] = Object.freeze([
   '  run-once <Routine>    führt eine Routine von Hand aus, mit der Periode ihrer letzten Auslösung',
   '    --preview           zeigt den Abschnitt nur auf stdout und schreibt nichts, auch ohne Eintrag in der Richtlinie',
   '  runner                führt als Daemon jede Routine zu ihrer Zeit aus, bis ein Signal ihn anhält',
+  '  token create <Name>   legt ein Bearer-Token für den Server über HTTP an, schreibt nur seinen Hash in die Datei aus ‹ECCLIUM_HTTP_TOKENS_FILE› und das Token allein auf stdout',
+  '    --write             mit dem Scope ‹write› für Schreib-Tools, sonst nur ‹read›',
+  '    --days <Tage>       mit ‹create› und ‹rotate›: so viele Tage gilt das neue Token, 1 bis 365, sonst 180',
+  '  token rotate <Name>   legt ein neues Token mit denselben Scopes an, die bisherigen gelten noch höchstens 7 Tage',
+  '  token revoke <Name>   entfernt jedes Token mit diesem Namen, der Server nimmt es ab der nächsten Anfrage nicht mehr an',
+  '  token list            zeigt Name, Scopes und Tage jedes Tokens, nie einen Hash',
   '  -h, --help            zeigt diese Hilfe',
 ]);
 
@@ -56,13 +62,13 @@ export type UsageProblem = 'command' | 'option' | 'repeated' | 'value';
 export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
   Object.freeze({
     command:
-      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium init egress›, ‹ecclium doctor›, ‹ecclium undo›, ‹ecclium marker adopt› mit ‹--run›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, und ‹ecclium runner›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium init egress›, ‹ecclium doctor›, ‹ecclium undo›, ‹ecclium marker adopt› mit ‹--run›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, ‹ecclium runner› und ‹ecclium token›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     option:
       'Eine Option ist unbekannt oder gehört zu einem anderen Befehl. Ecclium nennt sie nicht, weil darin ein Token stehen könnte. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     repeated:
       'Eine Option steht mehr als einmal im Aufruf. Ausser ‹--log› gilt jede Option nur einmal, damit kein Aufruf zweideutig ist. Nennen Sie jede andere Option höchstens einmal.',
     value:
-      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--run›, ‹--since›, ‹--until›, ‹--routine›, ‹--credential› und ‹--confirm› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview›, ‹--write› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--run›, ‹--since›, ‹--until›, ‹--routine›, ‹--credential›, ‹--confirm› und ‹--days› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
   });
 
 /** The one text for an internal error. */
