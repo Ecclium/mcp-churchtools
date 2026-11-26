@@ -140,8 +140,8 @@ beforeAll(async () => {
     authenticate: (request) =>
       Promise.resolve(
         request.headers.get('authorization') === `Bearer ${token}`
-          ? identity
-          : undefined,
+          ? { ok: true, identity }
+          : { ok: false, reason: 'unknown' },
       ),
     resolver,
     mode: 'interactive',

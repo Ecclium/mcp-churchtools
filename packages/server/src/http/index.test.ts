@@ -1,5 +1,16 @@
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
+  createBearerSignIn,
+  createBearerToken,
   createToolCatalog,
+  hashBearerToken,
+  serializeBearerTokens,
+  type SignInRefusal,
+  signInRefusals,
+  type SignInResult,
   type ToolOutcome,
   type ToolPipeline,
   type ToolRequest,
@@ -20,7 +31,7 @@ import {
   CLIENT_INFO_META_KEY,
   PROTOCOL_VERSION_META_KEY,
 } from '@modelcontextprotocol/server';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
 
 import { maxHttpBodyDepth, nestsTooDeep } from './body.js';
 import {
@@ -97,10 +108,16 @@ const identityB: Identity = Object.freeze({
   scopes: Object.freeze(['read'] as const),
 });
 
-// The sign-in of the test: a fixed word per principal. Schub 4 brings the
-// real check; here it only has to tell two principals and a stranger apart.
+// The sign-in of the test: a fixed word per principal. The real check of
+// the core has tests of its own and one below; here it only has to tell
+// two principals and a stranger apart.
 const tokenA = makeCanary('token').value;
 const tokenB = 'second-principal';
+
+const signedIn = (identity: Identity): SignInResult =>
+  Object.freeze({ ok: true, identity });
+const refusedFor = (reason: SignInRefusal): SignInResult =>
+  Object.freeze({ ok: false, reason });
 
 // Two principals in two tenants.
 const resolver: TenantResolver = Object.freeze({
@@ -159,10 +176,10 @@ const setup = (overrides: Partial<HttpAppOptions> = {}) => {
       const header = request.headers.get('authorization');
       return Promise.resolve(
         header === `Bearer ${tokenA}`
-          ? identityA
+          ? signedIn(identityA)
           : header === `Bearer ${tokenB}`
-            ? identityB
-            : undefined,
+            ? signedIn(identityB)
+            : refusedFor(header === null ? 'missing' : 'unknown'),
       );
     },
     resolver,
@@ -323,7 +340,7 @@ describe('the server over HTTP', () => {
     const { app, events } = setup({
       authenticate: () => {
         asked += 1;
-        return Promise.resolve(identityA);
+        return Promise.resolve(signedIn(identityA));
       },
     });
     const canary = `CANARY${String(Date.now())}`;
@@ -354,25 +371,51 @@ describe('the server over HTTP', () => {
   });
 
   it.each([
-    ['null', null],
+    ['null', { ok: true, identity: null }],
     [
       'an identity without scopes',
-      { source: 'bearer', subject: 'person-id-1' },
+      { ok: true, identity: { source: 'bearer', subject: 'person-id-1' } },
     ],
     [
       'an identity with an unknown scope',
-      { source: 'bearer', subject: 'person-id-1', scopes: ['admin'] },
+      {
+        ok: true,
+        identity: {
+          source: 'bearer',
+          subject: 'person-id-1',
+          scopes: ['admin'],
+        },
+      },
     ],
-    ['an empty subject', { source: 'bearer', subject: '', scopes: ['read'] }],
+    [
+      'an empty subject',
+      {
+        ok: true,
+        identity: { source: 'bearer', subject: '', scopes: ['read'] },
+      },
+    ],
     [
       'an unknown source',
-      { source: 'header', subject: 'person-id-1', scopes: ['read'] },
+      {
+        ok: true,
+        identity: {
+          source: 'header',
+          subject: 'person-id-1',
+          scopes: ['read'],
+        },
+      },
     ],
+    ['an identity alone, without the form of a result', identityA],
+    ['no result', undefined],
+    ['a result without ok', { identity: identityA }],
+    ['ok as text', { ok: 'true', identity: identityA }],
+    ['a reason outside the list', { ok: false, reason: 'person-id-1' }],
+    ['a refusal without a reason', { ok: false }],
   ])(
-    'counts %s from the check of the sign-in as a refusal',
+    'counts %s from the check of the sign-in as a refusal for the reason failed',
     async (_label, given) => {
-      const { app, calls } = setup({
-        authenticate: () => Promise.resolve(given as unknown as Identity),
+      const { app, calls, events } = setup({
+        authenticate: () => Promise.resolve(given as unknown as SignInResult),
       });
       const response = await modern(app, 'tools/call', {
         name: 'ct_example_echo',
@@ -380,6 +423,14 @@ describe('the server over HTTP', () => {
       });
       expect(response.status).toBe(401);
       expect(calls).toEqual([]);
+      expect(events).toEqual([
+        {
+          level: 'warn',
+          event: 'http_auth_refused',
+          fields: { reason: 'failed' },
+        },
+      ]);
+      expect(JSON.stringify(events)).not.toContain('person-id-1');
     },
   );
 
@@ -388,6 +439,295 @@ describe('the server over HTTP', () => {
     const response = await send(app, {}, { path: '/other' });
     expect(response.status).toBe(404);
     expect(await response.text()).toBe('');
+  });
+});
+
+describe('the answer to a refused sign-in', () => {
+  // A request that presented no token of the scheme Bearer gets the
+  // challenge alone, every other one invalid_token as well (RFC 6750).
+  const challengeOf = (reason: SignInRefusal): string =>
+    reason === 'missing' || reason === 'scheme'
+      ? 'Bearer realm="ecclium"'
+      : 'Bearer realm="ecclium", error="invalid_token"';
+
+  it.each(signInRefusals)(
+    'answers %s with 401, its challenge and the reason in the log line only',
+    async (reason) => {
+      const { app, events, calls } = setup({
+        authenticate: () => Promise.resolve(refusedFor(reason)),
+      });
+      const response = await modern(app, 'tools/list');
+      expect(response.status).toBe(401);
+      expect(response.headers.get('www-authenticate')).toBe(
+        challengeOf(reason),
+      );
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(await json(response)).toEqual({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32000, message: 'This server needs a valid sign-in.' },
+      });
+      expect(calls).toEqual([]);
+      expect(events).toEqual([
+        { level: 'warn', event: 'http_auth_refused', fields: { reason } },
+      ]);
+    },
+  );
+
+  it('gives every reason of a request with a token the same status, headers and body', async () => {
+    const answers = new Set<string>();
+    for (const reason of signInRefusals) {
+      if (reason === 'missing' || reason === 'scheme') continue;
+      const { app } = setup({
+        authenticate: () => Promise.resolve(refusedFor(reason)),
+      });
+      const response = await modern(app, 'tools/list');
+      answers.add(
+        JSON.stringify([
+          response.status,
+          [...response.headers.entries()],
+          await response.text(),
+        ]),
+      );
+    }
+    expect(answers.size).toBe(1);
+  });
+
+  it('logs the reason failed for a check that rejects', async () => {
+    const { app, events } = setup({
+      authenticate: () => Promise.reject(new Error('person-id-1')),
+    });
+    const response = await modern(app, 'tools/list');
+    expect(response.headers.get('www-authenticate')).toBe(
+      'Bearer realm="ecclium", error="invalid_token"',
+    );
+    expect(events).toEqual([
+      {
+        level: 'warn',
+        event: 'http_auth_refused',
+        fields: { reason: 'failed' },
+      },
+    ]);
+  });
+});
+
+describe('the check of the core behind the server', () => {
+  // The real check of a static bearer token against a file of tokens in a
+  // folder of its own, with a fixed clock (ADR 0074).
+  const folder = mkdtempSync(join(tmpdir(), 'ecclium-http-sign-in-'));
+  afterAll(() => {
+    rmSync(folder, { recursive: true, force: true });
+  });
+  const clock = Object.freeze({ now: () => Date.UTC(2026, 10, 26, 12) });
+  const token = createBearerToken();
+  const tokensFile = join(folder, 'tokens.yaml');
+  writeFileSync(
+    tokensFile,
+    serializeBearerTokens([
+      {
+        name: 'claude-code-office',
+        sha256: hashBearerToken(token),
+        scopes: ['read'],
+        createdAt: '2026-11-26',
+        expiresAt: '2026-12-03',
+      },
+    ]),
+    { mode: 0o600 },
+  );
+  chmodSync(tokensFile, 0o600);
+  const signIn = createBearerSignIn({ tokensFile, clock });
+
+  it('signs a token in and refuses the others with their reasons', async () => {
+    const { app, events, calls } = setup({
+      authenticate: (request) => signIn(request.headers.get('authorization')),
+    });
+    const answers = [];
+    for (const authorization of [
+      `Bearer ${token}`,
+      '',
+      `Basic ${token}`,
+      'Bearer ecclium_mcp_short',
+      `Bearer ${createBearerToken()}`,
+    ]) {
+      const response = await modern(
+        app,
+        'tools/call',
+        { name: 'ct_example_echo', arguments: {} },
+        { authorization },
+      );
+      answers.push([response.status, response.headers.get('www-authenticate')]);
+    }
+    expect(answers).toEqual([
+      [200, null],
+      [401, 'Bearer realm="ecclium"'],
+      [401, 'Bearer realm="ecclium"'],
+      [401, 'Bearer realm="ecclium", error="invalid_token"'],
+      [401, 'Bearer realm="ecclium", error="invalid_token"'],
+    ]);
+    expect(events.map((event) => event.fields)).toEqual([
+      { reason: 'missing' },
+      { reason: 'scheme' },
+      { reason: 'form' },
+      { reason: 'unknown' },
+    ]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.request.scopes).toEqual(['read']);
+    expect(JSON.stringify(events)).not.toContain(token);
+  });
+});
+
+describe('the scope write over HTTP', () => {
+  // A catalog with the write tool of the example, as on a server that may
+  // write (ADR 0074).
+  const writing = createToolCatalog({
+    core: examplePlugin,
+    plugins: [],
+    readOnly: false,
+    toolsets: new Set(['wiki'] as const),
+  });
+  const writeTool = 'ct_example_note_write';
+  const writer: Identity = Object.freeze({
+    source: 'bearer',
+    subject: 'person-id-1',
+    scopes: Object.freeze(['read', 'write'] as const),
+  });
+  const writingSetup = (identity: Identity) =>
+    setup({
+      catalog: writing,
+      readOnly: false,
+      authenticate: () => Promise.resolve(signedIn(identity)),
+    });
+  const insufficient =
+    'Bearer realm="ecclium", error="insufficient_scope", scope="write"';
+
+  it('lists the write tools only to a sign-in with the scope write', async () => {
+    const names = async (identity: Identity) => {
+      const { app } = writingSetup(identity);
+      const reply = await json(await modern(app, 'tools/list'));
+      return (at(reply, 'result', 'tools') as readonly Json[]).map(
+        (tool) => tool['name'],
+      );
+    };
+    expect(await names(identityA)).not.toContain(writeTool);
+    expect(await names(writer)).toContain(writeTool);
+  });
+
+  it.each([
+    ['the 2026 era', modern],
+    ['the 2025 era', legacy],
+  ])(
+    'answers a call of a write tool with a sign-in that may only read with 403 after the pipeline saw it, in %s',
+    async (_name, ask) => {
+      const { app, calls, events } = writingSetup(identityA);
+      const response = await ask(app, 'tools/call', {
+        name: writeTool,
+        arguments: { note: 'x' },
+      });
+      expect(response.status).toBe(403);
+      expect(response.headers.get('www-authenticate')).toBe(insufficient);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      const body = await json(response);
+      expect(at(body, 'error', 'message')).toBe(
+        'This sign-in may only read. A write tool needs the scope write.',
+      );
+      expect(at(body, 'id')).toBe(ask === modern ? 2 : 3);
+      // The pipeline got the call with the scopes of the sign-in, so that
+      // its gate refuses it and its audit holds it.
+      expect(calls.map((call) => [call.name, call.request.scopes])).toEqual([
+        [writeTool, ['read']],
+      ]);
+      expect(events.map((event) => event.event)).toEqual([
+        'http_scope_refused',
+      ]);
+    },
+  );
+
+  it('lets a sign-in with the scope write call the write tool', async () => {
+    const { app, calls, events } = writingSetup(writer);
+    const response = await modern(app, 'tools/call', {
+      name: writeTool,
+      arguments: { note: 'x' },
+    });
+    expect(response.status).toBe(200);
+    expect(calls[0]?.request.scopes).toEqual(['read', 'write']);
+    expect(events).toEqual([]);
+  });
+
+  it('answers a write tool in a list of messages with 403 as well', async () => {
+    const { app } = writingSetup(identityA);
+    const response = await send(app, [
+      { jsonrpc: '2.0', id: 4, method: 'tools/list' },
+      {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'tools/call',
+        params: { name: writeTool, arguments: {} },
+      },
+    ]);
+    expect(response.status).toBe(403);
+    expect(response.headers.get('www-authenticate')).toBe(insufficient);
+  });
+
+  it('counter-check: a read tool of the same sign-in goes through, and a server that only reads knows no write tool', async () => {
+    const { app } = writingSetup(identityA);
+    const read = await modern(app, 'tools/call', {
+      name: 'ct_example_echo',
+      arguments: {},
+    });
+    expect(read.status).toBe(200);
+    // The catalog of a server that only reads holds no write tool, so the
+    // call goes to the pipeline as an unknown tool, without 403.
+    const { app: reading } = setup();
+    const unknown = await modern(reading, 'tools/call', {
+      name: writeTool,
+      arguments: {},
+    });
+    expect(unknown.status).toBe(200);
+    expect(unknown.headers.get('www-authenticate')).toBeNull();
+  });
+});
+
+describe('the tenant and the mode of a request', () => {
+  it('come from the sign-in and the composition root only, never from headers, the query or _meta', async () => {
+    const { app, calls } = setup();
+    const response = await send(
+      app,
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'ct_example_echo',
+          arguments: {},
+          _meta: {
+            ...envelope,
+            tenantId: 'second-tenant',
+            mode: 'operator',
+            readOnly: false,
+            scopes: ['read', 'write'],
+          },
+        },
+      },
+      {
+        path: `${mcpPath}?tenant=second-tenant&mode=operator&scope=write`,
+        headers: {
+          'mcp-protocol-version': '2026-07-28',
+          'mcp-method': 'tools/call',
+          'mcp-name': 'ct_example_echo',
+          'x-tenant-id': 'second-tenant',
+          'x-ecclium-tenant': 'second-tenant',
+          'x-ecclium-mode': 'operator',
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(1);
+    const { request } = calls[0] ?? {};
+    expect(request?.assignment?.tenantId).toBe('demo-tenant');
+    expect(request?.assignment?.actor.id).toBe('bearer:person-id-1');
+    expect(request?.mode).toBe('interactive');
+    expect(request?.readOnly).toBe(true);
+    expect(request?.scopes).toEqual(['read']);
   });
 });
 
@@ -442,7 +782,7 @@ describe('the exact check of Host and Origin', () => {
     const { app, events } = setup({
       authenticate: () => {
         asked += 1;
-        return Promise.resolve(identityA);
+        return Promise.resolve(signedIn(identityA));
       },
     });
     for (const via of [
@@ -925,7 +1265,16 @@ describe('what the server writes', () => {
     expect(logged).not.toContain(tokenA);
     expect(logged).not.toContain(canary);
     expect(logged).not.toContain(headerCanary);
-    for (const event of events) expect(event.fields).toBeUndefined();
+    // The only field an event of the place carries is the reason of a
+    // refused sign-in, from the fixed list.
+    for (const event of events) {
+      if (event.event === 'http_auth_refused') {
+        expect(Object.keys(event.fields ?? {})).toEqual(['reason']);
+        expect(signInRefusals).toContain(event.fields?.['reason']);
+      } else {
+        expect(event.fields).toBeUndefined();
+      }
+    }
   });
 });
 

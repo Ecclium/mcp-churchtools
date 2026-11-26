@@ -358,6 +358,9 @@ export const logEvents = Object.freeze({
   // A refused sign-in names its reason from the fixed list, never a value
   // of the request (ADR 0074).
   http_auth_refused: entry('warn', 'reason'),
+  // A write tool called with a sign-in that may only read: 403 after the
+  // handler, whose call the audit holds (ADR 0074).
+  http_scope_refused: entry('warn'),
   http_body_not_json: entry('warn'),
   http_body_unreadable: entry('warn'),
   http_body_too_large: entry('warn'),
