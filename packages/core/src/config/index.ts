@@ -33,6 +33,16 @@ export {
   type ValueOrigin,
 } from './load.js';
 export {
+  type AllowedHost,
+  type AllowedHostsResult,
+  isAllowedHost,
+  isHttpBindAddress,
+  loopbackBindAddresses,
+  maxAllowedHostsLength,
+  parseAllowedHost,
+  parseAllowedHosts,
+} from './allowed-hosts.js';
+export {
   checkRunnerTokensDir,
   type KeysDirCode,
   keysDirCodes,

@@ -6,6 +6,8 @@
  * @packageDocumentation
  */
 export {
+  type AllowedHost,
+  type AllowedHostsResult,
   checkRunnerTokensDir,
   type ConfigDirectoryResult,
   type ConfigDirectoryStats,
@@ -29,13 +31,19 @@ export {
   defaultStdioSubject,
   type EccliumConfig,
   environmentProxyVariableNames,
+  isAllowedHost,
+  isHttpBindAddress,
   type KeysDirCode,
   keysDirCodes,
   listConfigDirectory,
   loadConfig,
   loadTokenCommandConfig,
+  loopbackBindAddresses,
+  maxAllowedHostsLength,
   maxConfigDirectoryEntries,
   maxReportedProblems,
+  parseAllowedHost,
+  parseAllowedHosts,
   readConfigTextFile,
   readConfigYaml,
   readRunnerToken,
