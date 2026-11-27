@@ -13,8 +13,9 @@
  *
  * While it runs, the audit file of a new UTC day starts and the files past
  * their retention go, as over stdio, and the days of the last use of the
- * tokens that lie more than 365 days back go at the start and on each new
- * UTC day. SIGTERM and SIGINT close the server: no new connection, the
+ * tokens that lie more than 365 days back go at the start and at every
+ * look of the timer of the day, at least once an hour: a look with nothing
+ * to remove costs one read and no lock. SIGTERM and SIGINT close the server: no new connection, the
  * running requests end within ten seconds, then the transport and the
  * audit file close, and the command ends with 143 or 130. A second signal
  * ends the process at once. SIGHUP is left to the process, so that a
@@ -487,8 +488,12 @@ const serve = async (parts: ServeParts): Promise<ExitCode> => {
 
   let transport: HttpTransport | undefined;
   let dayTimer: ReturnType<typeof setTimeout> | undefined;
+  // Set once the close begins, so that a look of the timer that was still
+  // running then arms no new one.
+  let closing = false;
   let listener: HttpListener | undefined;
   const closeAll = async (): Promise<void> => {
+    closing = true;
     clearTimeout(dayTimer);
     try {
       await transport?.close();
@@ -533,6 +538,7 @@ const serve = async (parts: ServeParts): Promise<ExitCode> => {
     };
     await prune();
     const armDayTimer = (): void => {
+      if (closing) return;
       let now = Number.NaN;
       try {
         now = clock.now();

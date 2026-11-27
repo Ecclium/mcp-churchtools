@@ -48,7 +48,10 @@ export function tokensText(valid: number, writing: number): string {
 }
 
 /**
- * Where the server takes requests, once it listens.
+ * Where the server takes requests, once it listens. The address stands
+ * here in clear, unlike in `ecclium config check`, whose output may go
+ * into a public issue: the operator needs it to set up a client, and the
+ * line goes only to the log of the operator.
  *
  * @param bound - The address it listens on, an IP address written out.
  * @param bound.address - The address.
