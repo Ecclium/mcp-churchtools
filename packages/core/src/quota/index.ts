@@ -7,6 +7,7 @@
 export { isoDateOf, quotaTimeoutMs, specialReadBudget } from './budget.js';
 export {
   createFileQuotaStore,
+  type FileQuotaStore,
   type FileQuotaStoreOptions,
   lockWaitMs,
   maxApprovalKeys,

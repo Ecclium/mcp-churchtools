@@ -63,6 +63,7 @@ export {
 } from './logger/index.js';
 export {
   createFileQuotaStore,
+  type FileQuotaStore,
   type FileQuotaStoreOptions,
   prepareQuotaFolder,
 } from './quota/index.js';
