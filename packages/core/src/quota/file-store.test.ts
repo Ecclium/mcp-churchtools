@@ -45,6 +45,7 @@ import {
   createFileQuotaStore,
   type FileQuotaStoreOptions,
   maxApprovalKeys,
+  maxLastUseKeys,
   maxQuotaActors,
   maxQuotaFileBytes,
   maxRunKeys,
@@ -211,6 +212,103 @@ describe('the file of the last uses', () => {
     await expect(store.noteLastUse(tenant, lastUse, day)).rejects.toThrow(
       failure,
     );
+  });
+
+  it('refuses a file of the last uses that group or others may read, and a link in its place, as the counters do', async () => {
+    const loose = freshState();
+    writeFileSync(
+      lastUseFile(loose),
+      JSON.stringify({ v: 1, tenant: 'demo-tenant', lastUse: {} }),
+      { mode: 0o644 },
+    );
+    chmodSync(lastUseFile(loose), 0o644);
+    await expect(open(loose).readLastUse(tenant, lastUse)).rejects.toThrow(
+      failure,
+    );
+    await expect(open(loose).noteLastUse(tenant, lastUse, day)).rejects.toThrow(
+      failure,
+    );
+    const linked = freshState();
+    const target = join(linked, 'elsewhere.json');
+    writeFileSync(
+      target,
+      JSON.stringify({ v: 1, tenant: 'demo-tenant', lastUse: {} }),
+      { mode: 0o600 },
+    );
+    symlinkSync(target, lastUseFile(linked));
+    await expect(open(linked).readLastUse(tenant, lastUse)).rejects.toThrow(
+      failure,
+    );
+    // Counter-check: the same content with 0600 and no link reads.
+    const fine = freshState();
+    writeFileSync(
+      lastUseFile(fine),
+      JSON.stringify({ v: 1, tenant: 'demo-tenant', lastUse: {} }),
+      { mode: 0o600 },
+    );
+    chmodSync(lastUseFile(fine), 0o600);
+    await expect(open(fine).readLastUse(tenant, lastUse)).resolves.toBe(
+      undefined,
+    );
+  });
+
+  // A file with the given number of keys of other tokens, all on one day.
+  const fileWithKeys = (state: string, count: number, on: string) => {
+    const days: Record<string, string> = {};
+    for (let index = 0; index < count; index += 1) {
+      days[`bearer:client-${String(index)}`] = on;
+    }
+    writeFileSync(
+      lastUseFile(state),
+      JSON.stringify({ v: 1, tenant: 'demo-tenant', lastUse: days }),
+      { mode: 0o600 },
+    );
+    chmodSync(lastUseFile(state), 0o600);
+  };
+
+  it('holds at most 512 keys: refuses a file with more and a new key beyond them, and takes one once old days went', async () => {
+    expect(maxLastUseKeys).toBe(512);
+    const over = freshState();
+    fileWithKeys(over, maxLastUseKeys + 1, day);
+    await expect(open(over).readLastUse(tenant, lastUse)).rejects.toThrow(
+      failure,
+    );
+    const full = freshState();
+    fileWithKeys(full, maxLastUseKeys, day);
+    await expect(open(full).readLastUse(tenant, lastUse)).resolves.toBe(
+      undefined,
+    );
+    await expect(open(full).noteLastUse(tenant, lastUse, day)).rejects.toThrow(
+      failure,
+    );
+    // Days more than 365 days before the new one go first, and make room.
+    const stale = freshState();
+    fileWithKeys(stale, maxLastUseKeys, '2025-10-23');
+    await open(stale).noteLastUse(tenant, lastUse, day);
+    await expect(open(stale).readLastUse(tenant, lastUse)).resolves.toBe(day);
+    await expect(
+      open(stale).readLastUse(tenant, bearerLastUseKey('client-0')),
+    ).resolves.toBeUndefined();
+  });
+
+  it('fails when the lock of another does not clear in time, and writes nothing', async () => {
+    const state = freshState();
+    const lock = `${lastUseFile(state)}.lock`;
+    writeFileSync(lock, '{}', { mode: 0o600 });
+    let now = Date.now();
+    const store = open(state, {
+      clock: { now: () => now },
+      sleep: () => {
+        now += 500;
+        return Promise.resolve();
+      },
+    });
+    await expect(store.noteLastUse(tenant, lastUse, day)).rejects.toThrow(
+      failure,
+    );
+    expect(readdirSync(join(state, 'quota'))).toEqual([
+      'demo-tenant.last-use.json.lock',
+    ]);
   });
 
   it('removes a temporary file and a lock moved aside that a process left of it, and nothing else', async () => {

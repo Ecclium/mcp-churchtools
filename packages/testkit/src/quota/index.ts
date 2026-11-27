@@ -510,6 +510,9 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
   check(
     'keeps a last use while counters of every kind count on later days',
     async (open) => {
+      // The later days lie within the days a last use is kept, so that
+      // only a store that drops it with the counters fails.
+      assert.ok(runCountDays + 1 < lastUseKeepDays);
       const first = daysFromToday(0);
       await open().noteLastUse(tenant, lastUse, first);
       for (const later of [1, 2, runCountDays + 1].map(daysFromToday)) {
