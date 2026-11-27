@@ -188,6 +188,9 @@ const notifyFile = quote('ECCLIUM_NOTIFY_FILE');
 const metricsFile = quote('ECCLIUM_RUNNER_METRICS_FILE');
 const pingUrlFile = quote('ECCLIUM_RUNNER_PING_URL_FILE');
 const httpTokensFile = quote('ECCLIUM_HTTP_TOKENS_FILE');
+const httpAddress = quote('ECCLIUM_HTTP_ADDRESS');
+const httpPort = quote('ECCLIUM_HTTP_PORT');
+const allowedHosts = quote('ECCLIUM_ALLOWED_HOSTS');
 const egressProxy = quote('ECCLIUM_EGRESS_PROXY');
 const egress = quote('ECCLIUM_EGRESS');
 const allowLan = quote('ECCLIUM_EGRESS_ALLOW_LAN');
@@ -492,12 +495,6 @@ const problems: Readonly<
         ? 'Schreiben Sie den Namen in Grossbuchstaben.'
         : `Schreiben Sie den Namen genau als ${name}.`,
     ),
-  unsupported_variable: (name) =>
-    message(
-      `${name ?? 'Eine Variable'} wird von dieser Version noch nicht unterstützt.`,
-      'Sie gehört zu einer späteren Version. Ein Wert, den Ecclium nicht anwendet, soll nicht still übergangen werden.',
-      'Entfernen Sie die Variable.',
-    ),
   // Refused whatever its value, so that no configuration loses its search
   // tools without a word (ADR 0062).
   search_tools_replaced: (name = quote('ECCLIUM_SEARCH_TOOLS')) =>
@@ -645,8 +642,45 @@ const problems: Readonly<
   http_tokens_file_required: (name = httpTokensFile) =>
     message(
       `${name} ist nicht gesetzt.`,
-      '‹ecclium token› legt die Bearer-Tokens in dieser Datei ab, und nur dort sucht der Server über HTTP nach ihnen.',
+      '‹ecclium token› legt die Bearer-Tokens in dieser Datei ab, und nur dort sucht der Server über HTTP nach ihnen. Ohne Anmeldung gibt es keinen Server über HTTP.',
       'Setzen Sie die Variable auf den absoluten Pfad der Datei, etwa ‹/config/http-tokens.yaml›. Fehlt die Datei, legt ‹ecclium token create› sie an.',
+    ),
+  // The server over HTTP (ADR 0073, ADR 0074).
+  http_address_invalid: (name = httpAddress) =>
+    message(
+      `Der Wert in ${name} ist keine ausgeschriebene IP-Adresse.`,
+      'Der Server über HTTP bindet nur an eine IP-Adresse, nie an einen Namen wie ‹localhost›, damit die Adresse nicht von einer Auflösung abhängt.',
+      'Geben Sie eine IPv4-Adresse wie ‹127.0.0.1› oder ‹0.0.0.0› an, oder eine IPv6-Adresse ohne Klammern wie ‹::1›, oder entfernen Sie die Variable für ‹127.0.0.1›.',
+    ),
+  http_port_invalid: (name = httpPort) =>
+    message(
+      `Der Wert in ${name} ist kein Port von 1 bis 65'535.`,
+      'Ecclium liest den Port Zeichen für Zeichen. Port 0 lässt das System einen Port wählen, und ein Client wüsste dann nicht, wohin er sich verbinden soll.',
+      "Geben Sie eine ganze Zahl von 1 bis 65'535 ohne führende Null an, oder entfernen Sie die Variable, dann gilt der voreingestellte Port, etwa in ‹127.0.0.1:8765›.",
+    ),
+  allowed_hosts_invalid: (name = allowedHosts) =>
+    message(
+      `Die Liste in ${name} ist keine gültige Liste von Hosts.`,
+      'Jeder Eintrag ist ein Name oder eine IP-Adresse in eindeutiger Schreibweise, mit oder ohne Port, ohne Schema und ohne Pfad. Der Server vergleicht ‹Host› und ‹Origin› jeder Anfrage genau mit diesen Einträgen.',
+      'Trennen Sie die Einträge mit Kommas, etwa ‹mcp.example.org› oder ‹mcp.example.org:8443, 127.0.0.1:8765›, ohne leeren Eintrag und ohne ‹https://›.',
+    ),
+  http_address_needs_allowed_hosts: (name = httpAddress) =>
+    message(
+      `${name} nennt eine Adresse ausserhalb von Loopback, aber ${allowedHosts} ist nicht gesetzt.`,
+      'Ohne Liste nimmt der Server nur die Namen von Loopback an. An einer Adresse, die andere erreichen, könnte eine fremde Webseite ihn sonst über DNS-Rebinding ansprechen.',
+      `Setzen Sie ${allowedHosts} auf die Namen, unter denen Clients den Server erreichen, oder binden Sie mit ‹127.0.0.1› nur an Loopback.`,
+    ),
+  http_state_dir_required: (name = stateDir) =>
+    message(
+      `${name} ist für den Server über HTTP nicht gesetzt.`,
+      'Im Zustandsordner liegen die Audit-Datei, die Zähler des Lesebudgets und der Tag der letzten Verwendung jedes Tokens. Über HTTP nutzen mehrere Clients denselben Server, und jeder Aufruf gehört ins Protokoll.',
+      `Setzen Sie ${name} auf einen Ordner Ihres Benutzers mit den Rechten 700, der zwischen zwei Starts erhalten bleibt.`,
+    ),
+  http_writes_unsupported: (name = readOnly) =>
+    message(
+      `${name} ist auf ‹false› gesetzt, aber über HTTP schreibt diese Version noch nicht.`,
+      'Die Bestätigung eines Schreibvorgangs am Server über HTTP ist noch nicht gebaut. Schreiben über HTTP kommt mit einer späteren Version.',
+      `Entfernen Sie ${name} oder setzen Sie die Variable auf ‹true›. Zum Schreiben nutzen Sie bis dahin den Betrieb über stdio.`,
     ),
   // The proxy of outbound connections and the switch for a runner without
   // one (ADR 0035).

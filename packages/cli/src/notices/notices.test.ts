@@ -2,7 +2,6 @@ import {
   configProblemCodes,
   configWarningCodes,
   tlsVariableName,
-  unsupportedVariableNames,
   variableNames,
 } from '@ecclium/mcp-churchtools-core';
 import { describe, expect, it } from 'vitest';
@@ -52,12 +51,10 @@ const text = (value: string): MessageText => value as MessageText;
 const loneSurrogate = String.fromCharCode(0xd800);
 
 // Every name the loader can report with a problem: the known variables,
-// the names of later phases, the variable of TLS, the
-// variable with the options of Node.js and the longest unknown name it
-// shows.
+// the variable of TLS, the variable with the options of Node.js and the
+// longest unknown name it shows.
 const reportedNames: readonly string[] = [
   ...variableNames,
-  ...unsupportedVariableNames,
   tlsVariableName,
   'NODE_OPTIONS',
   `ECCLIUM_${'A'.repeat(64)}`,

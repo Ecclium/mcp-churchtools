@@ -8,10 +8,10 @@
  */
 import { variableDescriptions } from '@ecclium/mcp-churchtools';
 import {
+  httpPortRange,
   requestsPerMinuteRange,
   retentionMonthsRange,
   searchToolsVariableName,
-  unsupportedVariableNames,
   type Variable,
   variablePrefix,
   variables,
@@ -40,6 +40,10 @@ const valuesOf = (variable: Variable): string => {
       return `Bezeichnung mit höchstens ${String(variable.maxLength)} Zeichen`;
     case 'zone':
       return `${code('UTC')} oder Name einer Zeitzone wie ${code('Europe/Zurich')}`;
+    case 'address':
+      return `IP-Adresse wie ${code('127.0.0.1')} oder ${code('::1')}`;
+    case 'hosts':
+      return `Liste aus Hosts mit oder ohne Port wie ${code('mcp.example.org:8443')}, mit Komma getrennt`;
     case 'boolean':
     case 'choice':
       return variable.choices.map(code).join(', ');
@@ -56,7 +60,9 @@ const valuesOf = (variable: Variable): string => {
           ? requestsPerMinuteRange
           : variable.name === 'ECCLIUM_AUDIT_RETENTION_MONTHS'
             ? retentionMonthsRange
-            : undefined;
+            : variable.name === 'ECCLIUM_HTTP_PORT'
+              ? httpPortRange
+              : undefined;
       if (range === undefined) {
         throw new TypeError(`no range known for ${variable.name}`);
       }
@@ -68,7 +74,7 @@ const valuesOf = (variable: Variable): string => {
 /**
  * Renders the reference of the configuration: a table of every variable
  * in the order of the table of the core, a section with the description of
- * each, and the names that later versions reserve.
+ * each, and the names that are no longer valid.
  *
  * @returns The Markdown of `docs/configuration.md`, ending with a line
  *   break.
@@ -119,12 +125,6 @@ export function renderConfigurationReference(): string {
     );
   }
   lines.push(
-    '',
-    '## Noch nicht unterstützt',
-    '',
-    'Diese Namen gehören zu späteren Versionen. Ist einer gesetzt, bricht der Start mit einem Hinweis ab, statt die Variable still zu übergehen.',
-    '',
-    ...unsupportedVariableNames.map((name) => `- ${code(name)}`),
     '',
     '## Nicht mehr gültig',
     '',

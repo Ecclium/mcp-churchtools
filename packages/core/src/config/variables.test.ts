@@ -6,12 +6,15 @@ import { logLevels, redactionLevels } from '../logger/index.js';
 import { toolsetNames } from '../registry/toolsets.js';
 import {
   allToolsets,
+  defaultHttpAddress,
+  defaultHttpPort,
   defaultHttpWriteConfirmation,
   defaultStdioSubject,
   environmentProxyOption,
   environmentProxyVariableNames,
   environmentSchema,
   fitsVariable,
+  isHttpPort,
   isTimeZone,
   maxTimeZoneLength,
   nodeOptionsVariableName,
@@ -27,7 +30,6 @@ import {
   tokenVariableName,
   trustStoreOptions,
   trustStoreVariableNames,
-  unsupportedVariableNames,
   type Variable,
   variableNames,
   variablePrefix,
@@ -56,17 +58,12 @@ describe('the table of variables', () => {
   });
 
   it('gives every name the prefix, in capitals, and each name once', () => {
-    const names = [
-      ...variableNames,
-      ...unsupportedVariableNames,
-      searchToolsVariableName,
-    ];
+    const names = [...variableNames, searchToolsVariableName];
     for (const name of names) {
       expect(name.startsWith(variablePrefix), name).toBe(true);
       expect(name).toMatch(/^ECCLIUM_[A-Z0-9_]+$/);
     }
     expect(new Set(names).size).toBe(names.length);
-    expect(Object.isFrozen(unsupportedVariableNames)).toBe(true);
   });
 
   it('names the variable that turns off the check of certificates', () => {
@@ -115,13 +112,13 @@ describe('the table of variables', () => {
       ['ECCLIUM_PSEUDONYM_KEY_FILE', undefined, false, false, true],
       ['ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE', undefined, false, false, true],
       ['ECCLIUM_TOOLSETS', '', false, false, true],
-      ['ECCLIUM_STATE_DIR', undefined, false, true, true],
+      ['ECCLIUM_STATE_DIR', undefined, false, false, true],
       ['ECCLIUM_KEYS_DIR', undefined, false, true, true],
       ['ECCLIUM_KILL_SWITCH_DIR', undefined, false, true, true],
       ['ECCLIUM_SNAPSHOTS', 'on', false, false, true],
       ['ECCLIUM_WRITE_CONFIRMATION', 'echo-allowed', false, false, true],
       ['ECCLIUM_TIME_ZONE', undefined, false, false, true],
-      ['ECCLIUM_AUDIT_RETENTION_MONTHS', '12', false, true, true],
+      ['ECCLIUM_AUDIT_RETENTION_MONTHS', '12', false, false, true],
       ['ECCLIUM_POLICY_FILE', undefined, false, false, true],
       ['ECCLIUM_MARKER_KEY_FILE', undefined, false, false, true],
       ['ECCLIUM_ROUTINES_DIR', undefined, false, false, true],
@@ -135,10 +132,15 @@ describe('the table of variables', () => {
       ['ECCLIUM_EGRESS', undefined, false, false, true],
       ['ECCLIUM_EGRESS_ALLOW_LAN', undefined, false, false, true],
       ['ECCLIUM_HTTP_TOKENS_FILE', undefined, false, false, false],
+      ['ECCLIUM_HTTP_ADDRESS', '127.0.0.1', false, false, false],
+      ['ECCLIUM_HTTP_PORT', '8765', false, false, false],
+      ['ECCLIUM_ALLOWED_HOSTS', undefined, false, false, false],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true, false],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false, true],
     ]);
     expect(row('ECCLIUM_STDIO_SUBJECT').defaultValue).toBe(defaultStdioSubject);
+    expect(row('ECCLIUM_HTTP_ADDRESS').defaultValue).toBe(defaultHttpAddress);
+    expect(row('ECCLIUM_HTTP_PORT').defaultValue).toBe(String(defaultHttpPort));
   });
 
   it('marks only the token as a secret and keeps it from every schema', () => {
@@ -287,6 +289,14 @@ describe('fitsVariable', () => {
     ['ECCLIUM_TIME_ZONE', 'Asia/Kolkata'],
     ['ECCLIUM_TIME_ZONE', 'Etc/UTC'],
     ['ECCLIUM_TIME_ZONE', 'UTC'],
+    ['ECCLIUM_HTTP_ADDRESS', '127.0.0.1'],
+    ['ECCLIUM_HTTP_ADDRESS', '0.0.0.0'],
+    ['ECCLIUM_HTTP_ADDRESS', '::1'],
+    ['ECCLIUM_HTTP_PORT', '1'],
+    ['ECCLIUM_HTTP_PORT', '8765'],
+    ['ECCLIUM_HTTP_PORT', '65535'],
+    ['ECCLIUM_ALLOWED_HOSTS', 'mcp.example.org'],
+    ['ECCLIUM_ALLOWED_HOSTS', 'mcp.example.org:8443, localhost:8765'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'.repeat(32)],
     ['ECCLIUM_STDIO_SUBJECT', 'local-operator-2'],
@@ -377,6 +387,19 @@ describe('fitsVariable', () => {
     ['ECCLIUM_STDIO_SUBJECT', '-local'],
     ['ECCLIUM_STDIO_SUBJECT', '1local'],
     ['ECCLIUM_STDIO_SUBJECT', 'local\n'],
+    ['ECCLIUM_HTTP_ADDRESS', 'localhost'],
+    ['ECCLIUM_HTTP_ADDRESS', '[::1]'],
+    ['ECCLIUM_HTTP_ADDRESS', '127.1'],
+    ['ECCLIUM_HTTP_ADDRESS', '127.0.0.1:8765'],
+    ['ECCLIUM_HTTP_PORT', '0'],
+    ['ECCLIUM_HTTP_PORT', '08765'],
+    ['ECCLIUM_HTTP_PORT', '65536'],
+    ['ECCLIUM_HTTP_PORT', '8765 '],
+    ['ECCLIUM_HTTP_PORT', '-1'],
+    ['ECCLIUM_ALLOWED_HOSTS', ''],
+    ['ECCLIUM_ALLOWED_HOSTS', 'mcp.example.org,,localhost'],
+    ['ECCLIUM_ALLOWED_HOSTS', 'https://mcp.example.org'],
+    ['ECCLIUM_ALLOWED_HOSTS', '127.1'],
     ['ECCLIUM_LOG_LEVEL', 'warning'],
     ['ECCLIUM_LOG_LEVEL', 'INFO'],
   ] as const)('refuse %s=%j', (name, value) => {
@@ -426,6 +449,9 @@ describe('fitsVariable', () => {
         ['ECCLIUM_EGRESS', 'OFF'],
         ['ECCLIUM_EGRESS_ALLOW_LAN', '192.0.2.5:8443'],
         ['ECCLIUM_HTTP_TOKENS_FILE', 'http-tokens.yaml'],
+        ['ECCLIUM_HTTP_ADDRESS', 'localhost'],
+        ['ECCLIUM_HTTP_PORT', '0'],
+        ['ECCLIUM_ALLOWED_HOSTS', '127.1'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
       ];
@@ -460,6 +486,28 @@ describe('fitsVariable', () => {
       );
     },
   );
+});
+
+describe('isHttpPort', () => {
+  it.each([
+    ['1', true],
+    ['8765', true],
+    ['65535', true],
+    ['0', false],
+    ['65536', false],
+    ['99999', false],
+    ['123456', false],
+    ['08765', false],
+    ['', false],
+    ['8e3', false],
+    [' 8765', false],
+  ] as const)('reads %j as %s', (value, expected) => {
+    expect(isHttpPort(value)).toBe(expected);
+  });
+
+  it('refuses a value that is no string', () => {
+    expect(isHttpPort(8765 as unknown as string)).toBe(false);
+  });
 });
 
 describe('environmentSchema', () => {
@@ -538,7 +586,6 @@ describe('readToolsetList', () => {
     expect(searchToolsVariableName).toBe('ECCLIUM_SEARCH_TOOLS');
     expect(variableNames).not.toContain(searchToolsVariableName);
     expect(variableNames).toContain('ECCLIUM_TOOLSETS');
-    expect(unsupportedVariableNames).not.toContain('ECCLIUM_TOOLSETS');
   });
 });
 

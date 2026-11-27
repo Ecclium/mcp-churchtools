@@ -39,7 +39,6 @@ import {
   maxAllowLanTargets,
   tokenVariableName,
   trustStoreVariableNames,
-  unsupportedVariableNames,
   variableNames,
   variables,
   variableSchemas,
@@ -426,6 +425,13 @@ const memoryFolder = (
   return { fs, looked };
 };
 
+const httpTokensPath = '/path/to/http-tokens.yaml';
+
+/**
+ * Loads the environment. Over HTTP it adds the folder of state and the
+ * file of the tokens, which the server over HTTP needs, unless the
+ * environment names them, also as undefined to leave one out.
+ */
 const load = (
   environment: Environment,
   transport: Transport = 'stdio',
@@ -434,7 +440,14 @@ const load = (
   folders: StateDirFileSystem = memoryFolder().fs,
 ): ConfigResult =>
   loadConfig({
-    environment,
+    environment:
+      transport === 'http'
+        ? {
+            ECCLIUM_STATE_DIR: stateDirPath,
+            ECCLIUM_HTTP_TOKENS_FILE: httpTokensPath,
+            ...environment,
+          }
+        : environment,
     transport,
     execArgv,
     tokenFiles: files,
@@ -614,10 +627,13 @@ describe('loadConfig with a good configuration', () => {
       policy: defaultPolicy,
       egressOff: false,
       egressAllowLan: [],
+      httpAddress: '127.0.0.1',
+      httpPort: 8765,
       stdioSubject: 'local-stdio',
       logLevel: 'info',
     });
     expect(Object.hasOwn(result.config, 'stateDir')).toBe(true);
+    expect(Object.hasOwn(result.config, 'allowedHosts')).toBe(true);
     expect(Object.hasOwn(result.config, 'keysDir')).toBe(true);
     expect(result.config.churchtoolsToken).toBeInstanceOf(Secret);
     expect(result.report.problems).toEqual([]);
@@ -718,6 +734,19 @@ describe('loadConfig with a good configuration', () => {
       ['egress', 'ECCLIUM_EGRESS', 'unset', { kind: 'none' }],
       ['egressAllowLan', 'ECCLIUM_EGRESS_ALLOW_LAN', 'unset', { kind: 'none' }],
       ['httpTokensFile', 'ECCLIUM_HTTP_TOKENS_FILE', 'unset', { kind: 'none' }],
+      [
+        'httpAddress',
+        'ECCLIUM_HTTP_ADDRESS',
+        'default',
+        { kind: 'address', value: '127.0.0.1' },
+      ],
+      [
+        'httpPort',
+        'ECCLIUM_HTTP_PORT',
+        'default',
+        { kind: 'integer', value: 8765 },
+      ],
+      ['allowedHosts', 'ECCLIUM_ALLOWED_HOSTS', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -868,11 +897,24 @@ describe('loadConfig and the folder of state', () => {
     expect(withStateDir(value).ok).toBe(true);
   });
 
-  it('refuses the folder over http without looking at the disk', () => {
+  // The server over HTTP keeps its audit file, its counters and the last
+  // use of its tokens there (ADR 0028, ADR 0074).
+  it('takes the folder over http and checks it as over stdio', () => {
     const folder = memoryFolder();
     const result = withStateDir(stateDirPath, folder.fs, 'http');
-    expect(problems(result)).toEqual([['stdio_only', 'ECCLIUM_STATE_DIR']]);
-    expect(folder.looked).toEqual([]);
+    expect(problems(result)).toEqual([]);
+    expect(result.ok && result.config.stateDir).toBe(stateDirPath);
+    expect(folder.looked).toContain(stateDirPath);
+  });
+
+  it('requires the folder over http, and only there', () => {
+    const result = load({ ...valid(), ECCLIUM_STATE_DIR: undefined }, 'http');
+    expect(problems(result)).toEqual([
+      ['http_state_dir_required', 'ECCLIUM_STATE_DIR'],
+    ]);
+    expect(setting(result, 'stateDir')?.origin).toBe('missing');
+    expect(load(valid()).ok).toBe(true);
+    expect(setting(load(valid()), 'stateDir')?.origin).toBe('unset');
   });
 
   it('reports the folder after the toolsets and before the subject', () => {
@@ -987,16 +1029,27 @@ describe('loadConfig and the folder of keys', () => {
   });
 
   // Over HTTP the variable is refused, so a server over HTTP cannot write
-  // in this version.
-  it('refuses the folder over http without looking at the disk, and still asks for it when the server writes', () => {
+  // in this version; a write there has a problem of its own, which names
+  // no folder that HTTP refuses.
+  it('refuses the folder over http without looking at it, and refuses writes over http with their own problem', () => {
     const folder = memoryFolder();
     expect(problems(withKeysDir(keysDirPath, folder.fs, 'http'))).toEqual([
       ['stdio_only', 'ECCLIUM_KEYS_DIR'],
     ]);
-    expect(folder.looked).toEqual([]);
+    expect(folder.looked).not.toContain(keysDirPath);
     expect(
       problems(load({ ...valid(), ECCLIUM_READ_ONLY: 'false' }, 'http')),
-    ).toEqual([['keys_dir_required', 'ECCLIUM_KEYS_DIR']]);
+    ).toEqual([['http_writes_unsupported', 'ECCLIUM_READ_ONLY']]);
+    // Counter-check: over stdio the same write asks for the folder.
+    expect(
+      problems(
+        load({
+          ...valid(),
+          ECCLIUM_READ_ONLY: 'false',
+          ECCLIUM_STATE_DIR: stateDirPath,
+        }),
+      ),
+    ).toContainEqual(['keys_dir_required', 'ECCLIUM_KEYS_DIR']);
   });
 
   it('refuses the folder and keeps its path out of the report', () => {
@@ -1778,7 +1831,7 @@ describe('loadConfig and the confirmation of writes', () => {
       'http',
     );
     expect(problems(result)).toEqual([
-      ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
+      ['http_writes_unsupported', 'ECCLIUM_READ_ONLY'],
     ]);
     expect(result.report.warnings).toEqual([
       'writes_enabled',
@@ -2105,17 +2158,11 @@ describe('loadConfig and the names of variables', () => {
     ]);
   });
 
-  it('refuses each name of a later phase as not yet supported', () => {
-    expect(unsupportedVariableNames).toEqual(['ECCLIUM_ALLOWED_HOSTS']);
-    for (const name of unsupportedVariableNames) {
-      expect(problems(load({ ...valid(), [name]: 'x' })), name).toEqual([
-        ['unsupported_variable', name],
-      ]);
-      expect(
-        problems(load({ ...valid(), [name.toLowerCase()]: 'x' })),
-        name,
-      ).toEqual([['unsupported_variable', name]]);
-    }
+  it('reads the allowed hosts as a variable of the server over HTTP', () => {
+    expect(variableNames).toContain('ECCLIUM_ALLOWED_HOSTS');
+    expect(
+      problems(load({ ...valid(), ecclium_allowed_hosts: 'mcp.example.org' })),
+    ).toEqual([['miscased_variable', 'ECCLIUM_ALLOWED_HOSTS']]);
   });
 
   it('names an unknown name of 64 characters after the prefix', () => {
@@ -2274,10 +2321,18 @@ describe('loadConfig and the values of variables', () => {
       variableNames.map((name) => [name, huge]),
     );
     expect(/primed/.exec('primed')).not.toBeNull();
-    const result = load(environment);
-    expect((RegExp as unknown as Record<string, unknown>).input).toBe('primed');
-    for (const name of variableNames) {
-      expect(problems(result), name).toContainEqual(['value_too_long', name]);
+    // In parts, so that every problem fits into the list of the report.
+    for (let start = 0; start < variableNames.length; start += 16) {
+      const part = variableNames.slice(start, start + 16);
+      const result = load(
+        Object.fromEntries(part.map((name) => [name, environment[name]])),
+      );
+      expect((RegExp as unknown as Record<string, unknown>).input).toBe(
+        'primed',
+      );
+      for (const name of part) {
+        expect(problems(result), name).toContainEqual(['value_too_long', name]);
+      }
     }
   });
 
@@ -2907,21 +2962,21 @@ describe('loadConfig and the retention of the audit files', () => {
       expect(result.ok, value).toBe(false);
       expect(result.report.warnings, value).toEqual([]);
     }
+    // Over HTTP the folder is required, so the value always counts.
     const overHttp = load(
       { ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '6' },
       'http',
     );
-    expect(overHttp.report.warnings).toEqual([]);
+    expect(overHttp.report.warnings).toEqual(['audit_retention_short']);
   });
 
-  it('refuses the variable over HTTP', () => {
+  it('takes the variable over HTTP, where the server keeps its audit file', () => {
     const result = load(
-      { ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '12' },
+      { ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '24' },
       'http',
     );
-    expect(problems(result)).toEqual([
-      ['stdio_only', 'ECCLIUM_AUDIT_RETENTION_MONTHS'],
-    ]);
+    expect(problems(result)).toEqual([]);
+    expect(result.ok && result.config.auditRetentionMonths).toBe(24);
   });
 });
 
@@ -3325,7 +3380,12 @@ describe.each([
       expect(result.report.problems).toEqual([]);
       expect(result.ok && result.config[key]).toBe(path);
       expect(files.opened).toEqual([tokenPath]);
-      expect(folders.looked).toEqual([]);
+      // Over HTTP only the folder of state is looked at, never the path.
+      expect(
+        folders.looked.filter(
+          (looked) => looked === path || looked.startsWith(`${path}/`),
+        ),
+      ).toEqual([]);
       expect(setting(result, key)).toMatchObject({
         variable: name,
         origin: 'environment',
@@ -3899,8 +3959,18 @@ describe('loadConfig and its problems', () => {
   > = {
     unknown_variable: () => load({ ...valid(), ECCLIUM_REDONLY: 'true' }),
     miscased_variable: () => load({ ...valid(), ecclium_read_only: 'true' }),
-    unsupported_variable: () =>
-      load({ ...valid(), ECCLIUM_ALLOWED_HOSTS: 'x' }),
+    // The server over HTTP (ADR 0073, ADR 0074).
+    http_address_invalid: () =>
+      load({ ...valid(), ECCLIUM_HTTP_ADDRESS: 'localhost' }),
+    http_port_invalid: () => load({ ...valid(), ECCLIUM_HTTP_PORT: '0' }),
+    allowed_hosts_invalid: () =>
+      load({ ...valid(), ECCLIUM_ALLOWED_HOSTS: '127.1' }),
+    http_address_needs_allowed_hosts: () =>
+      load({ ...valid(), ECCLIUM_HTTP_ADDRESS: '0.0.0.0' }, 'http'),
+    http_state_dir_required: () =>
+      load({ ...valid(), ECCLIUM_STATE_DIR: undefined }, 'http'),
+    http_writes_unsupported: () =>
+      load({ ...valid(), ECCLIUM_READ_ONLY: 'false' }, 'http'),
     // The targets in the local network (ADR 0035).
     egress_allow_lan_invalid: () =>
       load({ ...valid(), ECCLIUM_EGRESS_ALLOW_LAN: 'x' }),
@@ -4842,7 +4912,7 @@ describe('loadConfig and its problems', () => {
     const environment: Environment = {
       ECCLIUM_CHURCHTOOLS_URL: 'http://demo.example',
       ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
-      ECCLIUM_ALLOWED_HOSTS: 'x',
+      ECCLIUM_ALLOWED_HOSTS: '127.1',
       ECCLIUM_SEARCH_TOOLS: 'x',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
       NODE_DEBUG: 'undici',
@@ -4860,11 +4930,11 @@ describe('loadConfig and its problems', () => {
     expect(problems(result).slice(0, 9)).toEqual([
       ['url_not_https', 'ECCLIUM_CHURCHTOOLS_URL'],
       ['egress_proxy_invalid', 'ECCLIUM_EGRESS_PROXY'],
+      ['allowed_hosts_invalid', 'ECCLIUM_ALLOWED_HOSTS'],
       ['tls_check_disabled', 'NODE_TLS_REJECT_UNAUTHORIZED'],
       ['debug_output_enabled', 'NODE_DEBUG'],
       ['tls_keylog_enabled'],
       ['tls_trace_enabled', 'NODE_OPTIONS'],
-      ['unsupported_variable', 'ECCLIUM_ALLOWED_HOSTS'],
       ['search_tools_replaced', 'ECCLIUM_SEARCH_TOOLS'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_0'],
     ]);
@@ -5660,5 +5730,118 @@ describe('loadConfig and the ping of the runner (ADR 0009)', () => {
       ['ping_url_invalid', 'ECCLIUM_RUNNER_PING_URL_FILE'],
     ]);
     expect(JSON.stringify(result)).not.toContain(pingCheck);
+  });
+});
+
+// Where the server over HTTP binds and which hosts a request may name
+// (ADR 0073), and what it needs besides (ADR 0074).
+describe('loadConfig and the settings of the server over HTTP', () => {
+  it('takes an address, a port and a list of hosts, over http and over stdio', () => {
+    for (const transport of ['stdio', 'http'] as const) {
+      const result = load(
+        {
+          ...valid(),
+          ECCLIUM_HTTP_ADDRESS: '0.0.0.0',
+          ECCLIUM_HTTP_PORT: '8443',
+          ECCLIUM_ALLOWED_HOSTS: 'MCP.example.org, mcp.example.org:8443',
+        },
+        transport,
+      );
+      expect(problems(result), transport).toEqual([]);
+      if (!result.ok) return;
+      expect(result.config.httpAddress).toBe('0.0.0.0');
+      expect(result.config.httpPort).toBe(8443);
+      expect(result.config.allowedHosts).toEqual([
+        { name: 'mcp.example.org', port: undefined },
+        { name: 'mcp.example.org', port: 8443 },
+      ]);
+      expect(Object.isFrozen(result.config.allowedHosts)).toBe(true);
+      expect(setting(result, 'allowedHosts')).toMatchObject({
+        origin: 'environment',
+        shown: {
+          kind: 'hosts',
+          values: [
+            { name: 'mcp.example.org', port: '' },
+            { name: 'mcp.example.org', port: '8443' },
+          ],
+        },
+      });
+      expect(setting(result, 'httpAddress')?.shown).toEqual({
+        kind: 'address',
+        value: '0.0.0.0',
+      });
+    }
+  });
+
+  it('refuses an address beyond loopback without a list only over http', () => {
+    for (const address of ['0.0.0.0', '10.0.0.1', '::']) {
+      expect(
+        problems(load({ ...valid(), ECCLIUM_HTTP_ADDRESS: address }, 'http')),
+        address,
+      ).toEqual([['http_address_needs_allowed_hosts', 'ECCLIUM_HTTP_ADDRESS']]);
+      expect(load({ ...valid(), ECCLIUM_HTTP_ADDRESS: address }).ok).toBe(true);
+    }
+    // Counter-check: loopback needs no list, a list makes any address fit.
+    for (const address of ['127.0.0.1', '::1']) {
+      expect(
+        load({ ...valid(), ECCLIUM_HTTP_ADDRESS: address }, 'http').ok,
+        address,
+      ).toBe(true);
+    }
+    expect(
+      load(
+        {
+          ...valid(),
+          ECCLIUM_HTTP_ADDRESS: '0.0.0.0',
+          ECCLIUM_ALLOWED_HOSTS: 'mcp.example.org',
+        },
+        'http',
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('refuses a wrong value without repeating it', () => {
+    const result = load(
+      {
+        ...valid(),
+        ECCLIUM_HTTP_ADDRESS: 'mcp.example.org',
+        ECCLIUM_HTTP_PORT: '99999',
+        ECCLIUM_ALLOWED_HOSTS: 'https://mcp.example.org',
+      },
+      'http',
+    );
+    expect(problems(result)).toEqual([
+      ['http_address_invalid', 'ECCLIUM_HTTP_ADDRESS'],
+      ['http_port_invalid', 'ECCLIUM_HTTP_PORT'],
+      ['allowed_hosts_invalid', 'ECCLIUM_ALLOWED_HOSTS'],
+    ]);
+    const text = JSON.stringify(result.report);
+    expect(text).not.toContain('mcp.example.org');
+    expect(text).not.toContain('99999');
+  });
+
+  it('requires the file of the tokens over http, and only there', () => {
+    const result = load(
+      { ...valid(), ECCLIUM_HTTP_TOKENS_FILE: undefined },
+      'http',
+    );
+    expect(problems(result)).toEqual([
+      ['http_tokens_file_required', 'ECCLIUM_HTTP_TOKENS_FILE'],
+    ]);
+    expect(setting(result, 'httpTokensFile')?.origin).toBe('missing');
+    expect(setting(load(valid()), 'httpTokensFile')?.origin).toBe('unset');
+  });
+
+  it('refuses the three variables for the runner', () => {
+    for (const [name, value] of [
+      ['ECCLIUM_HTTP_ADDRESS', '127.0.0.1'],
+      ['ECCLIUM_HTTP_PORT', '8765'],
+      ['ECCLIUM_ALLOWED_HOSTS', 'mcp.example.org'],
+    ] as const) {
+      expect(
+        problems(asRunner({ extra: { [name]: value } })),
+        name,
+      ).toContainEqual(['runner_stdio_only', name]);
+    }
   });
 });
