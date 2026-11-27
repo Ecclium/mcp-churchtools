@@ -139,8 +139,14 @@ export {
   specialReadBudget,
 } from './quota/index.js';
 export {
+  createBearerTenantResolver,
   createStdioIdentity,
   createStdioTenantResolver,
+  isSignInRefusal,
+  presentedCredential,
+  type SignInRefusal,
+  signInRefusals,
+  type SignInResult,
 } from './identity/index.js';
 export {
   addDays,
@@ -148,6 +154,9 @@ export {
   type BearerLookup,
   type BearerRefusal,
   type BearerScope,
+  type BearerLastUse,
+  type BearerSignIn,
+  type BearerSignInOptions,
   type BearerTokenEntry,
   bearerTokenFormProblem,
   bearerTokenLength,
@@ -158,6 +167,7 @@ export {
   type BearerTokensFileResult,
   bearerTokensFileVersion,
   checkBearerTokens,
+  createBearerSignIn,
   createBearerToken,
   defaultBearerTokenDays,
   findBearerToken,
@@ -166,6 +176,7 @@ export {
   maxBearerTokenDays,
   maxBearerTokens,
   maxBearerTokensFileBytes,
+  readBearerLastUse,
   readBearerTokensFile,
   serializeBearerTokens,
 } from './bearer/index.js';

@@ -234,6 +234,13 @@ export {
   writeQuotaKey,
   type WriteQuotaKey,
 } from './quota.js';
+// The last use of a sign-in in the store of quotas (ADR 0074).
+export {
+  bearerLastUseKey,
+  isLastUseKey,
+  lastUseKeepDays,
+  type LastUseKey,
+} from './quota.js';
 // The memory of runs of the routines in the store of quotas (ADR 0034).
 export {
   isRunQuotaKey,

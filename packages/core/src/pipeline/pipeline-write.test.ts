@@ -164,6 +164,9 @@ const request = (extra: Partial<ToolRequest> = {}): ToolRequest => ({
   mode: 'interactive',
   redaction: 'standard',
   readOnly: false,
+  // The sign-in of these tests may write; the gate of the scopes has
+  // tests of its own in pipeline.test.ts (ADR 0074).
+  scopes: ['read', 'write'],
   features: [],
   signal: new AbortController().signal,
   ...extra,
@@ -1372,6 +1375,44 @@ describe('a question before a write', () => {
     ).toHaveLength(1);
   });
 
+  // A plan of a sign-in that may write, answered by one of the same actor
+  // that may only read, as after a revoke and a new token of the same
+  // name with read alone (ADR 0074): the gate refuses the answer before it
+  // commits anything.
+  it('commits nothing for an answer of a sign-in without the scope write, and the answer still holds', async () => {
+    const { double, pipeline, events, planReads } = setup();
+    planReads();
+    const question = await ask(pipeline);
+    const refused = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request({ ...answerOf(question.state), scopes: ['read'] }),
+    );
+    expect(refused).toEqual({
+      ok: false,
+      error: {
+        code: 'permission',
+        message:
+          'This sign-in may only read. A write tool needs the scope write.',
+      },
+    });
+    assertOnlyReads(double);
+    expect(events()[1]).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'permission',
+      writeState: 'denied',
+    });
+    // Counter-check: the plan waits on, and the same answer with the
+    // scope write commits it.
+    commitReads(double);
+    const right = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(answerOf(question.state)),
+    );
+    expect(right.ok && right.data).toMatchObject({ state: 'verified' });
+  });
+
   it('refuses in a second instance, whose key and stores are its own', async () => {
     const first = setup();
     first.planReads();
@@ -1572,6 +1613,40 @@ describe('the echo', () => {
     });
     expect(events()[1]).toMatchObject({ writeState: 'denied' });
     assertOnlyReads(double);
+  });
+
+  it('confirms nothing for a sign-in without the scope write, and the token still holds', async () => {
+    const { double, pipeline, events, planReads } = setup({
+      snapshots,
+      echo: true,
+    });
+    planReads();
+    const planned = confirmOf(
+      await pipeline.call('ct_example_note_write', note, request()),
+    );
+    const refused = await pipeline.call(
+      'ct_write_confirm',
+      { token: planned.token, summary: planned.summary },
+      request({ scopes: ['read'] }),
+    );
+    expect(!refused.ok && refused.error.code).toBe('permission');
+    expect(events()[1]).toMatchObject({
+      tool: 'ct_write_confirm',
+      outcome: 'denied',
+      errorCode: 'permission',
+    });
+    assertOnlyReads(double);
+    // Counter-check: the gate refused before the nonce of the token was
+    // used, so the sign-in that may write still confirms with it.
+    commitReads(double);
+    const confirmed = await pipeline.call(
+      'ct_write_confirm',
+      { token: planned.token, summary: planned.summary },
+      request(),
+    );
+    expect(confirmed.ok && confirmed.data).toMatchObject({
+      state: 'verified',
+    });
   });
 
   // Each condition of ADR 0029 on its own, with its counter-check: a

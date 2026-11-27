@@ -17,7 +17,14 @@
  *
  * @packageDocumentation
  */
-import type { ToolCatalog, ToolPipeline } from '@ecclium/mcp-churchtools-core';
+import {
+  isSignInRefusal,
+  presentedCredential,
+  type SignInRefusal,
+  type SignInResult,
+  type ToolCatalog,
+  type ToolPipeline,
+} from '@ecclium/mcp-churchtools-core';
 import { createMcpMount } from '@ecclium/mcp-churchtools-core/mcp';
 import type {
   Identity,
@@ -42,6 +49,7 @@ import { Hono, type MiddlewareHandler } from 'hono';
 
 import {
   asksToListen,
+  callsTool,
   maxHttpBodyBytes,
   nestsTooDeep,
   requestIdOf,
@@ -66,12 +74,13 @@ export interface HttpAppOptions {
   /** The pipeline every call runs through. */
   readonly pipeline: ToolPipeline;
   /**
-   * Checks the sign-in of one request and gives its identity, or
-   * `undefined` to refuse it with 401. A rejection counts as a refusal.
-   * There is no default: without a sign-in there is no server over HTTP
-   * (ADR 0037).
+   * Checks the sign-in of one request and gives its identity, or the
+   * reason of the refusal from the fixed list, which the server answers
+   * with 401 (ADR 0074). A rejection, an identity of another form and a
+   * reason outside the list count as the reason `failed`. There is no
+   * default: without a sign-in there is no server over HTTP (ADR 0037).
    */
-  readonly authenticate: (request: Request) => Promise<Identity | undefined>;
+  readonly authenticate: (request: Request) => Promise<SignInResult>;
   /** Assigns tenant and actor to the identity of a request, once per call. */
   readonly resolver: TenantResolver;
   /** How calls run, set by the composition root only. */
@@ -141,9 +150,11 @@ const identityKey = 'ecclium.identity';
 // never a value of the request.
 const noToken = 'checked-by-ecclium';
 
-// Events of the place ingress. They carry no field: a request is foreign
-// input, and the SDK puts parts of it into the message of an error.
+// Events of the place ingress. They carry no value of the request: it is
+// foreign input, and the SDK puts parts of it into the message of an
+// error. A refused sign-in names only its reason from the fixed list.
 const authRefusedEvent = 'http_auth_refused';
+const scopeRefusedEvent = 'http_scope_refused';
 const notJsonEvent = 'http_body_not_json';
 const unreadableEvent = 'http_body_unreadable';
 const tooLargeEvent = 'http_body_too_large';
@@ -158,7 +169,7 @@ const originRefusedEvent = 'http_origin_refused';
 type WarnEvent =
   | typeof hostRefusedEvent
   | typeof originRefusedEvent
-  | typeof authRefusedEvent
+  | typeof scopeRefusedEvent
   | typeof notJsonEvent
   | typeof unreadableEvent
   | typeof tooLargeEvent
@@ -172,6 +183,7 @@ const sentences = Object.freeze({
   host: 'This server does not answer for this host.',
   origin: 'This server does not answer requests from this origin.',
   auth: 'This server needs a valid sign-in.',
+  scope: 'This sign-in may only read. A write tool needs the scope write.',
   notJson: 'The body must be JSON, with the content type application/json.',
   unreadable: 'The body of the request could not be read.',
   tooLarge: `The body of the request is larger than ${String(maxHttpBodyBytes)} bytes.`,
@@ -197,6 +209,49 @@ const refusal = (
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// The realm of every challenge of the server (RFC 6750).
+const challenge = 'Bearer realm="ecclium"';
+
+// The answer to a refused sign-in: the same status, body and challenge for
+// every reason of a request that presented a token, so that a client
+// learns nothing about which check failed. RFC 6750 names no error for a
+// request without a token of the scheme Bearer (ADR 0074).
+const unauthorized = (reason: SignInRefusal): Response =>
+  Response.json(
+    {
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32000, message: sentences.auth },
+    },
+    {
+      status: 401,
+      headers: {
+        ...noStore,
+        'www-authenticate': presentedCredential(reason)
+          ? `${challenge}, error="invalid_token"`
+          : challenge,
+      },
+    },
+  );
+
+// The answer to a write tool called with a sign-in that may only read,
+// with the ID of its request (ADR 0074).
+const insufficientScope = (id: string | number | null): Response =>
+  Response.json(
+    {
+      jsonrpc: '2.0',
+      id,
+      error: { code: -32000, message: sentences.scope },
+    },
+    {
+      status: 403,
+      headers: {
+        ...noStore,
+        'www-authenticate': `${challenge}, error="insufficient_scope", scope="write"`,
+      },
+    },
+  );
 
 // The list of hosts as the application keeps it: left out, or at least one
 // entry of the form parseAllowedHosts gives, copied and frozen. An empty
@@ -262,8 +317,9 @@ const sources: readonly unknown[] = Object.freeze(['stdio', 'bearer', 'oauth']);
 const scopeNames: readonly unknown[] = Object.freeze(['read', 'write']);
 
 // Whether a check of the sign-in gave an identity of the form the mount
-// takes. Anything else counts as a refusal, so that a faulty check ends
-// with 401 and never with an identity the pipeline cannot read.
+// takes: known scopes, each once, as the gate of the pipeline reads them
+// (ADR 0074). Anything else counts as a refusal, so that a faulty check
+// ends with 401 and never with an identity the pipeline cannot read.
 const isIdentity = (value: unknown): value is Identity => {
   if (!isRecord(value)) return false;
   const { source, subject, scopes } = value;
@@ -272,8 +328,25 @@ const isIdentity = (value: unknown): value is Identity => {
     typeof subject === 'string' &&
     subject !== '' &&
     Array.isArray(scopes) &&
-    scopes.every((scope) => scopeNames.includes(scope))
+    scopes.every((scope) => scopeNames.includes(scope)) &&
+    new Set(scopes).size === scopes.length
   );
+};
+
+// What a check of the sign-in gave, as the place ingress takes it: an
+// identity of the form the mount takes, or a reason of the list. Anything
+// else counts as the reason failed, so that a faulty check ends with 401
+// and never with an identity the pipeline cannot read.
+const checkedSignIn = (
+  value: unknown,
+):
+  | { readonly identity: Identity; readonly reason?: undefined }
+  | { readonly reason: SignInRefusal } => {
+  if (!isRecord(value)) return { reason: 'failed' };
+  const { ok, identity, reason } = value;
+  if (ok === true && isIdentity(identity)) return { identity };
+  if (ok === false && isSignInRefusal(reason)) return { reason };
+  return { reason: 'failed' };
 };
 
 /**
@@ -287,10 +360,17 @@ const isIdentity = (value: unknown): value is Identity => {
  * - 403 for a `Host` or `Origin` that is not allowed: first the check of
  *   the adapter, which knows names only, then the exact one, which knows
  *   ports and schemes (ADR 0073);
- * - 401 without a sign-in, before the body is read;
+ * - 401 without a valid sign-in, before the body is read, with the
+ *   challenge `Bearer realm="ecclium"` in `WWW-Authenticate` and, when the
+ *   request presented a token, `error="invalid_token"`; status, body and
+ *   challenge are the same for every reason of such a request, and only
+ *   the log line names the reason (ADR 0074);
  * - 415 for a `POST` without JSON as its content type, 413 for a body over
  *   1 MiB, 400 for one that is no JSON or nests deeper than 64 levels;
  * - an error of JSON-RPC for `subscriptions/listen`, before the handler;
+ * - 403 with `error="insufficient_scope", scope="write"` for a call of a
+ *   write tool with a sign-in that may only read, after the handler, so
+ *   that the pipeline refuses the call and its audit holds it;
  * - 404 for any other path, 500 with a fixed sentence when the application
  *   itself fails.
  *
@@ -350,6 +430,24 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
       // The answer does not depend on the log.
     }
   };
+  const refuseSignIn = (reason: SignInRefusal): Response => {
+    try {
+      logger.warn(authRefusedEvent, { reason });
+    } catch {
+      // The answer does not depend on the log.
+    }
+    return unauthorized(reason);
+  };
+
+  // The write tools of the catalog, the same the mount hides from a
+  // sign-in without the scope write and the gate of the pipeline refuses
+  // to it (ADR 0074).
+  const writeTools: ReadonlySet<string> = new Set(
+    options.catalog
+      .list()
+      .filter((entry) => entry.meta.capability === 'write')
+      .map((entry) => entry.name),
+  );
 
   const identityOf = (context: McpRequestContext): Identity | undefined => {
     const extra = context.authInfo?.extra;
@@ -398,16 +496,15 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
     });
 
   const serve = async (request: Request): Promise<Response> => {
-    let identity: unknown;
+    let signedIn: unknown;
     try {
-      identity = await authenticate(request);
+      signedIn = await authenticate(request);
     } catch {
-      identity = undefined;
+      signedIn = undefined;
     }
-    if (!isIdentity(identity)) {
-      warn(authRefusedEvent);
-      return refusal(401, -32000, sentences.auth);
-    }
+    const checked = checkedSignIn(signedIn);
+    if (checked.reason !== undefined) return refuseSignIn(checked.reason);
+    const { identity } = checked;
     const authInfo = authInfoOf(identity);
     if (request.method !== 'POST') {
       return asJsonWhenSingle(await handler.fetch(request, { authInfo }));
@@ -450,9 +547,27 @@ export function createHttpApp(options: HttpAppOptions): HttpApp {
       warn(listenRefusedEvent);
       return refusal(200, -32601, sentences.listen, requestIdOf(parsed));
     }
-    return asJsonWhenSingle(
-      await handler.fetch(request, { authInfo, parsedBody: parsed }),
-    );
+    // A write tool called with a sign-in that may only read still runs
+    // through the handler, so that the gate of the pipeline refuses it and
+    // the audit holds the refused call, at one place for every way in. Its
+    // answer is read to the end, so that the call is over, and then
+    // replaced by 403 (ADR 0074).
+    const refusedScope =
+      !identity.scopes.includes('write') && callsTool(parsed, writeTools);
+    const answer = await handler.fetch(request, {
+      authInfo,
+      parsedBody: parsed,
+    });
+    if (refusedScope) {
+      try {
+        await answer.arrayBuffer();
+      } catch {
+        // The call ended either way; the answer is replaced.
+      }
+      warn(scopeRefusedEvent);
+      return insufficientScope(requestIdOf(parsed));
+    }
+    return asJsonWhenSingle(answer);
   };
 
   // Runs a check of the adapter and puts a fixed sentence in place of its

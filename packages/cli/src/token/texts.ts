@@ -181,8 +181,30 @@ export const listHeader = [
   'Scopes',
   'erstellt',
   'gilt bis und mit',
+  'zuletzt benutzt',
   'Zustand',
 ];
+
+/**
+ * The last use of a token, for `ecclium token list` (ADR 0074): the day the
+ * server noted, «nie» when the folder of state holds none, and «unbekannt»
+ * without a folder of state, while its folder `quota` is missing, or when
+ * it could not be read.
+ *
+ * @param lastUse - The day, `null` when the folder holds none, or
+ *   `undefined` when it is unknown.
+ * @returns A day or a word.
+ * @example
+ * ```ts
+ * lastUseText('2026-11-26'); // '26.11.2026'
+ * lastUseText(undefined); // 'unbekannt'
+ * ```
+ */
+export function lastUseText(lastUse: string | null | undefined): string {
+  if (lastUse === undefined) return 'unbekannt';
+  if (lastUse === null) return 'nie';
+  return germanDay(lastUse);
+}
 
 /**
  * The state of a token on a day, for `ecclium token list`. Within 30 days

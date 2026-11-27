@@ -19,6 +19,12 @@ import { createPolicyGate, policySentences } from './policy-gate.js';
 import type { IntentRules, TargetKind } from './rules.js';
 import { addRunWrite, createRunWrites, runWriteCount } from './run-writes.js';
 
+// The last use of a sign-in plays no part in these tests (ADR 0074).
+const noLastUse = Object.freeze({
+  noteLastUse: () => Promise.resolve(),
+  readLastUse: () => Promise.resolve(undefined),
+});
+
 const guid = '0000000a-0000-4000-8000-000000000001';
 const now = Date.UTC(2026, 11, 1, 8, 0, 0);
 
@@ -140,6 +146,7 @@ const watched = () => {
   const store = createMemoryQuotaStore();
   let raised = 0;
   const quota: QuotaStore = {
+    ...noLastUse,
     read: (ctx, key, day) => store.read(ctx, key, day),
     increment: (ctx, key, day) => {
       raised += 1;
@@ -337,7 +344,7 @@ describe('the policy in the write guard', () => {
   const failing = (
     read: QuotaStore['read'],
     increment: QuotaStore['increment'] = read,
-  ): QuotaStore => ({ read, increment });
+  ): QuotaStore => ({ ...noLastUse, read, increment });
 
   it.each([
     ['no store', null, undefined],
@@ -645,6 +652,7 @@ describe('the policy in the write guard for a run of a routine', () => {
     const { gate, ctx, events } = runSetup({
       mode: 'operator',
       quota: {
+        ...noLastUse,
         read: () => Promise.reject(new Error('disk')),
         increment: () => Promise.reject(new Error('disk')),
       },

@@ -29,6 +29,7 @@ import type {
   Logger,
   Mode,
   RedactionLevel,
+  Scope,
   TenantAssignment,
   TenantId,
   TenantResolver,
@@ -61,6 +62,7 @@ import { fixedSentences } from '../errors/index.js';
 import { isStrictLevel } from '../redaction/pseudonym-form.js';
 import {
   type ConfirmationAnswer,
+  scopesOf,
   tenantOfAssignment,
   type ToolPipeline,
 } from '../pipeline/index.js';
@@ -253,6 +255,12 @@ const isVersion = (value: unknown): value is string => {
  * stands also when the catalog offers no prompt, so the answer to the
  * handshake does not change with the toolsets.
  *
+ * The scopes of the identity decide which tools an instance lists: an
+ * identity without `write` sees no write tool, and each call hands the
+ * scopes to the pipeline, whose gate refuses such a tool all the same
+ * (ADR 0074). Over stdio the identity has `write` exactly when the server
+ * may write, and then the catalog holds the write tools.
+ *
  * A call resolves tenant and actor for its identity, the one of the start
  * over stdio or the one of its request over HTTP; an answer of the
  * resolver that is no object, or a rejection, counts as no tenant, which
@@ -332,6 +340,9 @@ export function createMcpMount(options: McpMountOptions): McpMount {
         });
 
   const tools: Tool[] = [];
+  // The tools of a sign-in without the scope write: every tool but the
+  // write tools (ADR 0074).
+  const readTools: Tool[] = [];
   const outputSchemas = new Map<string, ObjectJsonSchema>();
   // In the level strict an ID of a person is a pseudonym in input and
   // output, a string (ADR 0069).
@@ -339,17 +350,18 @@ export function createMcpMount(options: McpMountOptions): McpMount {
   for (const entry of catalog.list()) {
     const outputSchema = deriveOutputSchema(entry.shape, redaction);
     outputSchemas.set(entry.name, outputSchema);
-    tools.push(
-      Object.freeze({
-        name: entry.name,
-        description: entry.description,
-        inputSchema: pseudonyms ? entry.strictInputSchema : entry.inputSchema,
-        outputSchema,
-        annotations: deriveAnnotations(entry.meta),
-      }),
-    );
+    const tool: Tool = Object.freeze({
+      name: entry.name,
+      description: entry.description,
+      inputSchema: pseudonyms ? entry.strictInputSchema : entry.inputSchema,
+      outputSchema,
+      annotations: deriveAnnotations(entry.meta),
+    });
+    tools.push(tool);
+    if (entry.meta.capability !== 'write') readTools.push(tool);
   }
   Object.freeze(tools);
+  Object.freeze(readTools);
 
   // A failing logger never breaks the protocol. Each event has a fixed name
   // and each call its own level, so that the check of the log lines sees
@@ -463,7 +475,11 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     }
   };
 
-  const listTools = (): ListToolsResult => ({ tools });
+  // The same rule as in the gate of the pipeline, read from the same
+  // catalog: a write tool needs the scope write (ADR 0074).
+  const listTools = (scopes: readonly Scope[]): ListToolsResult => ({
+    tools: scopes.includes('write') ? tools : readTools,
+  });
 
   const listPrompts = (): ListPromptsResult => ({ prompts });
 
@@ -559,6 +575,7 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     instance: McpServer,
     era: 'legacy' | 'modern',
     who: Identity | undefined,
+    scopes: readonly Scope[],
     request: CallToolRequest,
     ctx: ServerContext,
   ): Promise<CallToolResult | InputRequiredResult> => {
@@ -583,6 +600,7 @@ export function createMcpMount(options: McpMountOptions): McpMount {
           mode,
           redaction,
           readOnly,
+          scopes,
           features: noFeatures,
           signal,
           elicitation:
@@ -630,6 +648,9 @@ export function createMcpMount(options: McpMountOptions): McpMount {
         who = undefined;
       }
     }
+    // The scopes of this instance, read once, so that the list of tools
+    // and every call of it see the same ones (ADR 0074).
+    const scopes = scopesOf(who);
     // No capabilities here: with them, the SDK installs handlers of its
     // own, which check input and output before any code of the mount runs
     // (ADR 0053). The codec checks a requestState before the handler, and
@@ -657,9 +678,9 @@ export function createMcpMount(options: McpMountOptions): McpMount {
       tools: { listChanged: false },
       prompts: { listChanged: false },
     });
-    instance.server.setRequestHandler('tools/list', listTools);
+    instance.server.setRequestHandler('tools/list', () => listTools(scopes));
     instance.server.setRequestHandler('tools/call', (request, ctx) =>
-      callTool(instance, era, who, request, ctx),
+      callTool(instance, era, who, scopes, request, ctx),
     );
     instance.server.setRequestHandler('prompts/list', listPrompts);
     instance.server.setRequestHandler(

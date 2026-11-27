@@ -137,12 +137,14 @@ beforeAll(async () => {
       toolsets: new Set(['wiki'] as const),
     }),
     pipeline,
-    authenticate: (request) =>
-      Promise.resolve(
-        request.headers.get('authorization') === `Bearer ${token}`
-          ? identity
-          : undefined,
-      ),
+    authenticate: (request) => {
+      const header = request.headers.get('authorization');
+      return Promise.resolve(
+        header === `Bearer ${token}`
+          ? { ok: true, identity }
+          : { ok: false, reason: header === null ? 'missing' : 'unknown' },
+      );
+    },
     resolver,
     mode: 'interactive',
     redaction: 'standard',
@@ -370,6 +372,11 @@ describe('the server over HTTP on 127.0.0.1', () => {
     const answer = await client.answer();
     client.end();
     expect(answer?.status).toBe(401);
+    // The challenge of the sign-in passes the bridge (ADR 0074).
+    expect(answer?.headers).toContainEqual([
+      'www-authenticate',
+      'Bearer realm="ecclium"',
+    ]);
   });
 
   it('answers OPTIONS without a header for CORS, with and without a sign-in', async () => {

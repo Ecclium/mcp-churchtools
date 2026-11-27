@@ -3,6 +3,7 @@ import type {
   QuotaKey,
   QuotaStore,
   TenantContext,
+  TenantId,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
@@ -11,6 +12,12 @@ import {
   type QuotaMemory,
   quotaStoreChecks,
 } from './index.js';
+
+// The last use of a sign-in plays no part in a store that counts wrong.
+const noLastUse = Object.freeze({
+  noteLastUse: () => Promise.resolve(),
+  readLastUse: () => Promise.resolve(undefined),
+});
 
 describe('the store of quotas in memory', () => {
   it.each(quotaStoreChecks)('$name', async ({ run }) => {
@@ -48,6 +55,7 @@ describe('the checks of a store of quotas', () => {
     const keyOf = (ctx: TenantContext, key: QuotaKey, day: IsoDate): string =>
       JSON.stringify([ctx.tenantId, ctx.actor.kind, ctx.actor.id, key, day]);
     return {
+      ...noLastUse,
       increment: (ctx, key, day) => {
         if (day > latest) {
           latest = day;
@@ -106,6 +114,7 @@ describe('the checks of a store of quotas', () => {
     const keyOf = (ctx: TenantContext, key: QuotaKey, day: IsoDate): string =>
       JSON.stringify([ctx.tenantId, key, day]);
     const anyDay: QuotaStore = {
+      ...noLastUse,
       increment: (ctx, key, day) => {
         const value = (memory.get(keyOf(ctx, key, day)) ?? 0) + 1;
         memory.set(keyOf(ctx, key, day), value);
@@ -122,6 +131,7 @@ describe('the checks of a store of quotas', () => {
       name.includes('run of another form'),
     );
     const lax = {
+      ...noLastUse,
       increment: () => Promise.resolve(1),
       read: () => Promise.resolve(0),
     };
@@ -144,10 +154,80 @@ describe('the checks of a store of quotas', () => {
       name.includes('decision of another form'),
     );
     const lax = {
+      ...noLastUse,
       increment: () => Promise.resolve(1),
       read: () => Promise.resolve(0),
     };
     await expect(check?.run(() => lax)).rejects.toThrow();
+  });
+
+  // Stores that keep the last use of a sign-in wrong, each built on the
+  // store in memory with its two methods replaced (ADR 0074).
+  const lastUseWrong = (
+    kind: 'back' | 'forever' | 'shared' | 'lax',
+  ): QuotaStore => {
+    const store = createMemoryQuotaStore();
+    const days = new Map<string, IsoDate>();
+    switch (kind) {
+      case 'back':
+        // Takes every day, also an earlier one.
+        return {
+          ...store,
+          noteLastUse: (tenantId, key, day) => {
+            days.set(JSON.stringify([tenantId, key]), day);
+            return Promise.resolve();
+          },
+          readLastUse: (tenantId, key) =>
+            Promise.resolve(days.get(JSON.stringify([tenantId, key]))),
+        };
+      case 'forever':
+        // Never removes an old day.
+        return {
+          ...store,
+          noteLastUse: (tenantId, key, day) => {
+            const entry = JSON.stringify([tenantId, key]);
+            const held = days.get(entry);
+            if (held === undefined || held < day) days.set(entry, day);
+            return Promise.resolve();
+          },
+          readLastUse: (tenantId, key) =>
+            Promise.resolve(days.get(JSON.stringify([tenantId, key]))),
+        };
+      case 'shared':
+        // Keeps one day per key for every tenant.
+        return {
+          ...store,
+          noteLastUse: (_tenantId, key, day) =>
+            store.noteLastUse('demo-tenant' as TenantId, key, day),
+          readLastUse: (_tenantId, key) =>
+            store.readLastUse('demo-tenant' as TenantId, key),
+        };
+      case 'lax':
+        // Takes any key and keeps nothing.
+        return { ...store, ...noLastUse };
+    }
+  };
+
+  it.each([
+    ['moves a day back', 'back', 'keeps the later day of a use'],
+    ['keeps every day forever', 'forever', 'removes a day of the tenant'],
+    [
+      'keeps one day for every tenant',
+      'shared',
+      'keeps the last use per tenant',
+    ],
+    ['takes any key', 'lax', 'refuses a key, a day or a tenant'],
+  ] as const)('fail for a store that %s', async (_name, kind, prefix) => {
+    const check = quotaStoreChecks.find(({ name }) => name.startsWith(prefix));
+    expect(check).toBeDefined();
+    // One store for every open: it stands for a store over the same
+    // storage, so that only the wrong method can fail the check.
+    const wrong = lastUseWrong(kind);
+    await expect(check?.run(() => wrong)).rejects.toThrow();
+    const memory: QuotaMemory = new Map();
+    await expect(
+      check?.run(() => createMemoryQuotaStore(memory)),
+    ).resolves.toBeUndefined();
   });
 
   it('fail for a store that takes any day', async () => {
@@ -156,6 +236,7 @@ describe('the checks of a store of quotas', () => {
     );
     const loose = createMemoryQuotaStore();
     const lax = {
+      ...noLastUse,
       increment: () => Promise.resolve(1),
       read: () => Promise.resolve(0),
     };

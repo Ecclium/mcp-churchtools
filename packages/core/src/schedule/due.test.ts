@@ -19,6 +19,12 @@ import {
   startAttempt,
 } from './due.js';
 
+// The last use of a sign-in plays no part in these tests (ADR 0074).
+const noLastUse = Object.freeze({
+  noteLastUse: () => Promise.resolve(),
+  readLastUse: () => Promise.resolve(undefined),
+});
+
 const at = (iso: string): number => Date.parse(iso);
 const minutes = (count: number): number => count * 60_000;
 const days = (count: number): number => count * 86_400_000;
@@ -271,7 +277,7 @@ describe('checkDue', () => {
   ])(
     'is unavailable when the store %s, and begins no run',
     async (_name, fail) => {
-      const store: QuotaStore = { read: fail, increment: fail };
+      const store: QuotaStore = { ...noLastUse, read: fail, increment: fail };
       const options = optionsFor(movable(monday + minutes(5)), store);
       await expect(checkDue(options)).resolves.toEqual({
         status: 'unavailable',
@@ -289,6 +295,7 @@ describe('checkDue', () => {
   it('is unavailable when the store does not answer within 5 seconds', async () => {
     vi.useFakeTimers();
     const store: QuotaStore = {
+      ...noLastUse,
       read: () => new Promise<number>(() => undefined),
       increment: () => new Promise<number>(() => undefined),
     };
@@ -310,6 +317,7 @@ describe('checkDue', () => {
 
   it('is unavailable when its next window is not until the next trigger', async () => {
     const store: QuotaStore = {
+      ...noLastUse,
       read: () => Promise.reject(new Error('disk')),
       increment: () => Promise.reject(new Error('disk')),
     };
@@ -320,7 +328,7 @@ describe('checkDue', () => {
 
   it('refuses a routine ID, a schedule and a zone that do not fit, before it asks the store', async () => {
     const read = vi.fn(() => Promise.resolve(0));
-    const store: QuotaStore = { read, increment: read };
+    const store: QuotaStore = { ...noLastUse, read, increment: read };
     const clock = movable(monday);
     for (const extra of [
       { routineId: 'Dienstplan' },
@@ -430,6 +438,7 @@ describe('startAttempt', () => {
   it('waits after a start that counted its window but not its try', async () => {
     const memory = createMemoryQuotaStore();
     const failTries: QuotaStore = {
+      ...noLastUse,
       read: (ctx, key, day) => memory.read(ctx, key, day),
       increment: (ctx, key, day) =>
         key.endsWith(':tries')

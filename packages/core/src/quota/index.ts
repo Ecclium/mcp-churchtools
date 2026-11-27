@@ -10,6 +10,7 @@ export {
   type FileQuotaStoreOptions,
   lockWaitMs,
   maxApprovalKeys,
+  maxLastUseKeys,
   maxRunKeys,
   maxQuotaActors,
   maxWriteKeysPerActor,

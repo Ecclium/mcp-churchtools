@@ -26,6 +26,12 @@ import { quotaTimeoutMs, specialReadBudget } from '../quota/index.js';
 import { createToolCatalog } from '../registry/index.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
+// The last use of a sign-in plays no part in these tests (ADR 0074).
+const noLastUse = Object.freeze({
+  noteLastUse: () => Promise.resolve(),
+  readLastUse: () => Promise.resolve(undefined),
+});
+
 // The daily read budget of the tools with sensitivity special (ADR 0063):
 // one budget for all of them, per actor and UTC day, counted once the input
 // is valid and before ChurchTools is asked. The store is one in memory or
@@ -382,7 +388,7 @@ describe('the daily read budget', () => {
     ['answers NaN', () => Promise.resolve(Number.NaN)],
   ])('refuses the call when the store %s', async (_, increment) => {
     const { call } = setup({
-      quota: { increment, read: () => Promise.resolve(0) },
+      quota: { ...noLastUse, increment, read: () => Promise.resolve(0) },
     });
     expect(await call('ct_test_special')).toEqual({
       ok: false,
@@ -395,6 +401,7 @@ describe('the daily read budget', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const { call } = setup({
       quota: {
+        ...noLastUse,
         increment: () => new Promise<number>(() => undefined),
         read: () => Promise.resolve(0),
       },
@@ -413,6 +420,7 @@ describe('the daily read budget', () => {
     const counting: ((value: number) => void)[] = [];
     const { call } = setup({
       quota: {
+        ...noLastUse,
         increment: () =>
           new Promise<number>((resolve) => {
             counting.push(resolve);

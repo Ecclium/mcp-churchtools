@@ -27,6 +27,7 @@ export {
   type ToolPipelineOptions,
   type ToolRequest,
   maxAdoptionWrites,
+  scopesOf,
   tenantOfAssignment,
   type UndoCall,
   type UndoOutcome,

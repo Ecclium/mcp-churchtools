@@ -7,6 +7,10 @@
  * A command that changes the file holds a lock beside it from before its
  * read until after its write.
  *
+ * `list` names the day each token was last used when `ECCLIUM_STATE_DIR`
+ * is set, from the store of quotas in which the server notes it, and
+ * «unbekannt» otherwise; it never creates a folder there.
+ *
  * A token appears once, alone on stdout, so that `> file` takes it without
  * a text; every other line goes to stderr. It appears only after its hash
  * is in the file: a token that is shown always works. No text repeats an
@@ -22,6 +26,8 @@
  *
  * @packageDocumentation
  */
+import { hostname } from 'node:os';
+
 import {
   addDays,
   bearerRotationDays,
@@ -36,10 +42,12 @@ import {
   loadTokenCommandConfig,
   maxBearerTokenDays,
   maxBearerTokens,
+  readBearerLastUse,
   readBearerTokensFile,
   serializeBearerTokens,
 } from '@ecclium/mcp-churchtools-core';
-import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
+import { createFileQuotaStore } from '@ecclium/mcp-churchtools-core/composition';
+import type { Clock, QuotaStore } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { problemLines } from '../commands/audit-texts.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -47,6 +55,7 @@ import type { Output } from '../output/index.js';
 import {
   createdText,
   germanDay,
+  lastUseText,
   listHeader,
   revokedText,
   rotatedText,
@@ -89,6 +98,11 @@ export interface TokenOptions {
   readonly readFiles?: ConfigFileSystem | undefined;
   /** Replaces the file functions of the writer, for tests. */
   readonly writeFiles?: WriterFileSystem | undefined;
+  /**
+   * Replaces the store of quotas over the folder of state, for tests. It
+   * is asked only with `ECCLIUM_STATE_DIR` set.
+   */
+  readonly lastUseStore?: QuotaStore | undefined;
 }
 
 const systemTime: Clock = Object.freeze({ now: () => Date.now() });
@@ -168,10 +182,12 @@ const lockExitCodes: Readonly<Record<LockRefusal, ExitCode>> = Object.freeze({
 const pad = (text: string, width: number): string =>
   text + ' '.repeat(Math.max(0, width - text.length));
 
-// The table of `list`, one line per entry, sorted by name and days.
+// The table of `list`, one line per entry, sorted by name and days. The
+// last use belongs to the name, so two entries of a rotation share it.
 const tableOf = (
   entries: readonly BearerTokenEntry[],
   today: string,
+  lastUses: ReadonlyMap<string, string | null>,
 ): readonly string[] => {
   const rows = [...entries]
     .sort(
@@ -184,6 +200,7 @@ const tableOf = (
       entry.scopes.join(','),
       germanDay(entry.createdAt),
       germanDay(entry.expiresAt),
+      lastUseText(lastUses.get(entry.name)),
       stateText(daysBetween(today, entry.expiresAt)),
     ]);
   const all = [listHeader, ...rows];
@@ -209,10 +226,10 @@ const tableOf = (
  *   turns into 70.
  * @example
  * ```ts
- * runToken({ environment, action: 'create', name: 'claude-code-buero', output });
+ * await runToken({ environment, action: 'create', name: 'claude-code-buero', output });
  * ```
  */
-export function runToken(options: TokenOptions): ExitCode {
+export async function runToken(options: TokenOptions): Promise<ExitCode> {
   const { output, action } = options;
 
   // The call first: nothing is loaded or read for a wrong one.
@@ -236,8 +253,16 @@ export function runToken(options: TokenOptions): ExitCode {
   }
   const path = loaded.config.httpTokensFile;
   const writeFiles = options.writeFiles ?? nodeWriterFileSystem;
-  const now = (options.clock ?? systemTime).now();
-  if (action === 'list') return onFile(options, days, path, writeFiles, now);
+  const clock = options.clock ?? systemTime;
+  const now = clock.now();
+  if (action === 'list') {
+    const read = readEntries(options, path, writeFiles);
+    if (!read.ok) return read.code;
+    return listEntries(options, read.entries, dayOf(now), {
+      stateDir: loaded.config.stateDir,
+      clock,
+    });
+  }
   // A command that changes the file holds its lock from before the read
   // until after the write, so that no second command undoes its change.
   const lock = lockTokensFile(path, now, writeFiles);
@@ -246,24 +271,30 @@ export function runToken(options: TokenOptions): ExitCode {
     return lockExitCodes[lock.reason];
   }
   try {
-    return onFile(options, days, path, writeFiles, now);
+    return onFile({ ...options, action }, days, path, writeFiles, now);
   } finally {
     lock.release();
   }
 }
 
-// The read, the change and the write of one command, under its lock when
-// it changes the file. The name and the days passed their checks.
-function onFile(
+// The entries of the file and its identity before the read, or the exit
+// code after the text for the problem.
+type EntriesRead =
+  | {
+      readonly ok: true;
+      readonly entries: readonly BearerTokenEntry[];
+      readonly before: FileIdentity | undefined;
+    }
+  | { readonly ok: false; readonly code: ExitCode };
+
+// Reads the file for one command. A missing file holds no entries for
+// `create` only.
+function readEntries(
   options: TokenOptions,
-  days: number,
   path: string,
   writeFiles: WriterFileSystem,
-  now: number,
-): ExitCode {
-  const { output, action, name } = options;
-  const today = dayOf(now);
-
+): EntriesRead {
+  const { output, action } = options;
   // What the file is before and after the read: a change in between would
   // make the entries read a mix of two files.
   const before: FileIdentity | undefined = identityOf(path, writeFiles);
@@ -272,30 +303,76 @@ function onFile(
   const missing = !read.ok && read.code === 'bearer_tokens_file_missing';
   if ((read.ok || missing) && !sameIdentity(before, after)) {
     output.stderr(tokenTexts.changed);
-    return exitCodes.tempFail;
+    return { ok: false, code: exitCodes.tempFail };
   }
-  let entries: readonly BearerTokenEntry[];
-  if (read.ok) {
-    entries = read.entries;
-  } else if (missing && action === 'create') {
-    entries = [];
-  } else {
-    output.stderr(
-      read.code === 'bearer_tokens_file_missing' && action !== 'list'
-        ? tokenTexts.missingForChange
-        : tokensFileText(read.code, read.field, read.line),
-    );
-    return readExitCode(read.code);
-  }
+  if (read.ok) return { ok: true, entries: read.entries, before };
+  if (missing && action === 'create') return { ok: true, entries: [], before };
+  output.stderr(
+    read.code === 'bearer_tokens_file_missing' && action !== 'list'
+      ? tokenTexts.missingForChange
+      : tokensFileText(read.code, read.field, read.line),
+  );
+  return { ok: false, code: readExitCode(read.code) };
+}
 
-  if (action === 'list') {
-    if (entries.length === 0) {
-      output.stdout(tokenTexts.empty);
-      return exitCodes.ok;
-    }
-    for (const line of tableOf(entries, today)) output.stdout(line);
+// `list`: the table, with the day each name was last used, which the
+// server keeps in the store of quotas of its folder of state (ADR 0074).
+// The store is opened for reading only and never creates its folder; a
+// name it cannot read counts as unknown, and the command still lists.
+async function listEntries(
+  options: TokenOptions,
+  entries: readonly BearerTokenEntry[],
+  today: string,
+  where: { readonly stateDir: string | undefined; readonly clock: Clock },
+): Promise<ExitCode> {
+  const { output } = options;
+  if (entries.length === 0) {
+    output.stdout(tokenTexts.empty);
     return exitCodes.ok;
   }
+  const lastUses = new Map<string, string | null>();
+  if (where.stateDir !== undefined) {
+    let store: QuotaStore | undefined = options.lastUseStore;
+    try {
+      store ??= createFileQuotaStore({
+        stateDir: where.stateDir,
+        clock: where.clock,
+        pid: process.pid,
+        host: hostname(),
+      });
+    } catch {
+      store = undefined;
+    }
+    for (const name of new Set(entries.map((entry) => entry.name))) {
+      if (store === undefined) break;
+      try {
+        lastUses.set(name, (await readBearerLastUse(store, name)) ?? null);
+      } catch {
+        // Unknown for this name; the others may still read.
+      }
+    }
+  }
+  for (const line of tableOf(entries, today, lastUses)) output.stdout(line);
+  return exitCodes.ok;
+}
+
+// The read, the change and the write of one command that changes the file,
+// under its lock. The name and the days passed their checks.
+function onFile(
+  options: TokenOptions & {
+    readonly action: Exclude<TokenAction, 'list'>;
+  },
+  days: number,
+  path: string,
+  writeFiles: WriterFileSystem,
+  now: number,
+): ExitCode {
+  const { output, action, name } = options;
+  const today = dayOf(now);
+
+  const read = readEntries(options, path, writeFiles);
+  if (!read.ok) return read.code;
+  const { entries, before } = read;
 
   // From here on the name passed its check.
   const checkedName = name as string;

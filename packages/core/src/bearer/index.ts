@@ -22,6 +22,13 @@ export {
   serializeBearerTokens,
 } from './file.js';
 export {
+  type BearerLastUse,
+  type BearerSignIn,
+  type BearerSignInOptions,
+  createBearerSignIn,
+  readBearerLastUse,
+} from './sign-in.js';
+export {
   type BearerLookup,
   type BearerRefusal,
   type BearerScope,

@@ -63,6 +63,7 @@ import {
   type QuotaStore,
   type RedactionLevel,
   type RunId,
+  type Scope,
   type TenantAssignment,
   type TenantContext,
   type TenantId,
@@ -203,6 +204,17 @@ export interface ToolRequest {
   readonly redaction: RedactionLevel;
   /** Whether the server only reads. */
   readonly readOnly: boolean;
+  /**
+   * The scopes of the sign-in of the request (ADR 0037, ADR 0074). A write
+   * tool needs `write`: without it the call ends in the gate with
+   * `permission`, as a refused call in the audit, before its input is
+   * checked and before the answer of a second round commits anything.
+   * Unset, or anything but an array of `read` and `write`, counts as no
+   * scope, so that a caller who forgets them never writes. A write of a
+   * run does not come through here: it has no sign-in, and the policy and
+   * the account of the runner decide (ADR 0032).
+   */
+  readonly scopes?: readonly Scope[];
   /** Licensed features, empty in the free core. */
   readonly features: readonly FeatureKey[];
   /** The signal of the request, aborted when the client cancels it. */
@@ -1109,6 +1121,59 @@ const failed = (
       : 'error',
 });
 
+// A write tool called with a sign-in that may only read (ADR 0074). The
+// sign-in holds and only the right is missing, so the code is permission,
+// and the audit line says denied, as for every refused write. The fixed
+// sentence of permission speaks of the account of the server, so the
+// call gets its own.
+const scopeRefusal = (): {
+  readonly outcome: ToolOutcome;
+  readonly audit: AuditOutcome;
+} => ({
+  outcome: failed(
+    'permission',
+    'This sign-in may only read. A write tool needs the scope write.',
+  ).outcome,
+  audit: 'denied',
+});
+
+const knownScopes: readonly unknown[] = Object.freeze(['read', 'write']);
+const noScopes: readonly Scope[] = Object.freeze([]);
+
+/**
+ * The scopes in the field `scopes` of an identity or a request, read the
+ * way the pipeline reads them (ADR 0074): an own data property that is an
+ * array, no proxy, of known scopes only, each read as own data, so that
+ * no getter and no trap runs. Anything else gives no scope at all, so
+ * that an identity or a request built wrong never counts as one that may
+ * write. The mount lists the tools of an identity with it.
+ *
+ * @param value - An identity, a request or anything else.
+ * @returns The scopes, frozen, in their order; empty for anything else.
+ * @example
+ * ```ts
+ * scopesOf({ scopes: ['read', 'write'] }); // ['read', 'write']
+ * scopesOf({ scopes: ['admin'] }); // []
+ * ```
+ */
+export const scopesOf = (value: unknown): readonly Scope[] => {
+  const scopes = isPlainTarget(value) ? ownData(value, 'scopes') : undefined;
+  if (!Array.isArray(scopes) || isProxy(scopes)) return noScopes;
+  const length = ownData(scopes, 'length');
+  if (typeof length !== 'number' || length > knownScopes.length) {
+    return noScopes;
+  }
+  const copy: Scope[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const scope = ownData(scopes, String(index));
+    if (!knownScopes.includes(scope) || copy.includes(scope as Scope)) {
+      return noScopes;
+    }
+    copy.push(scope as Scope);
+  }
+  return Object.freeze(copy);
+};
+
 /** The state of one call, for its `finally`. */
 interface Run {
   /** The ID of the call, bound to its log lines and given to the audit. */
@@ -1551,6 +1616,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const redaction = request.redaction;
     run.redaction = redaction;
     const readOnly = request.readOnly;
+    const scopes = scopesOf(request);
     const features = [...request.features];
     const requestSignal = request.signal;
     // What the mount knows of the confirmation: whether the client can be
@@ -1629,6 +1695,19 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // 0028, ADR 0029).
     const { meta } = entry;
     const writes = meta.capability === 'write';
+    // A write tool needs the scope write of the sign-in, first of all, so
+    // that a sign-in that may only read learns nothing from a later check
+    // (ADR 0074). A run has no sign-in: its reads never write, and for its
+    // writes the policy and the account of the runner decide (ADR 0032,
+    // ADR 0033).
+    if (
+      writes &&
+      forRun === undefined &&
+      forWrite === undefined &&
+      !scopes.includes('write')
+    ) {
+      return scopeRefusal();
+    }
     // A command of the operator may read the account of its own token with
     // ct_whoami of the core, as `ecclium doctor` does for each account of
     // the runner (ADR 0035): the tool names no other person and no data of

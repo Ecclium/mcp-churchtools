@@ -1397,6 +1397,8 @@ describe('which tools write for a run', () => {
         mode: 'unattended',
         redaction: 'standard',
         readOnly: false,
+        // Even with the scope write: a call never writes unattended.
+        scopes: ['read', 'write'],
         features: [],
         signal: new AbortController().signal,
       },

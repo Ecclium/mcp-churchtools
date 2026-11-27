@@ -80,6 +80,34 @@ export function asksToListen(value: unknown): boolean {
 }
 
 /**
+ * Tells whether a parsed body calls one of the named tools with
+ * `tools/call`, alone or as a member of a list, like
+ * {@link asksToListen}.
+ *
+ * @param value - A value JSON.parse returned.
+ * @param names - The names of the tools, such as the write tools of the
+ *   catalog.
+ * @returns Whether a message of the body calls one of them.
+ * @example
+ * ```ts
+ * callsTool(
+ *   { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'ct_wiki_page_update' } },
+ *   new Set(['ct_wiki_page_update']),
+ * ); // true
+ * ```
+ */
+export function callsTool(value: unknown, names: ReadonlySet<string>): boolean {
+  const messages: readonly unknown[] = Array.isArray(value) ? value : [value];
+  return messages.some((message) => {
+    if (!isRecord(message) || message['method'] !== 'tools/call') return false;
+    const params = message['params'];
+    if (!isRecord(params)) return false;
+    const name = params['name'];
+    return typeof name === 'string' && names.has(name);
+  });
+}
+
+/**
  * The ID of a single request in a parsed body, to answer a refusal with
  * it, or `null` when there is none of a form JSON-RPC allows.
  *

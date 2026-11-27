@@ -11,11 +11,15 @@ import assert from 'node:assert/strict';
 import {
   type ActorKind,
   approvalQuotaKey,
+  bearerLastUseKey,
   isApprovalQuotaKey,
+  isLastUseKey,
   type IsoDate,
   isIsoDate,
   isQuotaKey,
   isRunQuotaKey,
+  lastUseKeepDays,
+  type LastUseKey,
   type QuotaKey,
   type QuotaStore,
   runCountDays,
@@ -91,8 +95,43 @@ export function createMemoryQuotaStore(
       }),
     read: (ctx: TenantContext, key: QuotaKey, day: IsoDate) =>
       Promise.resolve().then(() => memory.get(keyOf(ctx, key, day)) ?? 0),
+    // A day of a last use lies in the same memory, as the number of days
+    // since 1970, under its tenant and key (ADR 0074).
+    noteLastUse: (tenantId: TenantId, key: LastUseKey, day: IsoDate) =>
+      Promise.resolve().then(() => {
+        const entry = lastUseOf(tenantId, key);
+        if (!isIsoDate(day)) throw new TypeError('The day is invalid.');
+        const noted = Date.parse(day) / dayMs;
+        const held = memory.get(entry);
+        if (held !== undefined && held >= noted) return;
+        memory.set(entry, noted);
+        const prefix = JSON.stringify(['last-use', tenantId]).slice(0, -1);
+        for (const [other, value] of memory) {
+          if (other.startsWith(prefix) && value < noted - lastUseKeepDays) {
+            memory.delete(other);
+          }
+        }
+      }),
+    readLastUse: (tenantId: TenantId, key: LastUseKey) =>
+      Promise.resolve().then(() => {
+        const held = memory.get(lastUseOf(tenantId, key));
+        return held === undefined
+          ? undefined
+          : (new Date(held * dayMs).toISOString().slice(0, 10) as IsoDate);
+      }),
   });
 }
+
+const dayMs = 86_400_000;
+
+// The entry of a last use in the memory of the store in memory.
+const lastUseOf = (tenantId: TenantId, key: LastUseKey): string => {
+  if (typeof tenantId !== 'string' || tenantId === '') {
+    throw new TypeError('The tenant is invalid.');
+  }
+  if (!isLastUseKey(key)) throw new TypeError('The key is unknown.');
+  return JSON.stringify(['last-use', tenantId, key]);
+};
 
 /**
  * Opens a store. Every call over the same storage stands for the store
@@ -119,6 +158,10 @@ const key: QuotaKey = 'special_reads';
 const one = quotaContext('demo-tenant', 'service', 'stdio:local-stdio');
 // The counter of a decision about an entry of the queue (ADR 0029).
 const decision = approvalQuotaKey('5e'.repeat(32));
+
+// The tenant and the key of a last use (ADR 0074).
+const tenant = 'demo-tenant' as TenantId;
+const lastUse = bearerLastUseKey('claude-code-office');
 
 // The days of the checks of decisions, from today in UTC on, as each check
 // runs: a store keeps such a counter by its own clock, so a fixed day
@@ -415,6 +458,110 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
       await assert.rejects(store.read(one, bad as QuotaKey, day));
     }
   }),
+  // The last use of a sign-in (ADR 0074): one day per tenant and key, the
+  // later one, kept beside the counters and apart from them.
+  check('reads no last use for a key never noted', async (open) => {
+    assert.equal(await open().readLastUse(tenant, lastUse), undefined);
+  }),
+  check(
+    'keeps the later day of a use and reads it after a restart',
+    async (open) => {
+      const store = open();
+      await store.noteLastUse(tenant, lastUse, day);
+      assert.equal(await store.readLastUse(tenant, lastUse), day);
+      // A clock that went back never moves the day back.
+      await store.noteLastUse(tenant, lastUse, '2026-10-01' as IsoDate);
+      assert.equal(await store.readLastUse(tenant, lastUse), day);
+      await store.noteLastUse(tenant, lastUse, nextDay);
+      assert.equal(await open().readLastUse(tenant, lastUse), nextDay);
+    },
+  ),
+  check('keeps the last use per tenant and key', async (open) => {
+    const store = open();
+    const otherTenant = 'other-tenant' as TenantId;
+    const otherKey = bearerLastUseKey('other-client');
+    await store.noteLastUse(tenant, lastUse, day);
+    assert.equal(await store.readLastUse(otherTenant, lastUse), undefined);
+    assert.equal(await store.readLastUse(tenant, otherKey), undefined);
+    await store.noteLastUse(otherTenant, lastUse, nextDay);
+    assert.equal(await store.readLastUse(tenant, lastUse), day);
+    assert.equal(await store.readLastUse(otherTenant, lastUse), nextDay);
+  }),
+  check(
+    'removes a day of the tenant once it notes one more than 365 days later, and keeps one at 365',
+    async (open) => {
+      const store = open();
+      const old = bearerLastUseKey('old-client');
+      const late = (days: number) =>
+        new Date(Date.parse(day) + days * 86_400_000)
+          .toISOString()
+          .slice(0, 10) as IsoDate;
+      const otherTenant = 'other-tenant' as TenantId;
+      await store.noteLastUse(tenant, old, day);
+      await store.noteLastUse(otherTenant, old, day);
+      await store.noteLastUse(tenant, lastUse, late(lastUseKeepDays));
+      assert.equal(await open().readLastUse(tenant, old), day);
+      await store.noteLastUse(tenant, lastUse, late(lastUseKeepDays + 1));
+      assert.equal(await open().readLastUse(tenant, old), undefined);
+      // Only the days of that tenant go.
+      assert.equal(await open().readLastUse(otherTenant, old), day);
+    },
+  ),
+  check(
+    'keeps a last use while counters of every kind count on later days',
+    async (open) => {
+      // The later days lie within the days a last use is kept, so that
+      // only a store that drops it with the counters fails.
+      assert.ok(runCountDays + 1 < lastUseKeepDays);
+      const first = daysFromToday(0);
+      await open().noteLastUse(tenant, lastUse, first);
+      for (const later of [1, 2, runCountDays + 1].map(daysFromToday)) {
+        const store = open();
+        await store.increment(one, key, later);
+        await store.increment(one, decision, later);
+        await store.increment(one, runOn(later, 'done'), later);
+      }
+      assert.equal(await open().readLastUse(tenant, lastUse), first);
+      // Counter-check: the counters of the first day are gone.
+      assert.equal(await open().read(one, key, first), 0);
+    },
+  ),
+  check(
+    'notes the same day once for many uses at the same time',
+    async (open) => {
+      const first = open();
+      const second = open();
+      await Promise.all(
+        Array.from({ length: 10 }, (_, index) =>
+          (index % 2 === 0 ? first : second).noteLastUse(tenant, lastUse, day),
+        ),
+      );
+      assert.equal(await open().readLastUse(tenant, lastUse), day);
+    },
+  ),
+  check(
+    'refuses a key, a day or a tenant of another form for a last use',
+    async (open) => {
+      const store = open();
+      for (const bad of [
+        'bearer:',
+        'bearer:Claude',
+        'bearer:max.mustermann@example.org',
+        'oauth:person-id-1',
+        'special_reads',
+      ]) {
+        await assert.rejects(store.noteLastUse(tenant, bad as LastUseKey, day));
+        await assert.rejects(store.readLastUse(tenant, bad as LastUseKey));
+      }
+      for (const bad of ['2026-02-30', '../2026-10-24', '']) {
+        await assert.rejects(
+          store.noteLastUse(tenant, lastUse, bad as IsoDate),
+        );
+      }
+      await assert.rejects(store.noteLastUse('' as TenantId, lastUse, day));
+      assert.equal(await store.readLastUse(tenant, lastUse), undefined);
+    },
+  ),
   check('refuses a key of a write of another form', async (open) => {
     const store = open();
     for (const bad of [

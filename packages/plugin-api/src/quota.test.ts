@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   approvalCountDays,
   approvalQuotaKey,
+  bearerLastUseKey,
   isApprovalQuotaKey,
   isIsoDate,
+  isLastUseKey,
   isQuotaKey,
+  lastUseKeepDays,
   isRunQuotaKey,
   maxWriteQuotaKeyLength,
   quotaKeys,
@@ -221,5 +224,40 @@ describe('the port for quotas', () => {
     undefined,
   ])('refuses %j as a day', (value) => {
     expect(isIsoDate(value)).toBe(false);
+  });
+});
+
+describe('the key of a last use', () => {
+  it('builds bearer:<name> for a name of a token, and keeps a day 365 days', () => {
+    expect(bearerLastUseKey('claude-code-office')).toBe(
+      'bearer:claude-code-office',
+    );
+    expect(isLastUseKey(`bearer:a${'b'.repeat(31)}`)).toBe(true);
+    expect(lastUseKeepDays).toBe(365);
+  });
+
+  it.each([
+    '',
+    'Claude',
+    'claude.code',
+    'max.mustermann@example.org',
+    '1-client',
+    `a${'b'.repeat(32)}`,
+    '../x',
+    7,
+    null,
+  ])('refuses %j as a name of a token', (name) => {
+    expect(() => bearerLastUseKey(name as string)).toThrow(TypeError);
+  });
+
+  it.each([
+    'bearer:',
+    'oauth:person-id-1',
+    'special_reads',
+    'bearer:claude-code-office\n',
+    'Bearer:claude-code-office',
+  ])('tells %j from a key of a last use', (value) => {
+    expect(isLastUseKey(value)).toBe(false);
+    expect(isQuotaKey(value)).toBe(value === 'special_reads');
   });
 });
