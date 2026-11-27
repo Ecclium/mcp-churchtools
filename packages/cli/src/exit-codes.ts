@@ -58,7 +58,8 @@ export const exitCodes = Object.freeze({
   /**
    * The configuration is invalid; for `ecclium run-once`, also when a
    * routine does not start; for `ecclium doctor`, the configuration of the
-   * runner, and then it checks nothing else.
+   * runner, and then it checks nothing else; for `ecclium serve-http`,
+   * also the file of the tokens and an address and port it cannot bind.
    */
   invalidConfig: 78,
   /**
@@ -67,14 +68,14 @@ export const exitCodes = Object.freeze({
    */
   hungUp: 129,
   /**
-   * The server over stdio, `ecclium run-once` or the daemon ended after
-   * SIGINT: 128 and the number of the signal, as a shell reports a process
-   * that the signal ended.
+   * The server over stdio or over HTTP, `ecclium run-once` or the daemon
+   * ended after SIGINT: 128 and the number of the signal, as a shell
+   * reports a process that the signal ended.
    */
   interrupted: 130,
   /**
-   * The server over stdio, `ecclium run-once` or the daemon ended after
-   * SIGTERM, 128 and 15.
+   * The server over stdio or over HTTP, `ecclium run-once` or the daemon
+   * ended after SIGTERM, 128 and 15.
    */
   terminated: 143,
 } as const);

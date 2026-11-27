@@ -485,6 +485,14 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ecclium konnte nicht jeden Eintrag der Freigabe-Warteschlange nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `queue` im Ordner aus `ECCLIUM_STATE_DIR` oder im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut.',
     stdio_start_failed:
       'Der Start über stdio ist gescheitert. `code` nennt den Grund, die Meldung für Betreiber steht davor.',
+    http_start_failed:
+      'Der Start von `ecclium serve-http` scheiterte, nachdem die Startmeldungen geschrieben waren, etwa beim Bau der Pipeline. Das Feld `code` nennt die Art des Fehlers, nie seine Meldung. Der Befehl endet mit 70.',
+    http_closed:
+      'Der Server über HTTP hat nach einem Signal geschlossen. Das Feld `count` nennt, wie viele Zeilen nicht auf stderr kamen. Es ist die letzte Zeile des Prozesses.',
+    http_last_use_pruned:
+      'Der Server über HTTP hat beim Start oder an einem neuen UTC-Tag Tage der letzten Verwendung entfernt, die mehr als 365 Tage zurückliegen. Das Feld `count` nennt, wie viele.',
+    http_last_use_not_pruned:
+      'Der Server über HTTP konnte die Tage der letzten Verwendung, die mehr als 365 Tage zurückliegen, nicht entfernen, etwa weil eine Sperre nicht frei wurde oder die Datei `<Mandant>.last-use.json` nicht die Form hat, die Ecclium schreibt. Der Server läuft weiter und versucht es am nächsten UTC-Tag wieder.',
     stdio_closed:
       'Der Server über stdio ist beendet. `count` nennt die Zeilen, die nicht auf stderr kamen. Es ist die letzte Zeile.',
     process_uncaught_exception:

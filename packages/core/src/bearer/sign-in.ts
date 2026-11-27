@@ -20,6 +20,7 @@ import {
   type IsoDate,
   type Logger,
   type QuotaStore,
+  type TenantId,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { ConfigFileSystem } from '../config/text-file.js';
@@ -78,6 +79,32 @@ export function readBearerLastUse(
     const tenantId = toTenantId(defaultTenantId);
     if (tenantId === undefined) throw new TypeError('no tenant');
     return store.readLastUse(tenantId, bearerLastUseKey(name));
+  });
+}
+
+/**
+ * Removes the days of the last use of the tenant `default` that lie more
+ * than 365 days back, by the clock of the store, so that a day stays at
+ * most that long also without a later sign-in (ADR 0074). The server over
+ * HTTP calls it at its start and on each new UTC day.
+ *
+ * @param store - The file store of quotas over the folder of state of the
+ *   server, or any store that removes the days of a tenant.
+ * @param store.pruneLastUses - Removes the days of one tenant past their
+ *   retention and gives how many it removed.
+ * @returns How many days went. It rejects when the store fails.
+ * @example
+ * ```ts
+ * const removed = await pruneBearerLastUses(store);
+ * ```
+ */
+export function pruneBearerLastUses(store: {
+  readonly pruneLastUses: (tenantId: TenantId) => Promise<number>;
+}): Promise<number> {
+  return Promise.resolve().then(() => {
+    const tenantId = toTenantId(defaultTenantId);
+    if (tenantId === undefined) throw new TypeError('no tenant');
+    return store.pruneLastUses(tenantId);
   });
 }
 

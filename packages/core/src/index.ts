@@ -184,6 +184,7 @@ export {
   maxBearerTokenDays,
   maxBearerTokens,
   maxBearerTokensFileBytes,
+  pruneBearerLastUses,
   readBearerLastUse,
   readBearerTokensFile,
   serializeBearerTokens,

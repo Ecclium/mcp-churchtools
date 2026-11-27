@@ -1,9 +1,22 @@
 import { once } from 'node:events';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { connect, type Socket } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import process from 'node:process';
 
 import {
+  addDays,
+  createBearerToken,
   createToolCatalog,
+  hashBearerToken,
+  serializeBearerTokens,
   type ToolOutcome,
   type ToolPipeline,
 } from '@ecclium/mcp-churchtools-core';
@@ -20,6 +33,8 @@ import {
   maxHttpHeaderBytes,
 } from '@ecclium/mcp-churchtools-server/http';
 import {
+  createChurchToolsDouble,
+  doubleOrigin,
   examplePlugin,
   makeCanary,
   redactedOutcome,
@@ -30,6 +45,10 @@ import {
   PROTOCOL_VERSION_META_KEY,
 } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { exitCodes } from '../packages/cli/src/exit-codes.ts';
+import { createOutput } from '../packages/cli/src/output/index.ts';
+import { runServeHttp } from '../packages/cli/src/serve-http/serve.ts';
 
 // The one test that binds the server over HTTP to a port (ADR 0073), on
 // 127.0.0.1 with a port the system picks, as the network guard of the
@@ -181,8 +200,8 @@ interface Answer {
  * with Content-Length ends after its body, one without it at the close of
  * the connection, as the answers Node.js writes itself.
  */
-const open = async () => {
-  const socket: Socket = connect({ host: '127.0.0.1', port: server.port });
+const open = async (port = server.port) => {
+  const socket: Socket = connect({ host: '127.0.0.1', port });
   await once(socket, 'connect');
   const state = { buffer: Buffer.alloc(0), closed: false };
   const waiting: (() => void)[] = [];
@@ -594,5 +613,143 @@ describe('the server over HTTP on 127.0.0.1', () => {
     const socket = connect({ host: '127.0.0.1', port: server.port });
     const [error] = (await once(socket, 'error')) as [NodeJS.ErrnoException];
     expect(error.code).toBe('ECONNREFUSED');
+  });
+});
+
+// The command itself on a real socket (ADR 0073, ADR 0074): its start over
+// real folders and files, its binding through listenHttp on a port the
+// system picks, which no operator can set, and its end after SIGTERM. The
+// process is replaced, so that no signal of the test runner counts.
+describe('ecclium serve-http on a real socket', () => {
+  it('signs a bearer token in, answers the list of tools and closes after SIGTERM', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'ecclium-serve-http-socket-'));
+    const privateDir = (path: string): string => {
+      mkdirSync(path, { mode: 0o700 });
+      chmodSync(path, 0o700);
+      return path;
+    };
+    const privateFile = (path: string, text: string): string => {
+      writeFileSync(path, text, { mode: 0o600 });
+      chmodSync(path, 0o600);
+      return path;
+    };
+    const bearer = createBearerToken();
+    const today = new Date().toISOString().slice(0, 10);
+    const state = privateDir(join(base, 'state'));
+    const tokensFile = privateFile(
+      join(base, 'http-tokens.yaml'),
+      serializeBearerTokens([
+        {
+          name: 'socket-client',
+          sha256: hashBearerToken(bearer),
+          scopes: ['read'],
+          // The clock of the command is the real one.
+          createdAt: today,
+          expiresAt: addDays(today, 30),
+        },
+      ]),
+    );
+    const tokenFile = privateFile(join(base, 'ct-token'), `${token}\n`);
+    const written: string[] = [];
+    const writeSync = (
+      _fd: number,
+      buffer: Uint8Array,
+      offset?: number,
+      length?: number,
+    ): number => {
+      const start = offset ?? 0;
+      const end = start + (length ?? buffer.length - start);
+      written.push(Buffer.from(buffer).subarray(start, end).toString('utf8'));
+      return end - start;
+    };
+    const signals = new Map<string, () => void>();
+    const doubles: { close: () => Promise<void> }[] = [];
+    let bound: HttpListener | undefined;
+    let ready: () => void = () => undefined;
+    const listening = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    try {
+      const run = runServeHttp({
+        environment: {
+          ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+          ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenFile,
+          ECCLIUM_STATE_DIR: state,
+          ECCLIUM_HTTP_TOKENS_FILE: tokensFile,
+        },
+        execArgv: [],
+        output: createOutput({ writeSync }),
+        writeSync,
+        host: {
+          onSignal: (signal, listener) => {
+            signals.set(signal, listener);
+            return () => {
+              signals.delete(signal);
+            };
+          },
+          onFault: () => () => undefined,
+          exit: () => undefined,
+        },
+        createTransport: (settings) => {
+          const double = createChurchToolsDouble({
+            token: settings.token,
+            origin: settings.origin,
+          });
+          doubles.push(double);
+          return double.transport;
+        },
+        listen: async (settings) => {
+          bound = await listenHttp({ ...settings, port: 0 });
+          ready();
+          return bound;
+        },
+      });
+      await listening;
+      const port = bound?.port ?? 0;
+      expect(port).toBeGreaterThan(0);
+      const body = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/list',
+      });
+      const request = (authorization: string | undefined): string =>
+        [
+          'POST /mcp HTTP/1.1',
+          `Host: 127.0.0.1:${String(port)}`,
+          'Content-Type: application/json',
+          'Accept: application/json, text/event-stream',
+          'Mcp-Protocol-Version: 2025-11-25',
+          ...(authorization === undefined
+            ? []
+            : [`Authorization: ${authorization}`]),
+          `Content-Length: ${String(Buffer.byteLength(body))}`,
+          '',
+          body,
+        ].join('\r\n');
+      const client = await open(port);
+      client.write(request(`Bearer ${bearer}`));
+      const answer = await client.answer();
+      client.write(request(undefined));
+      const refused = await client.answer();
+      client.end();
+      expect(answer?.status).toBe(200);
+      expect(JSON.parse(answer?.body ?? '')).toMatchObject({ id: 3 });
+      expect(refused?.status).toBe(401);
+
+      signals.get('SIGTERM')?.();
+      await expect(run).resolves.toBe(exitCodes.terminated);
+      const socket = connect({ host: '127.0.0.1', port });
+      const [error] = (await once(socket, 'error')) as [NodeJS.ErrnoException];
+      expect(error.code).toBe('ECONNREFUSED');
+      const text = written.join('');
+      expect(text).toContain(`http://127.0.0.1:${String(port)}/mcp`);
+      expect(text).not.toContain(bearer);
+      expect(text).not.toContain(token);
+    } finally {
+      await Promise.all(
+        doubles.map((double) => double.close().catch(() => undefined)),
+      );
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });
