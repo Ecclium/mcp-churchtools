@@ -6,6 +6,8 @@ In dieser Version liest der Server über HTTP nur. Schreib-Tools bietet er nicht
 
 Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 
+Geprüft am 27.11.2026 unter macOS mit Claude Code 2.1.332 und einem Server auf `127.0.0.1` gegen eine Testinstanz mit synthetischen Daten: Claude Code verband sich mit dem Skript unter «Claude Code», rief `ct_whoami` und die Liste der Kategorien des Wikis auf, und das Audit nannte den Akteur des Tokens.
+
 ## Voraussetzungen
 
 - Ein gebauter Checkout wie unter «Bauen» in [Betrieb über stdio](stdio.md), mit dem absoluten Pfad von Node.js aus `mise which node`.
