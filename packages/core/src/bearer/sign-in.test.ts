@@ -9,7 +9,7 @@ import {
   type TenantId,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { createMemoryQuotaStore } from '@ecclium/mcp-churchtools-testkit';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { signInRefusals } from '../identity/refusals.js';
 import { serializeBearerTokens } from './file.js';
@@ -352,6 +352,57 @@ describe('the last use of a token', () => {
     expect(lines).toEqual([
       { event: 'http_last_use_failed', fields: undefined },
     ]);
+  });
+
+  it('lets a sign-in pass after five seconds when the store never answers, and not before', async () => {
+    const { token, path } = setup();
+    const hanging: QuotaStore = {
+      ...createMemoryQuotaStore(),
+      noteLastUse: () => new Promise<void>(() => undefined),
+    };
+    const { lines, logger } = recording();
+    const signIn = createBearerSignIn({
+      tokensFile: path,
+      clock: today,
+      lastUse: { store: hanging, logger },
+    });
+    vi.useFakeTimers();
+    try {
+      let settled = false;
+      const pending = signIn(`Bearer ${token}`).then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(pending).resolves.toMatchObject({ ok: true });
+      expect(lines).toEqual([
+        { event: 'http_last_use_failed', fields: undefined },
+      ]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves no timer behind once the store has answered', async () => {
+    const { token, path } = setup();
+    const { logger } = recording();
+    const signIn = createBearerSignIn({
+      tokensFile: path,
+      clock: today,
+      lastUse: { store: createMemoryQuotaStore(), logger },
+    });
+    vi.useFakeTimers();
+    try {
+      await expect(signIn(`Bearer ${token}`)).resolves.toMatchObject({
+        ok: true,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lets a sign-in pass when the store and the logger throw at once', async () => {

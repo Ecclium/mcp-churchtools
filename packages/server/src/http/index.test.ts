@@ -405,6 +405,17 @@ describe('the server over HTTP', () => {
         },
       },
     ],
+    [
+      'a scope twice',
+      {
+        ok: true,
+        identity: {
+          source: 'bearer',
+          subject: 'person-id-1',
+          scopes: ['write', 'write'],
+        },
+      },
+    ],
     ['an identity alone, without the form of a result', identityA],
     ['no result', undefined],
     ['a result without ok', { identity: identityA }],

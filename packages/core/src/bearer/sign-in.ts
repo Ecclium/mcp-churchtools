@@ -24,6 +24,7 @@ import {
 
 import type { ConfigFileSystem } from '../config/text-file.js';
 import type { SignInRefusal, SignInResult } from '../identity/refusals.js';
+import { quotaTimeoutMs } from '../quota/budget.js';
 import { defaultTenantId, toTenantId } from '../tenant/tenant-id.js';
 import { readBearerTokensFile } from './file.js';
 import { bearerTokenFormProblem, findBearerToken } from './token.js';
@@ -125,10 +126,12 @@ const presentedOf = (
  * entry.
  *
  * With `lastUse` the check then notes the day in the store and waits for
- * it, so that the day stands once the request goes on. A store that fails
- * never refuses the sign-in: the check writes `http_last_use_failed` and
- * lets it pass. The file store writes only when the day changes and waits
- * at most two seconds for the lock of another process (ADR 0063).
+ * it, at most five seconds, as the pipeline waits for the store, so that
+ * the day stands once the request goes on. A store that fails or answers
+ * too late never refuses the sign-in: the check writes
+ * `http_last_use_failed` and lets it pass. The file store writes only when
+ * the day changes and waits at most two seconds for the lock of another
+ * process (ADR 0063).
  *
  * @param options - The file of the tokens, the clock, the store of the
  *   last use and, for tests, the file functions.
@@ -187,18 +190,33 @@ export function createBearerSignIn(options: BearerSignInOptions): BearerSignIn {
       }),
     };
   };
-  // Notes the day of a sign-in that holds. Nothing here refuses it.
+  // Notes the day of a sign-in that holds, waiting at most as long as the
+  // pipeline waits for the store of quotas (ADR 0063), so that a store
+  // that never answers holds no request. Nothing here refuses it.
   const note = async (name: string, today: IsoDate): Promise<void> => {
     if (lastUse === undefined) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       if (tenantId === undefined) throw new TypeError('no tenant');
-      await lastUse.store.noteLastUse(tenantId, bearerLastUseKey(name), today);
+      const noted = Promise.resolve().then(() =>
+        lastUse.store.noteLastUse(tenantId, bearerLastUseKey(name), today),
+      );
+      // A failure after the deadline must not end as an unhandled one.
+      noted.catch(() => undefined);
+      const late = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('late'));
+        }, quotaTimeoutMs);
+      });
+      await Promise.race([noted, late]);
     } catch {
       try {
         lastUse.logger.warn(lastUseFailedEvent);
       } catch {
         // The sign-in does not depend on the log.
       }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   };
   return async (authorization) => {

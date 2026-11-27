@@ -282,8 +282,8 @@ const timestamp = (clock: Clock): string => {
  * `event`, then the bound fields and the fields of the call in a fixed
  * order, then `dropped` if fields were dropped. A call may set only
  * `prompt`, with a name from `prompts`, `code`, `reason`, `durationMs`,
- * `count`, `method`, `status` and `attempt`, and with `anchors` also `file`, `seq` and
- * `hash`; everything else is dropped and counted. An event name that
+ * `count`, `method`, `status` and `attempt`, and with `anchors` also
+ * `file`, `seq` and `hash`; everything else is dropped and counted. An event name that
  * breaks the pattern or is not in the catalog `logEvents` becomes
  * `invalid_event`. Fields are read as own data properties of a plain
  * object, so no getter, proxy trap or coercion of the caller runs.

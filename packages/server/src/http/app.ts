@@ -317,8 +317,9 @@ const sources: readonly unknown[] = Object.freeze(['stdio', 'bearer', 'oauth']);
 const scopeNames: readonly unknown[] = Object.freeze(['read', 'write']);
 
 // Whether a check of the sign-in gave an identity of the form the mount
-// takes. Anything else counts as a refusal, so that a faulty check ends
-// with 401 and never with an identity the pipeline cannot read.
+// takes: known scopes, each once, as the gate of the pipeline reads them
+// (ADR 0074). Anything else counts as a refusal, so that a faulty check
+// ends with 401 and never with an identity the pipeline cannot read.
 const isIdentity = (value: unknown): value is Identity => {
   if (!isRecord(value)) return false;
   const { source, subject, scopes } = value;
@@ -327,7 +328,8 @@ const isIdentity = (value: unknown): value is Identity => {
     typeof subject === 'string' &&
     subject !== '' &&
     Array.isArray(scopes) &&
-    scopes.every((scope) => scopeNames.includes(scope))
+    scopes.every((scope) => scopeNames.includes(scope)) &&
+    new Set(scopes).size === scopes.length
   );
 };
 

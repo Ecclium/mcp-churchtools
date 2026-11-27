@@ -188,7 +188,8 @@ export const listHeader = [
 /**
  * The last use of a token, for `ecclium token list` (ADR 0074): the day the
  * server noted, «nie» when the folder of state holds none, and «unbekannt»
- * without a folder of state or when it could not be read.
+ * without a folder of state, while its folder `quota` is missing, or when
+ * it could not be read.
  *
  * @param lastUse - The day, `null` when the folder holds none, or
  *   `undefined` when it is unknown.
