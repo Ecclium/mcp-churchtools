@@ -6,6 +6,7 @@ import { isTextLine } from '../send.js';
 import {
   createdText,
   germanDay,
+  lastUseText,
   listHeader,
   revokedText,
   rotatedText,
@@ -25,6 +26,8 @@ const fixed: readonly string[] = [
   ]),
   listHeader.join('  '),
   ...[-1, 0, 1, 2, 30, 31].map(stateText),
+  lastUseText(undefined),
+  lastUseText(null),
   revokedText('buero', 1),
   revokedText('buero', 2),
 ];
@@ -78,5 +81,11 @@ describe('the texts of ecclium token', () => {
     expect(stateText(1)).toBe('gilt noch bis morgen');
     expect(stateText(30)).toBe('läuft in 30 Tagen ab');
     expect(stateText(31)).toBe('gilt');
+  });
+
+  it('name the last use as a day, as nie or as unbekannt', () => {
+    expect(lastUseText('2026-11-26')).toBe('26.11.2026');
+    expect(lastUseText(null)).toBe('nie');
+    expect(lastUseText(undefined)).toBe('unbekannt');
   });
 });

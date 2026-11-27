@@ -2384,11 +2384,17 @@ export function loadAuditConfig(
 
 /**
  * The configuration of `ecclium token` (ADR 0074): the file of the bearer
- * tokens, nothing more.
+ * tokens and, when set, the folder of state, in which the server keeps the
+ * day each token was last used.
  */
 export interface TokenCommandConfig {
   /** The file of the tokens, an absolute normalised path. */
   readonly httpTokensFile: string;
+  /**
+   * The checked folder of state, an absolute normalised path, when
+   * `ECCLIUM_STATE_DIR` is set. Without it `list` cannot name a last use.
+   */
+  readonly stateDir?: string;
 }
 
 /** The configuration of `ecclium token`, or the problems that stop it. */
@@ -2406,18 +2412,22 @@ export type TokenCommandConfigResult =
 export interface TokenCommandConfigSources {
   /** The environment, which the loader never changes. */
   readonly environment: Readonly<Record<string, string | undefined>>;
+  /** The file functions for the folder of state, only for tests. */
+  readonly stateDirFiles?: StateDirFileSystem;
 }
 
 /**
  * Loads the configuration of the commands for the bearer tokens. It sorts
  * every name with the prefix as the start does, so that an unknown,
  * miscased or later name stops them as well, but it reads the value of
- * `ECCLIUM_HTTP_TOKENS_FILE` alone, which must be set. It needs neither the
- * address of ChurchTools nor the token and never opens a file; the
- * variables of Node.js play no part.
+ * `ECCLIUM_HTTP_TOKENS_FILE` alone, which must be set, and the one of
+ * `ECCLIUM_STATE_DIR`, which may be set and then passes the same checks as
+ * at the start. It needs neither the address of ChurchTools nor the token
+ * and never opens a file; the variables of Node.js play no part.
  *
- * @param sources - The environment.
- * @returns The path of the file, or the problems.
+ * @param sources - The environment and, for tests, the file functions for
+ *   the folder of state.
+ * @returns The path of the file and the folder of state, or the problems.
  * @throws {TypeError} When the sources or the environment are no plain
  *   record, or a variable with the prefix is no string or has a getter.
  *   Never for a wrong value.
@@ -2432,7 +2442,11 @@ export function loadTokenCommandConfig(
 ): TokenCommandConfigResult {
   if (!isRecord(sources)) throw new TypeError(invalidSources);
   const environment = ownData(sources, 'environment');
+  const stateDirFiles = ownData(sources, 'stateDirFiles');
   if (!isRecord(environment)) throw new TypeError(invalidSources);
+  if (stateDirFiles !== undefined && !isRecord(stateDirFiles)) {
+    throw new TypeError(invalidSources);
+  }
 
   const ranked: Ranked[] = [];
   const add = (
@@ -2461,6 +2475,27 @@ export function loadTokenCommandConfig(
     const sorted = sortName(key);
     if (sorted.kind === 'known') given.set(sorted.name, value);
     else add(sorted.code, sorted.rank, sorted.variable);
+  }
+
+  // The folder of state is optional: with it `list` names the last use of
+  // each token, which the server keeps there (ADR 0074).
+  const stateDirName = 'ECCLIUM_STATE_DIR';
+  const stateDirValue = given.get(stateDirName);
+  let stateDir: string | undefined;
+  if (stateDirValue === '') {
+    report('empty_value', stateDirName);
+  } else if (
+    stateDirValue !== undefined &&
+    stateDirValue.length > row(stateDirName).maxLength
+  ) {
+    report('value_too_long', stateDirName);
+  } else if (stateDirValue !== undefined) {
+    const checked = checkStateDir(
+      stateDirValue,
+      stateDirFiles as StateDirFileSystem | undefined,
+    );
+    if (checked.ok) stateDir = stateDirValue;
+    else report(checked.code, stateDirName);
   }
 
   const name = 'ECCLIUM_HTTP_TOKENS_FILE';
@@ -2495,6 +2530,10 @@ export function loadTokenCommandConfig(
   }
   return record({
     ok: true as const,
-    config: record({ httpTokensFile: file }),
+    config: record(
+      stateDir === undefined
+        ? { httpTokensFile: file }
+        : { httpTokensFile: file, stateDir },
+    ),
   });
 }

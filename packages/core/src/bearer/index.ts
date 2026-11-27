@@ -26,6 +26,7 @@ export {
   type BearerSignIn,
   type BearerSignInOptions,
   createBearerSignIn,
+  readBearerLastUse,
 } from './sign-in.js';
 export {
   type BearerLookup,

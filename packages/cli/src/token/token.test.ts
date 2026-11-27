@@ -25,6 +25,16 @@ import {
   readBearerTokensFile,
   serializeBearerTokens,
 } from '@ecclium/mcp-churchtools-core';
+import {
+  createFileQuotaStore,
+  prepareQuotaFolder,
+} from '@ecclium/mcp-churchtools-core/composition';
+import {
+  bearerLastUseKey,
+  type IsoDate,
+  type TenantId,
+} from '@ecclium/mcp-churchtools-plugin-api';
+import { createMemoryQuotaStore } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { exitCodes } from '../exit-codes.js';
@@ -87,10 +97,10 @@ interface Captured {
   readonly stderr: readonly string[];
 }
 
-const capture = (
+const capture = async (
   options: Partial<TokenOptions> & Pick<TokenOptions, 'action'>,
   stdoutWorks = true,
-): Captured => {
+): Promise<Captured> => {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const output: Output = {
@@ -104,7 +114,7 @@ const capture = (
       return true;
     },
   };
-  const code = runToken({
+  const code = await runToken({
     environment: { ECCLIUM_HTTP_TOKENS_FILE: path },
     clock,
     output,
@@ -136,8 +146,11 @@ const entry = (
 });
 
 describe('ecclium token create', () => {
-  it('writes the hash with mode 0600 and the token alone to stdout, after the file', () => {
-    const result = capture({ action: 'create', name: 'claude-code-office' });
+  it('writes the hash with mode 0600 and the token alone to stdout, after the file', async () => {
+    const result = await capture({
+      action: 'create',
+      name: 'claude-code-office',
+    });
     expect(result.code).toBe(exitCodes.ok);
     expect(result.stdout).toHaveLength(1);
     const token = result.stdout[0] ?? '';
@@ -159,8 +172,8 @@ describe('ecclium token create', () => {
     expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
   });
 
-  it('takes --write and --days', () => {
-    const result = capture({
+  it('takes --write and --days', async () => {
+    const result = await capture({
       action: 'create',
       name: 'buero',
       write: true,
@@ -173,14 +186,14 @@ describe('ecclium token create', () => {
     expect(result.stderr[0]).toContain('‹read› und ‹write›');
   });
 
-  it('adds to a file that exists and refuses a name it has already', () => {
+  it('adds to a file that exists and refuses a name it has already', async () => {
     const other = entry({ name: 'other' });
     writeEntries([other]);
-    expect(capture({ action: 'create', name: 'buero' }).code).toBe(
+    expect((await capture({ action: 'create', name: 'buero' })).code).toBe(
       exitCodes.ok,
     );
     const before = readFileSync(path, 'utf8');
-    const again = capture({ action: 'create', name: 'buero' });
+    const again = await capture({ action: 'create', name: 'buero' });
     expect(again.code).toBe(exitCodes.dataError);
     expect(again.stdout).toEqual([]);
     expect(again.stderr).toEqual([tokenTexts.nameTaken]);
@@ -188,10 +201,10 @@ describe('ecclium token create', () => {
     expect(entriesOf().map(({ name }) => name)).toEqual(['other', 'buero']);
   });
 
-  it('refuses a name of another form with 64, before it reads anything, and never repeats it', () => {
+  it('refuses a name of another form with 64, before it reads anything, and never repeats it', async () => {
     const token = createBearerToken();
     for (const name of [undefined, '', 'Claude', 'claude.code', token]) {
-      const result = capture({ action: 'create', name });
+      const result = await capture({ action: 'create', name });
       expect(result.code).toBe(exitCodes.usage);
       expect(result.stderr).toEqual([tokenTexts.nameInvalid]);
       expect(result.stderr.join('\n')).not.toContain(token.slice(12, 30));
@@ -199,31 +212,31 @@ describe('ecclium token create', () => {
     expect(readdirSync(folder)).toEqual([]);
   });
 
-  it('refuses --days outside 1 to 365 or of another form with 64', () => {
+  it('refuses --days outside 1 to 365 or of another form with 64', async () => {
     for (const days of ['0', '366', '+5', '05', '1.5', '', ' 7', '1e2']) {
-      const result = capture({ action: 'create', name: 'buero', days });
+      const result = await capture({ action: 'create', name: 'buero', days });
       expect(result.code).toBe(exitCodes.usage);
       expect(result.stderr).toEqual([tokenTexts.daysInvalid]);
     }
-    expect(capture({ action: 'create', name: 'buero', days: '365' }).code).toBe(
-      exitCodes.ok,
-    );
+    expect(
+      (await capture({ action: 'create', name: 'buero', days: '365' })).code,
+    ).toBe(exitCodes.ok);
     expect(entriesOf()[0]?.expiresAt).toBe('2027-11-26');
   });
 
-  it('takes a 64th entry', () => {
+  it('takes a 64th entry', async () => {
     writeEntries(
       Array.from({ length: 63 }, (_, index) =>
         entry({ name: `client-${String(index)}` }),
       ),
     );
-    expect(capture({ action: 'create', name: 'buero' }).code).toBe(
+    expect((await capture({ action: 'create', name: 'buero' })).code).toBe(
       exitCodes.ok,
     );
     expect(entriesOf()).toHaveLength(64);
   });
 
-  it('shows the token only once its hash is in the file', () => {
+  it('shows the token only once its hash is in the file', async () => {
     const seen: boolean[] = [];
     const output: Output = {
       stdout: (text) => {
@@ -236,7 +249,7 @@ describe('ecclium token create', () => {
       },
       stderr: () => true,
     };
-    const code = runToken({
+    const code = await runToken({
       environment: { ECCLIUM_HTTP_TOKENS_FILE: path },
       action: 'create',
       name: 'buero',
@@ -247,19 +260,19 @@ describe('ecclium token create', () => {
     expect(seen).toEqual([true]);
   });
 
-  it('refuses a file with 64 entries', () => {
+  it('refuses a file with 64 entries', async () => {
     writeEntries(
       Array.from({ length: 64 }, (_, index) =>
         entry({ name: `client-${String(index)}` }),
       ),
     );
-    const result = capture({ action: 'create', name: 'buero' });
+    const result = await capture({ action: 'create', name: 'buero' });
     expect(result.code).toBe(exitCodes.dataError);
     expect(result.stderr).toEqual([tokenTexts.full]);
   });
 
-  it('gives 74 and says to revoke when the token cannot be shown, with its hash in the file', () => {
-    const result = capture({ action: 'create', name: 'buero' }, false);
+  it('gives 74 and says to revoke when the token cannot be shown, with its hash in the file', async () => {
+    const result = await capture({ action: 'create', name: 'buero' }, false);
     expect(result.code).toBe(exitCodes.ioError);
     expect(result.stderr).toEqual([tokenTexts.tokenNotShown]);
     expect(entriesOf()).toHaveLength(1);
@@ -267,7 +280,7 @@ describe('ecclium token create', () => {
 });
 
 describe('ecclium token rotate', () => {
-  it('makes a new token with the same scopes and lets the old one hold seven days at most', () => {
+  it('makes a new token with the same scopes and lets the old one hold seven days at most', async () => {
     const old = entry({
       name: 'buero',
       scopes: ['read', 'write'],
@@ -275,7 +288,7 @@ describe('ecclium token rotate', () => {
     });
     const other = entry({ name: 'other' });
     writeEntries([old, other]);
-    const result = capture({ action: 'rotate', name: 'buero' });
+    const result = await capture({ action: 'rotate', name: 'buero' });
     expect(result.code).toBe(exitCodes.ok);
     const token = result.stdout[0] ?? '';
     expect(entriesOf()).toEqual([
@@ -294,11 +307,11 @@ describe('ecclium token rotate', () => {
     ]);
   });
 
-  it('removes an old token that had expired already and says so', () => {
+  it('removes an old token that had expired already and says so', async () => {
     const old = entry({ name: 'buero', expiresAt: '2026-11-20' });
     const other = entry({ name: 'other' });
     writeEntries([old, other]);
-    const result = capture({ action: 'rotate', name: 'buero' });
+    const result = await capture({ action: 'rotate', name: 'buero' });
     expect(result.code).toBe(exitCodes.ok);
     expect(entriesOf()).toEqual([
       other,
@@ -309,13 +322,13 @@ describe('ecclium token rotate', () => {
     ]);
   });
 
-  it('keeps the file small however often a name rotates', () => {
+  it('keeps the file small however often a name rotates', async () => {
     writeEntries([entry({ name: 'buero' })]);
     let day = Date.UTC(2026, 10, 26, 12);
     for (let round = 0; round < 70; round += 1) {
       day += 3 * 86_400_000;
       const at = day;
-      const result = capture({
+      const result = await capture({
         action: 'rotate',
         name: 'buero',
         clock: { now: () => at },
@@ -325,10 +338,14 @@ describe('ecclium token rotate', () => {
     expect(entriesOf().length).toBeLessThanOrEqual(4);
   });
 
-  it('never lets an old token outlive the new one', () => {
+  it('never lets an old token outlive the new one', async () => {
     const old = entry({ name: 'buero', expiresAt: '2027-03-01' });
     writeEntries([old]);
-    const result = capture({ action: 'rotate', name: 'buero', days: '2' });
+    const result = await capture({
+      action: 'rotate',
+      name: 'buero',
+      days: '2',
+    });
     expect(result.code).toBe(exitCodes.ok);
     expect(entriesOf().map(({ expiresAt }) => expiresAt)).toEqual([
       '2026-11-28',
@@ -336,7 +353,7 @@ describe('ecclium token rotate', () => {
     ]);
   });
 
-  it('takes the scopes of the youngest entry of the name and clamps every old one', () => {
+  it('takes the scopes of the youngest entry of the name and clamps every old one', async () => {
     const older = entry({
       name: 'buero',
       createdAt: '2026-05-01',
@@ -348,7 +365,7 @@ describe('ecclium token rotate', () => {
       expiresAt: '2027-03-01',
     });
     writeEntries([newer, older]);
-    const result = capture({ action: 'rotate', name: 'buero' });
+    const result = await capture({ action: 'rotate', name: 'buero' });
     expect(result.code).toBe(exitCodes.ok);
     expect(entriesOf()).toEqual([
       { ...newer, expiresAt: '2026-12-03' },
@@ -360,60 +377,60 @@ describe('ecclium token rotate', () => {
     ]);
   });
 
-  it('refuses to rotate in a file with 64 entries', () => {
+  it('refuses to rotate in a file with 64 entries', async () => {
     writeEntries(
       Array.from({ length: 64 }, (_, index) =>
         entry({ name: index === 0 ? 'buero' : `client-${String(index)}` }),
       ),
     );
     const before = readFileSync(path, 'utf8');
-    const result = capture({ action: 'rotate', name: 'buero' });
+    const result = await capture({ action: 'rotate', name: 'buero' });
     expect(result.code).toBe(exitCodes.dataError);
     expect(result.stderr).toEqual([tokenTexts.full]);
     expect(readFileSync(path, 'utf8')).toBe(before);
   });
 
-  it('gives 74 when the new token cannot be shown, with the rotation in the file', () => {
+  it('gives 74 when the new token cannot be shown, with the rotation in the file', async () => {
     const old = entry({ name: 'buero', expiresAt: '2027-03-01' });
     writeEntries([old]);
-    const result = capture({ action: 'rotate', name: 'buero' }, false);
+    const result = await capture({ action: 'rotate', name: 'buero' }, false);
     expect(result.code).toBe(exitCodes.ioError);
     expect(result.stderr).toEqual([tokenTexts.tokenNotShown]);
     expect(entriesOf()).toHaveLength(2);
     expect(entriesOf()[0]?.expiresAt).toBe('2026-12-03');
   });
 
-  it('leaves an old token that ends sooner as it is', () => {
+  it('leaves an old token that ends sooner as it is', async () => {
     const old = entry({ name: 'buero', expiresAt: '2026-11-28' });
     writeEntries([old]);
-    expect(capture({ action: 'rotate', name: 'buero', days: '30' }).code).toBe(
-      exitCodes.ok,
-    );
+    expect(
+      (await capture({ action: 'rotate', name: 'buero', days: '30' })).code,
+    ).toBe(exitCodes.ok);
     expect(entriesOf()[0]).toEqual(old);
     expect(entriesOf()[1]?.expiresAt).toBe('2026-12-26');
   });
 
-  it('refuses a name without a token with 65 and a missing file with 66', () => {
-    const missing = capture({ action: 'rotate', name: 'buero' });
+  it('refuses a name without a token with 65 and a missing file with 66', async () => {
+    const missing = await capture({ action: 'rotate', name: 'buero' });
     expect(missing.code).toBe(exitCodes.noInput);
     expect(missing.stderr).toEqual([tokenTexts.missingForChange]);
     expect(readdirSync(folder)).toEqual([]);
     writeEntries([entry({ name: 'other' })]);
-    const unknown = capture({ action: 'rotate', name: 'buero' });
+    const unknown = await capture({ action: 'rotate', name: 'buero' });
     expect(unknown.code).toBe(exitCodes.dataError);
     expect(unknown.stderr).toEqual([tokenTexts.nameUnknown]);
   });
 });
 
 describe('ecclium token revoke', () => {
-  it('removes every entry of the name and keeps the others', () => {
+  it('removes every entry of the name and keeps the others', async () => {
     const other = entry({ name: 'other' });
     writeEntries([
       entry({ name: 'buero' }),
       other,
       entry({ name: 'buero', createdAt: today }),
     ]);
-    const result = capture({ action: 'revoke', name: 'buero' });
+    const result = await capture({ action: 'revoke', name: 'buero' });
     expect(result.code).toBe(exitCodes.ok);
     expect(result.stdout).toEqual([]);
     expect(result.stderr).toEqual([
@@ -422,24 +439,26 @@ describe('ecclium token revoke', () => {
     expect(entriesOf()).toEqual([other]);
   });
 
-  it('counts a single entry in the singular', () => {
+  it('counts a single entry in the singular', async () => {
     writeEntries([entry({ name: 'buero' })]);
-    expect(capture({ action: 'revoke', name: 'buero' }).stderr).toEqual([
-      'Ab der nächsten Anfrage nimmt der Server kein Token mit dem Namen ‹buero› mehr an. Entfernt: 1 Eintrag.',
-    ]);
+    expect((await capture({ action: 'revoke', name: 'buero' })).stderr).toEqual(
+      [
+        'Ab der nächsten Anfrage nimmt der Server kein Token mit dem Namen ‹buero› mehr an. Entfernt: 1 Eintrag.',
+      ],
+    );
     expect(entriesOf()).toEqual([]);
   });
 
-  it('refuses a name without a token with 65', () => {
+  it('refuses a name without a token with 65', async () => {
     writeEntries([entry({ name: 'other' })]);
-    const result = capture({ action: 'revoke', name: 'buero' });
+    const result = await capture({ action: 'revoke', name: 'buero' });
     expect(result.code).toBe(exitCodes.dataError);
     expect(result.stderr).toEqual([tokenTexts.nameUnknown]);
   });
 });
 
 describe('ecclium token list', () => {
-  it('shows name, scopes, days and state, never a hash', () => {
+  it('shows name, scopes, days and state, never a hash', async () => {
     const entries = [
       entry({ name: 'zeta', expiresAt: '2027-05-25' }),
       entry({ name: 'alpha', scopes: ['read', 'write'], expiresAt: today }),
@@ -448,42 +467,154 @@ describe('ecclium token list', () => {
       entry({ name: 'delta', expiresAt: '2026-11-27' }),
     ];
     writeEntries(entries);
-    const result = capture({ action: 'list' });
+    const result = await capture({ action: 'list' });
     expect(result.code).toBe(exitCodes.ok);
+    // Without a folder of state the last use is unknown.
     expect(result.stdout).toEqual([
-      'Name   Scopes      erstellt    gilt bis und mit  Zustand',
-      'alpha  read,write  01.06.2026  26.11.2026        gilt nur noch heute',
-      'beta   read        01.06.2026  25.11.2026        abgelaufen',
-      'delta  read        01.06.2026  27.11.2026        gilt noch bis morgen',
-      'gamma  read        01.06.2026  10.12.2026        läuft in 14 Tagen ab',
-      'zeta   read        01.06.2026  25.05.2027        gilt',
+      'Name   Scopes      erstellt    gilt bis und mit  zuletzt benutzt  Zustand',
+      'alpha  read,write  01.06.2026  26.11.2026        unbekannt        gilt nur noch heute',
+      'beta   read        01.06.2026  25.11.2026        unbekannt        abgelaufen',
+      'delta  read        01.06.2026  27.11.2026        unbekannt        gilt noch bis morgen',
+      'gamma  read        01.06.2026  10.12.2026        unbekannt        läuft in 14 Tagen ab',
+      'zeta   read        01.06.2026  25.05.2027        unbekannt        gilt',
     ]);
     for (const { sha256 } of entries) {
       expect(result.stdout.join('\n')).not.toContain(sha256.slice(0, 12));
     }
   });
 
-  it('says so for a file without tokens and gives 66 without a file', () => {
+  // The folder of state of the server, with its folder quota, in which
+  // the check of the sign-in notes the last use (ADR 0074).
+  const stateWith = (): string => {
+    const state = join(folder, 'state');
+    mkdirSync(state, { mode: 0o700 });
+    chmodSync(state, 0o700);
+    const prepared = prepareQuotaFolder(state);
+    if (!prepared.ok) throw new Error(prepared.code);
+    return state;
+  };
+  const tenant = 'default' as TenantId;
+
+  it('names the day of the last use from the folder of state, the same for both entries of a rotation, and nie for a name without one', async () => {
+    writeEntries([
+      entry({ name: 'alpha', expiresAt: '2027-05-25' }),
+      entry({
+        name: 'alpha',
+        createdAt: '2026-11-20',
+        expiresAt: '2026-11-27',
+      }),
+      entry({ name: 'beta', expiresAt: '2027-05-25' }),
+    ]);
+    const state = stateWith();
+    const store = createFileQuotaStore({
+      stateDir: state,
+      clock,
+      pid: process.pid,
+      host: 'example-host',
+    });
+    await store.noteLastUse(
+      tenant,
+      bearerLastUseKey('alpha'),
+      '2026-11-25' as IsoDate,
+    );
+    const result = await capture({
+      action: 'list',
+      environment: {
+        ECCLIUM_HTTP_TOKENS_FILE: path,
+        ECCLIUM_STATE_DIR: state,
+      },
+    });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.stdout).toEqual([
+      'Name   Scopes  erstellt    gilt bis und mit  zuletzt benutzt  Zustand',
+      'alpha  read    20.11.2026  27.11.2026        25.11.2026       gilt noch bis morgen',
+      'alpha  read    01.06.2026  25.05.2027        25.11.2026       gilt',
+      'beta   read    01.06.2026  25.05.2027        nie              gilt',
+    ]);
+  });
+
+  it('names the last use as unknown when the folder quota is missing, and never creates it', async () => {
+    writeEntries([entry({ name: 'alpha' })]);
+    const state = join(folder, 'state');
+    mkdirSync(state, { mode: 0o700 });
+    chmodSync(state, 0o700);
+    const result = await capture({
+      action: 'list',
+      environment: {
+        ECCLIUM_HTTP_TOKENS_FILE: path,
+        ECCLIUM_STATE_DIR: state,
+      },
+    });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.stdout[1]).toContain('unbekannt');
+    expect(readdirSync(state)).toEqual([]);
+  });
+
+  it('names one name as unknown when the store fails for it, and still lists the others', async () => {
+    writeEntries([entry({ name: 'alpha' }), entry({ name: 'beta' })]);
+    const state = stateWith();
+    const memory = createMemoryQuotaStore();
+    await memory.noteLastUse(
+      tenant,
+      bearerLastUseKey('beta'),
+      '2026-11-24' as IsoDate,
+    );
+    const result = await capture({
+      action: 'list',
+      environment: {
+        ECCLIUM_HTTP_TOKENS_FILE: path,
+        ECCLIUM_STATE_DIR: state,
+      },
+      lastUseStore: {
+        ...memory,
+        readLastUse: (tenantId, key) =>
+          key === bearerLastUseKey('alpha')
+            ? Promise.reject(new Error('disk'))
+            : memory.readLastUse(tenantId, key),
+      },
+    });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(
+      result.stdout.slice(1).map((line) => line.split(/ {2,}/)[4]),
+    ).toEqual(['unbekannt', '24.11.2026']);
+  });
+
+  it('stops with 78 for a folder of state that is no absolute path, before it reads anything', async () => {
+    writeEntries([entry({ name: 'alpha' })]);
+    const result = await capture({
+      action: 'list',
+      environment: {
+        ECCLIUM_HTTP_TOKENS_FILE: path,
+        ECCLIUM_STATE_DIR: 'state',
+      },
+    });
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stdout).toEqual([]);
+  });
+
+  it('says so for a file without tokens and gives 66 without a file', async () => {
     writeEntries([]);
-    expect(capture({ action: 'list' }).stdout).toEqual([tokenTexts.empty]);
+    expect((await capture({ action: 'list' })).stdout).toEqual([
+      tokenTexts.empty,
+    ]);
     rmSync(path);
-    const missing = capture({ action: 'list' });
+    const missing = await capture({ action: 'list' });
     expect(missing.code).toBe(exitCodes.noInput);
     expect(missing.stderr).toEqual([tokenTexts.missingForList]);
   });
 });
 
 describe('ecclium token and its files', () => {
-  it('stops with 78 without the variable, before it reads anything', () => {
-    const result = capture({ action: 'list', environment: {} });
+  it('stops with 78 without the variable, before it reads anything', async () => {
+    const result = await capture({ action: 'list', environment: {} });
     expect(result.code).toBe(exitCodes.invalidConfig);
     expect(result.stderr[0]).toBe('Die Konfiguration hat 1 Problem:');
   });
 
-  it('refuses a file that others may write, and a link, with 78 and writes nothing', () => {
+  it('refuses a file that others may write, and a link, with 78 and writes nothing', async () => {
     writeEntries([entry({ name: 'other' })], 0o666);
     const before = readFileSync(path, 'utf8');
-    const loose = capture({ action: 'create', name: 'buero' });
+    const loose = await capture({ action: 'create', name: 'buero' });
     expect(loose.code).toBe(exitCodes.invalidConfig);
     expect(loose.stderr[0]).toContain('Gruppe oder andere Benutzer dürfen');
     expect(loose.stdout).toEqual([]);
@@ -495,20 +626,20 @@ describe('ecclium token and its files', () => {
     writeFileSync(target, serializeBearerTokens([]), { mode: 0o600 });
     rmSync(path);
     symlinkSync(target, path);
-    const link = capture({ action: 'list' });
+    const link = await capture({ action: 'list' });
     expect(link.code).toBe(exitCodes.invalidConfig);
     expect(link.stderr[0]).toContain('symbolischer Link');
   });
 
-  it('refuses a folder at the path with 78 and an unreadable file with 74', () => {
+  it('refuses a folder at the path with 78 and an unreadable file with 74', async () => {
     mkdirSync(path);
-    const folderThere = capture({ action: 'create', name: 'buero' });
+    const folderThere = await capture({ action: 'create', name: 'buero' });
     expect(folderThere.code).toBe(exitCodes.invalidConfig);
     expect(folderThere.stderr[0]).toContain('keine gewöhnliche Datei');
     rmSync(path, { recursive: true });
     writeEntries([entry({ name: 'other' })]);
     const before = readFileSync(path, 'utf8');
-    const unreadable = capture({
+    const unreadable = await capture({
       action: 'create',
       name: 'buero',
       readFiles: {
@@ -524,10 +655,10 @@ describe('ecclium token and its files', () => {
     expect(readFileSync(path, 'utf8')).toBe(before);
   });
 
-  it('gives 74 and shows no token when the file cannot get its name', () => {
+  it('gives 74 and shows no token when the file cannot get its name', async () => {
     writeEntries([entry({ name: 'other' })]);
     const before = readFileSync(path, 'utf8');
-    const result = capture({
+    const result = await capture({
       action: 'create',
       name: 'buero',
       writeFiles: {
@@ -544,19 +675,19 @@ describe('ecclium token and its files', () => {
     expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
   });
 
-  it('gives 75 while another command holds the lock and takes over a lock older than a minute', () => {
+  it('gives 75 while another command holds the lock and takes over a lock older than a minute', async () => {
     writeEntries([entry({ name: 'other' })]);
     const before = readFileSync(path, 'utf8');
     const lock = join(folder, '.http-tokens.yaml.lock');
     writeFileSync(lock, '', { mode: 0o600 });
-    const busy = capture({ action: 'create', name: 'buero' });
+    const busy = await capture({ action: 'create', name: 'buero' });
     expect(busy.code).toBe(exitCodes.tempFail);
     expect(busy.stderr).toEqual([tokenTexts.busy]);
     expect(busy.stdout).toEqual([]);
     expect(readFileSync(path, 'utf8')).toBe(before);
     // A list reads without the lock.
-    expect(capture({ action: 'list' }).code).toBe(exitCodes.ok);
-    const stale = capture({
+    expect((await capture({ action: 'list' })).code).toBe(exitCodes.ok);
+    const stale = await capture({
       action: 'create',
       name: 'buero',
       clock: { now: () => Date.now() + 61_000 },
@@ -565,7 +696,7 @@ describe('ecclium token and its files', () => {
     expect(readdirSync(folder)).toEqual(['http-tokens.yaml']);
   });
 
-  it('holds the lock from before the read until after the write and releases it', () => {
+  it('holds the lock from before the read until after the write and releases it', async () => {
     const lockName = '.http-tokens.yaml.lock';
     const seen: boolean[] = [];
     const watching: WriterFileSystem = {
@@ -575,7 +706,7 @@ describe('ecclium token and its files', () => {
         nodeWriterFileSystem.renameSync(from, to);
       },
     };
-    const result = capture({
+    const result = await capture({
       action: 'create',
       name: 'buero',
       writeFiles: watching,
@@ -592,7 +723,7 @@ describe('ecclium token and its files', () => {
     expect(readdirSync(folder)).not.toContain(lockName);
   });
 
-  it('writes nothing and gives 75 when the file changes during the read', () => {
+  it('writes nothing and gives 75 when the file changes during the read', async () => {
     writeEntries([entry({ name: 'other' })]);
     const before = readFileSync(path, 'utf8');
     let looks = 0;
@@ -612,7 +743,7 @@ describe('ecclium token and its files', () => {
           : stats;
       },
     };
-    const result = capture({
+    const result = await capture({
       action: 'create',
       name: 'buero',
       writeFiles: changing,
@@ -623,7 +754,7 @@ describe('ecclium token and its files', () => {
     expect(readFileSync(path, 'utf8')).toBe(before);
   });
 
-  it('writes nothing and gives 75 when a file appears during the read of a missing one', () => {
+  it('writes nothing and gives 75 when a file appears during the read of a missing one', async () => {
     let looks = 0;
     const appearing: WriterFileSystem = {
       ...nodeWriterFileSystem,
@@ -635,7 +766,7 @@ describe('ecclium token and its files', () => {
         return nodeWriterFileSystem.lstatSync(target);
       },
     };
-    const result = capture({
+    const result = await capture({
       action: 'create',
       name: 'buero',
       writeFiles: appearing,
@@ -645,9 +776,9 @@ describe('ecclium token and its files', () => {
     expect(entriesOf().map(({ name }) => name)).toEqual(['other']);
   });
 
-  it('refuses a folder that others may write with 78 and leaves no file', () => {
+  it('refuses a folder that others may write with 78 and leaves no file', async () => {
     chmodSync(folder, 0o777);
-    const result = capture({ action: 'create', name: 'buero' });
+    const result = await capture({ action: 'create', name: 'buero' });
     expect(result.code).toBe(exitCodes.invalidConfig);
     expect(result.stderr).toEqual([tokenTexts.unsafeFolder]);
     expect(result.stdout).toEqual([]);
@@ -655,7 +786,7 @@ describe('ecclium token and its files', () => {
     chmodSync(folder, 0o700);
   });
 
-  it('writes nothing and gives 75 when the file changes before its name is set', () => {
+  it('writes nothing and gives 75 when the file changes before its name is set', async () => {
     writeEntries([entry({ name: 'other' })]);
     const before = readFileSync(path, 'utf8');
     let looks = 0;
@@ -679,7 +810,7 @@ describe('ecclium token and its files', () => {
         };
       },
     };
-    const result = capture({
+    const result = await capture({
       action: 'create',
       name: 'buero',
       writeFiles: racing,

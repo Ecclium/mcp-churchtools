@@ -55,6 +55,31 @@ export interface BearerSignInOptions {
   readonly fs?: ConfigFileSystem;
 }
 
+/**
+ * Reads the day a token was last used, where the check of the sign-in
+ * notes it: for the tenant `default` under `bearer:<name>` (ADR 0074).
+ *
+ * @param store - The store of quotas over the folder of state of the
+ *   server.
+ * @param name - The name of the token.
+ * @returns The day, or `undefined` when none is kept. It rejects when the
+ *   name has not the form of a name or the store fails.
+ * @example
+ * ```ts
+ * await readBearerLastUse(store, 'claude-code-office'); // '2026-11-26'
+ * ```
+ */
+export function readBearerLastUse(
+  store: QuotaStore,
+  name: string,
+): Promise<IsoDate | undefined> {
+  return Promise.resolve().then(() => {
+    const tenantId = toTenantId(defaultTenantId);
+    if (tenantId === undefined) throw new TypeError('no tenant');
+    return store.readLastUse(tenantId, bearerLastUseKey(name));
+  });
+}
+
 // The event of a store that could not note a last use. It carries no
 // field: the name of the token stays out of the log.
 const lastUseFailedEvent = 'http_last_use_failed';

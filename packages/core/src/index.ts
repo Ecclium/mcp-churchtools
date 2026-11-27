@@ -176,6 +176,7 @@ export {
   maxBearerTokenDays,
   maxBearerTokens,
   maxBearerTokensFileBytes,
+  readBearerLastUse,
   readBearerTokensFile,
   serializeBearerTokens,
 } from './bearer/index.js';

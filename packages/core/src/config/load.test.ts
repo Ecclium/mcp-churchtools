@@ -3437,6 +3437,53 @@ describe('loadConfig and the file of the bearer tokens (ADR 0074)', () => {
   });
 });
 
+describe('loadTokenCommandConfig and the folder of state (ADR 0074)', () => {
+  const tokensPath = '/path/to/http-tokens.yaml';
+  const loadToken = (
+    extra: Environment,
+    folders: StateDirFileSystem = memoryFolder().fs,
+  ) =>
+    loadTokenCommandConfig({
+      environment: { ECCLIUM_HTTP_TOKENS_FILE: tokensPath, ...extra },
+      stateDirFiles: folders,
+    });
+
+  it('needs no folder of state, and takes one that passes the checks of the start', () => {
+    expect(loadToken({})).toEqual({
+      ok: true,
+      config: { httpTokensFile: tokensPath },
+    });
+    const folder = memoryFolder();
+    expect(loadToken({ ECCLIUM_STATE_DIR: stateDirPath }, folder.fs)).toEqual({
+      ok: true,
+      config: { httpTokensFile: tokensPath, stateDir: stateDirPath },
+    });
+    expect(folder.looked).toContain(stateDirPath);
+  });
+
+  it.each([
+    ['an empty value', '', memoryFolder().fs, 'empty_value'],
+    ['a relative path', 'state', memoryFolder().fs, 'state_dir_relative'],
+    [
+      'a folder others may write',
+      stateDirPath,
+      memoryFolder({ folder: { mode: 0o40777 } }).fs,
+      'state_dir_mode',
+    ],
+    [
+      'a link',
+      stateDirPath,
+      memoryFolder({ folder: { symlink: true } }).fs,
+      'state_dir_symlink',
+    ],
+  ])('stops for %s', (_name, value, folders, code) => {
+    const loaded = loadToken({ ECCLIUM_STATE_DIR: value }, folders);
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) return;
+    expect(loaded.problems).toEqual([{ code, variable: 'ECCLIUM_STATE_DIR' }]);
+  });
+});
+
 describe('loadConfig for the runner', () => {
   it('loads with the token file of its own account', () => {
     const own = memoryFiles();
