@@ -27,10 +27,12 @@ import { join } from 'node:path';
 
 import {
   approvalQuotaKey,
+  bearerLastUseKey,
   type Clock,
   type IsoDate,
   type QuotaKey,
   runQuotaKey,
+  type TenantId,
   writeQuotaKey,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
@@ -123,6 +125,127 @@ const countsOf = (counter: number) =>
     day,
     counts: { 'service:stdio:local-stdio': { special_reads: counter } },
   });
+
+describe('the file of the last uses', () => {
+  // The last day a sign-in was used, one file per tenant (ADR 0074).
+  const tenant = 'demo-tenant' as TenantId;
+  const lastUse = bearerLastUseKey('claude-code-office');
+  const lastUseFile = (state: string) =>
+    join(state, 'quota', 'demo-tenant.last-use.json');
+
+  it('writes keys and days only, in a file of the user with 0600 without a day in its name, and leaves no lock', async () => {
+    const state = freshState();
+    await open(state).noteLastUse(tenant, lastUse, day);
+    const fd = openSync(lastUseFile(state), 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(fd, 'utf8'))).toEqual({
+        v: 1,
+        tenant: 'demo-tenant',
+        lastUse: { 'bearer:claude-code-office': day },
+      });
+    } finally {
+      closeSync(fd);
+    }
+    expect(readdirSync(join(state, 'quota'))).toEqual([
+      'demo-tenant.last-use.json',
+    ]);
+  });
+
+  it('writes only when the day changes, and takes no lock for a day it holds', async () => {
+    const state = freshState();
+    let renames = 0;
+    let creates = 0;
+    const counting: QuotaFileSystem = Object.freeze({
+      ...nodeFs,
+      renameSync: (from: string, to: string) => {
+        renames += 1;
+        renameSync(from, to);
+      },
+      openSync: (path: string, flags: number, mode?: number) => {
+        if ((flags & constants.O_CREAT) !== 0) creates += 1;
+        return openSync(path, flags, mode);
+      },
+    });
+    const store = open(state, { fs: counting });
+    await store.noteLastUse(tenant, lastUse, day);
+    expect([renames, creates]).toEqual([1, 2]);
+    for (let index = 0; index < 5; index += 1) {
+      await store.noteLastUse(tenant, lastUse, day);
+    }
+    await store.noteLastUse(tenant, lastUse, '2026-10-01' as IsoDate);
+    // Neither a lock nor a temporary file nor a rename for a day it holds.
+    expect([renames, creates]).toEqual([1, 2]);
+    await store.noteLastUse(tenant, lastUse, '2026-10-25' as IsoDate);
+    expect([renames, creates]).toEqual([2, 4]);
+  });
+
+  it.each([
+    ['no JSON', '{'],
+    [
+      'another tenant',
+      JSON.stringify({ v: 1, tenant: 'other-tenant', lastUse: {} }),
+    ],
+    [
+      'a key of another form',
+      JSON.stringify({ v: 1, tenant: 'demo-tenant', lastUse: { x: day } }),
+    ],
+    [
+      'a day that is none',
+      JSON.stringify({
+        v: 1,
+        tenant: 'demo-tenant',
+        lastUse: { 'bearer:claude-code-office': '2026-02-30' },
+      }),
+    ],
+    [
+      'another version',
+      JSON.stringify({ v: 2, tenant: 'demo-tenant', lastUse: {} }),
+    ],
+  ])('refuses a file with %s', async (_name, text) => {
+    const state = freshState();
+    writeFileSync(lastUseFile(state), text, { mode: 0o600 });
+    chmodSync(lastUseFile(state), 0o600);
+    const store = open(state);
+    await expect(store.readLastUse(tenant, lastUse)).rejects.toThrow(failure);
+    await expect(store.noteLastUse(tenant, lastUse, day)).rejects.toThrow(
+      failure,
+    );
+  });
+
+  it('removes a temporary file and a lock moved aside that a process left of it, and nothing else', async () => {
+    const state = freshState();
+    const folder = join(state, 'quota');
+    const left = [
+      '.demo-tenant.last-use.99.0123456789abcdef.tmp',
+      'demo-tenant.last-use.json.lock.99.0123456789abcdef.stale',
+    ];
+    const kept = [
+      '.other-tenant.last-use.99.0123456789abcdef.tmp',
+      'demo-tenant.last-use.notes',
+    ];
+    for (const name of [...left, ...kept]) {
+      writeFileSync(join(folder, name), '', { mode: 0o600 });
+    }
+    await open(state).noteLastUse(tenant, lastUse, day);
+    expect(readdirSync(folder).sort()).toEqual(
+      [...kept, 'demo-tenant.last-use.json'].sort(),
+    );
+  });
+
+  it('keeps the file of the last uses when the files of earlier days go', async () => {
+    const state = freshState();
+    const store = open(state);
+    await store.noteLastUse(tenant, lastUse, day);
+    await store.increment(ctx, key, day);
+    await store.increment(ctx, key, '2026-10-25' as IsoDate);
+    expect(readdirSync(join(state, 'quota')).sort()).toEqual([
+      'demo-tenant-2026-10-25.json',
+      'demo-tenant.last-use.json',
+    ]);
+    await expect(store.readLastUse(tenant, lastUse)).resolves.toBe(day);
+  });
+});
 
 describe('the file of quotas', () => {
   it.each(quotaStoreChecks)('$name', async ({ run }) => {

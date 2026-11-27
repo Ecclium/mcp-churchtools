@@ -2,6 +2,13 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  bearerLastUseKey,
+  type Logger,
+  type QuotaStore,
+  type TenantId,
+} from '@ecclium/mcp-churchtools-plugin-api';
+import { createMemoryQuotaStore } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { signInRefusals } from '../identity/refusals.js';
@@ -279,11 +286,122 @@ describe('a refused sign-in', () => {
   });
 });
 
+describe('the last use of a token', () => {
+  const key = bearerLastUseKey('claude-code-office');
+  const tenantId = 'default' as TenantId;
+  const recording = () => {
+    const lines: { event: string; fields: unknown }[] = [];
+    const record = (event: string, fields?: unknown) => {
+      lines.push({ event, fields });
+    };
+    const logger: Logger = {
+      debug: record,
+      info: record,
+      warn: record,
+      error: record,
+    };
+    return { lines, logger };
+  };
+
+  it('notes the day of a sign-in that holds for the tenant default, before the check answers', async () => {
+    const { token, path } = setup();
+    const store = createMemoryQuotaStore();
+    const { lines, logger } = recording();
+    const signIn = createBearerSignIn({
+      tokensFile: path,
+      clock: today,
+      lastUse: { store, logger },
+    });
+    await expect(signIn(`Bearer ${token}`)).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(store.readLastUse(tenantId, key)).resolves.toBe('2026-11-26');
+    expect(lines).toEqual([]);
+  });
+
+  it('notes nothing for a sign-in it refuses', async () => {
+    const { path } = setup();
+    const store = createMemoryQuotaStore();
+    const { logger } = recording();
+    const signIn = createBearerSignIn({
+      tokensFile: path,
+      clock: today,
+      lastUse: { store, logger },
+    });
+    await signIn(`Bearer ${createBearerToken()}`);
+    await signIn(null);
+    await expect(store.readLastUse(tenantId, key)).resolves.toBeUndefined();
+  });
+
+  it('lets a sign-in pass when the store fails, and writes a line without the token or its name', async () => {
+    const { token, path } = setup();
+    const failing: QuotaStore = {
+      ...createMemoryQuotaStore(),
+      noteLastUse: () => Promise.reject(new Error('claude-code-office')),
+    };
+    const { lines, logger } = recording();
+    const signIn = createBearerSignIn({
+      tokensFile: path,
+      clock: today,
+      lastUse: { store: failing, logger },
+    });
+    await expect(signIn(`Bearer ${token}`)).resolves.toMatchObject({
+      ok: true,
+      identity: { subject: 'claude-code-office' },
+    });
+    expect(lines).toEqual([
+      { event: 'http_last_use_failed', fields: undefined },
+    ]);
+  });
+
+  it('lets a sign-in pass when the store and the logger throw at once', async () => {
+    const { token, path } = setup();
+    const throwing: QuotaStore = {
+      ...createMemoryQuotaStore(),
+      noteLastUse: () => {
+        throw new Error('sync');
+      },
+    };
+    const logger: Logger = {
+      debug: () => undefined,
+      info: () => undefined,
+      warn: () => {
+        throw new Error('log');
+      },
+      error: () => undefined,
+    };
+    const signIn = createBearerSignIn({
+      tokensFile: path,
+      clock: today,
+      lastUse: { store: throwing, logger },
+    });
+    await expect(signIn(`Bearer ${token}`)).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+});
+
 describe('createBearerSignIn', () => {
   it.each([
     ['a path that is no string', { tokensFile: 7, clock: today }],
     ['no clock', { tokensFile: '/config/tokens.yaml' }],
     ['a clock without now', { tokensFile: '/config/tokens.yaml', clock: {} }],
+    [
+      'a last use without its logger',
+      {
+        tokensFile: '/config/tokens.yaml',
+        clock: today,
+        lastUse: { store: createMemoryQuotaStore() },
+      },
+    ],
+    [
+      'a last use without a store',
+      {
+        tokensFile: '/config/tokens.yaml',
+        clock: today,
+        lastUse: { logger: { warn: () => undefined } },
+      },
+    ],
   ])('refuses %s', (_name, options) => {
     expect(() => createBearerSignIn(options as never)).toThrow(TypeError);
   });

@@ -154,6 +154,7 @@ export {
   type BearerLookup,
   type BearerRefusal,
   type BearerScope,
+  type BearerLastUse,
   type BearerSignIn,
   type BearerSignInOptions,
   type BearerTokenEntry,

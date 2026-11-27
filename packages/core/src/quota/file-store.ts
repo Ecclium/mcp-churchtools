@@ -54,14 +54,18 @@ import {
   type IsoDate,
   isApprovalQuotaKey,
   isIsoDate,
+  isLastUseKey,
   isQuotaKey,
   isRunQuotaKey,
+  lastUseKeepDays,
+  type LastUseKey,
   type QuotaKey,
   quotaKeys,
   type QuotaStore,
   runCountDays,
   runQuotaDayOf,
   type TenantContext,
+  type TenantId,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { actorKinds, isActorId } from '../audit/schema.js';
@@ -111,6 +115,13 @@ export const maxApprovalKeys = 512;
  * tries, and no routine can fill the file of another.
  */
 export const maxRunKeys = 128;
+
+/**
+ * The most keys of a last use the file of one tenant holds (ADR 0074). The
+ * file of the tokens holds at most 64 entries, and a name that is gone
+ * stays at most 365 days, so a tenant rarely has more than a few dozen.
+ */
+export const maxLastUseKeys = 512;
 
 const dayMs = 86_400_000;
 
@@ -527,6 +538,36 @@ const parseKept = (
   return kept;
 };
 
+// The days of the last uses in the file of a tenant, or undefined when the
+// file is not one the store wrote for this tenant (ADR 0074).
+const parseLastUses = (
+  text: string,
+  tenantId: string,
+): Record<string, IsoDate> | undefined => {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (ownData(data, 'v') !== 1 || ownData(data, 'tenant') !== tenantId) {
+    return undefined;
+  }
+  const days = ownData(data, 'lastUse');
+  if (typeof days !== 'object' || days === null || Array.isArray(days)) {
+    return undefined;
+  }
+  const keys = Object.keys(days);
+  if (keys.length > maxLastUseKeys) return undefined;
+  const kept = Object.create(null) as Record<string, IsoDate>;
+  for (const key of keys) {
+    const value = ownData(days, key);
+    if (!isLastUseKey(key) || !isIsoDate(value)) return undefined;
+    kept[key] = value;
+  }
+  return kept;
+};
+
 /**
  * Builds the store of quotas over the folder `quota` of the folder of
  * state, which {@link prepareQuotaFolder} made. Each file belongs to one
@@ -805,11 +846,27 @@ export function createFileQuotaStore(
     flags: { readonly create: number; readonly folder: number },
     checked: Identity,
   ): void => {
-    const bytes = encoder.encode(
-      `${JSON.stringify({ v: 1, tenant: tenantId, day, ...record })}\n`,
+    replaceFile(
+      path,
+      `${tenantId}-${day}${part}`,
+      { v: 1, tenant: tenantId, day, ...record },
+      flags,
+      checked,
     );
+  };
+
+  // The same for any file of the store: `stem` is its name without the
+  // end, which the temporary file takes with a point before it.
+  const replaceFile = (
+    path: string,
+    stem: string,
+    record: Readonly<Record<string, unknown>>,
+    flags: { readonly create: number; readonly folder: number },
+    checked: Identity,
+  ): void => {
+    const bytes = encoder.encode(`${JSON.stringify(record)}\n`);
     if (bytes.length > maxQuotaFileBytes) throw unavailable();
-    const temporary = `${folder}/.${tenantId}-${day}${part}.${String(pid)}.${randomBytes(8).toString('hex')}.tmp`;
+    const temporary = `${folder}/.${stem}.${String(pid)}.${randomBytes(8).toString('hex')}.tmp`;
     let fd: number;
     try {
       fd = fs.openSync(temporary, flags.create, quotaFileMode);
@@ -1177,6 +1234,118 @@ export function createFileQuotaStore(
     return Promise.resolve(counts[actor]?.[key] ?? 0);
   };
 
+  // The file of the last uses of a tenant (ADR 0074): one per tenant, not
+  // per day, so that its name holds no day and the removal of the files
+  // of earlier days never sees it.
+  const lastUseStem = (tenantId: string): string => `${tenantId}.last-use`;
+
+  // Tenant and key of a last use, checked before any name is built from
+  // them.
+  const lastUseTenant = (tenantId: unknown, key: unknown): string => {
+    if (!isTenantId(tenantId)) throw new TypeError('The tenant is invalid.');
+    if (!isLastUseKey(key)) throw new TypeError('The key is unknown.');
+    return tenantId;
+  };
+
+  const readLastUses = (
+    path: string,
+    tenantId: string,
+    flags: { readonly read: number; readonly uid: number },
+    checked: Identity,
+  ): Record<string, IsoDate> => {
+    const text = readText(path, flags, checked);
+    if (text === undefined)
+      return Object.create(null) as Record<string, IsoDate>;
+    const days = parseLastUses(text, tenantId);
+    if (days === undefined) throw unavailable();
+    return days;
+  };
+
+  // Removes what a process left of the file of the last uses: a temporary
+  // file and a lock moved aside. Only under the lock of the file, which
+  // every writer of such a file holds, and only names of exactly these
+  // forms; unlink never follows a link.
+  const cleanUpLastUses = (tenantId: string, checked: Identity): void => {
+    let names: string[];
+    try {
+      sameFolder(checked);
+      names = fs.readdirSync(folder);
+    } catch {
+      return;
+    }
+    const stem = lastUseStem(tenantId);
+    for (const name of names) {
+      const leftOver =
+        (name.startsWith(`.${stem}.`) &&
+          temporarySuffix.test(name.slice(stem.length + 1))) ||
+        (name.startsWith(`${stem}.`) &&
+          staleSuffix.test(name.slice(stem.length)));
+      if (!leftOver) continue;
+      try {
+        fs.unlinkSync(`${folder}/${name}`);
+      } catch {
+        // Tried again with the next change.
+      }
+    }
+  };
+
+  const noteLastUse = async (
+    tenantId: TenantId,
+    key: LastUseKey,
+    day: IsoDate,
+  ): Promise<void> => {
+    const tenant = lastUseTenant(tenantId, key);
+    if (!isIsoDate(day)) throw new TypeError('The day is invalid.');
+    const flags = flagsOrFail();
+    const checked = checkFolder(flags.uid);
+    const path = `${folder}/${lastUseStem(tenant)}.json`;
+    // A day already held, the common case, costs one read and no lock.
+    const held = readLastUses(path, tenant, flags, checked)[key];
+    if (held !== undefined && held >= day) return;
+    const mine = await lock(`${path}.lock`, flags, checked);
+    try {
+      const days = readLastUses(path, tenant, flags, checked);
+      const current = days[key];
+      if (current !== undefined && current >= day) return;
+      // A day more than lastUseKeepDays before the new one goes.
+      const keptFrom = new Date(Date.parse(day) - lastUseKeepDays * dayMs)
+        .toISOString()
+        .slice(0, 10);
+      const kept = Object.create(null) as Record<string, IsoDate>;
+      for (const [other, value] of Object.entries(days)) {
+        if (value >= keptFrom) kept[other] = value;
+      }
+      kept[key] = day;
+      if (Object.keys(kept).length > maxLastUseKeys) throw unavailable();
+      replaceFile(
+        path,
+        lastUseStem(tenant),
+        { v: 1, tenant, lastUse: kept },
+        flags,
+        checked,
+      );
+      cleanUpLastUses(tenant, checked);
+    } finally {
+      unlock(`${path}.lock`, mine, flags);
+    }
+  };
+
+  const readLastUse = (
+    tenantId: TenantId,
+    key: LastUseKey,
+  ): IsoDate | undefined => {
+    const tenant = lastUseTenant(tenantId, key);
+    const flags = flagsOrFail();
+    const checked = checkFolder(flags.uid);
+    // A rename replaces the file whole, so a read needs no lock.
+    return readLastUses(
+      `${folder}/${lastUseStem(tenant)}.json`,
+      tenant,
+      flags,
+      checked,
+    )[key];
+  };
+
   // Every call becomes a promise, also one whose check throws, and the
   // changes of this process run one after the other.
   const serial = <T>(run: () => Promise<T>): Promise<T> => {
@@ -1191,5 +1360,9 @@ export function createFileQuotaStore(
       serial(() => increment(ctx, key, day)),
     read: (ctx: TenantContext, key: QuotaKey, day: IsoDate) =>
       Promise.resolve().then(() => read(ctx, key, day)),
+    noteLastUse: (tenantId: TenantId, key: LastUseKey, day: IsoDate) =>
+      serial(() => noteLastUse(tenantId, key, day)),
+    readLastUse: (tenantId: TenantId, key: LastUseKey) =>
+      Promise.resolve().then(() => readLastUse(tenantId, key)),
   });
 }

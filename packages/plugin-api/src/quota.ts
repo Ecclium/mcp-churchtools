@@ -7,7 +7,7 @@
  *
  * @packageDocumentation
  */
-import type { TenantContext } from './context.js';
+import type { TenantContext, TenantId } from './context.js';
 
 /**
  * The key of a counter of the policy (ADR 0032): how often one tool wrote
@@ -327,6 +327,66 @@ export function isIsoDate(value: unknown): value is IsoDate {
 }
 
 /**
+ * The key of the last day a sign-in was used (ADR 0074): `bearer:` and
+ * the name of a static bearer token, such as `bearer:claude-code-office`,
+ * so that a token nobody uses any more shows. Only
+ * {@link bearerLastUseKey} makes one; the brand keeps any other string
+ * from passing as one by accident.
+ */
+export type LastUseKey = string & { readonly __ecclium: 'LastUseKey' };
+
+// The name of a token, as the file of the tokens takes it: a lowercase
+// letter, then up to 31 lowercase letters, digits and hyphens. Anchored,
+// without flags, so no lastIndex is shared.
+const lastUseKeyPattern = /^bearer:[a-z][a-z0-9-]{0,31}$/;
+
+/**
+ * How many days before the day a store notes it keeps the day of another
+ * key of the same tenant at most: as long as a token holds at most. A
+ * store removes an older day when it notes a later one.
+ */
+export const lastUseKeepDays = 365;
+
+/**
+ * Tells whether a value is the key of a last use.
+ *
+ * @param value - Any value.
+ * @returns Whether it is such a key.
+ * @example
+ * ```ts
+ * isLastUseKey('bearer:claude-code-office'); // true
+ * isLastUseKey('bearer:max.mustermann@example.org'); // false
+ * ```
+ */
+export function isLastUseKey(value: unknown): value is LastUseKey {
+  return typeof value === 'string' && lastUseKeyPattern.test(value);
+}
+
+/**
+ * Builds the key of the last use of a static bearer token.
+ *
+ * @param name - The name of the token.
+ * @returns The key.
+ * @throws {TypeError} When the name has another form.
+ * @example
+ * ```ts
+ * bearerLastUseKey('claude-code-office'); // 'bearer:claude-code-office'
+ * ```
+ */
+export function bearerLastUseKey(name: string): LastUseKey {
+  // A caller without types could pass anything; only a string makes a key.
+  const given: unknown = name;
+  if (typeof given !== 'string') {
+    throw new TypeError('The name of the token is invalid.');
+  }
+  const key = `bearer:${given}`;
+  if (!isLastUseKey(key)) {
+    throw new TypeError('The name of the token is invalid.');
+  }
+  return key;
+}
+
+/**
  * Counters only, never content (ADR 0051, ADR 0063). Each counter belongs
  * to the tenant and the actor of the context, a key and a day; a store
  * takes them from the context and from nothing a tool hands over. The
@@ -335,6 +395,10 @@ export function isIsoDate(value: unknown): value is IsoDate {
  * about the same entry, and it stays at least {@link approvalCountDays}
  * days after its day (ADR 0029). A counter survives a restart and is
  * shared by every process that uses the same store.
+ *
+ * Beside the counters a store keeps one day per key and tenant: the last
+ * day a sign-in was used (ADR 0074), because counters per day cannot say
+ * that. A day holds no content either, only a name of a token and a day.
  */
 export interface QuotaStore {
   /**
@@ -355,4 +419,29 @@ export interface QuotaStore {
    * @returns The counter, 0 when nothing was counted.
    */
   read(ctx: TenantContext, key: QuotaKey, day: IsoDate): Promise<number>;
+  /**
+   * Notes the day of a use: the store keeps the later of this day and the
+   * one it holds for the key, and writes only when that changes. When it
+   * writes, it removes every day of the tenant that lies more than
+   * {@link lastUseKeepDays} days before this one. The tenant comes from
+   * the sign-in of the server, never from a tool, which never reaches the
+   * store.
+   *
+   * @param tenantId - The tenant of the sign-in.
+   * @param key - Whose use it is.
+   * @param day - The day in UTC.
+   * @returns Nothing once the day is kept.
+   */
+  noteLastUse(tenantId: TenantId, key: LastUseKey, day: IsoDate): Promise<void>;
+  /**
+   * Reads the day of the last use of a key without changing it.
+   *
+   * @param tenantId - The tenant.
+   * @param key - Whose use it is.
+   * @returns The day, or `undefined` when none is kept.
+   */
+  readLastUse(
+    tenantId: TenantId,
+    key: LastUseKey,
+  ): Promise<IsoDate | undefined>;
 }

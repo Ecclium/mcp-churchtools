@@ -47,6 +47,12 @@ import { contentHashOf } from './plan-hash.js';
 import type { SnapshotToUndo } from './undo.js';
 import { createWriteHalt, type WriteHalt, writesHalted } from './write-halt.js';
 
+// The last use of a sign-in plays no part in these tests (ADR 0074).
+const noLastUse = Object.freeze({
+  noteLastUse: () => Promise.resolve(),
+  readLastUse: () => Promise.resolve(undefined),
+});
+
 const guid = '00000000-0000-4000-8000-0000000000AB';
 const now = Date.UTC(2026, 11, 1, 8, 0, 0);
 
@@ -1270,6 +1276,7 @@ describe('the policy (ADR 0032)', () => {
     const store = createMemoryQuotaStore();
     // The switch goes off while the write takes its place in the counter.
     const quota: QuotaStore = {
+      ...noLastUse,
       read: (ctx, key, day) => store.read(ctx, key, day),
       increment: (ctx, key, day) => {
         writeFileSync(join(dir, 'writes-off'), '');

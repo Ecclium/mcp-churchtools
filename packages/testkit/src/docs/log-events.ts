@@ -341,6 +341,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Eine Anfrage über HTTP kam mit einem `Origin`, den der Server nicht annimmt. Sie erhielt 403, bevor die Anmeldung geprüft wurde.',
     http_auth_refused:
       'Eine Anfrage über HTTP kam ohne gültige Anmeldung. Sie erhielt 401, bevor ihr Körper gelesen wurde. `reason` nennt den Grund: ohne Kopfzeile `Authorization` (`missing`), mit einem anderen Verfahren als `Bearer` (`scheme`), ein Token in falscher Form (`form`) oder mit falscher Prüfsumme (`checksum`), unbekannt oder widerrufen (`unknown`), abgelaufen (`expired`), noch nicht gültig (`not_yet_valid`), die Datei der Tokens fehlt, ist nicht lesbar oder ungültig (`tokens_file`, `ecclium token list` nennt das Problem), oder die Prüfung selbst scheiterte (`failed`). Der Client erhält bei jedem Grund dieselbe Antwort.',
+    http_last_use_failed:
+      'Der Server konnte den Tag der letzten Verwendung eines Bearer-Tokens nicht im Zustandsordner festhalten, etwa weil der Ordner `quota` fehlt oder eine Sperre nicht frei wurde. Die Anmeldung gilt trotzdem. Die Zeile nennt das Token nicht.',
     http_scope_refused:
       'Eine Anmeldung, die nur lesen darf, rief über HTTP ein Schreib-Tool auf. Die Pipeline hat den Aufruf abgelehnt und im Audit verzeichnet, der Client erhielt danach 403 mit `insufficient_scope`.',
     http_body_not_json:

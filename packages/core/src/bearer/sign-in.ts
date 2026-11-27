@@ -14,12 +14,30 @@
  *
  * @packageDocumentation
  */
-import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  bearerLastUseKey,
+  type Clock,
+  type IsoDate,
+  type Logger,
+  type QuotaStore,
+} from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { ConfigFileSystem } from '../config/text-file.js';
 import type { SignInRefusal, SignInResult } from '../identity/refusals.js';
+import { defaultTenantId, toTenantId } from '../tenant/tenant-id.js';
 import { readBearerTokensFile } from './file.js';
 import { bearerTokenFormProblem, findBearerToken } from './token.js';
+
+/** Where a check of the sign-in notes the last use of each token. */
+export interface BearerLastUse {
+  /**
+   * The store of quotas, which keeps one day per name of a token and
+   * tenant (ADR 0074, ADR 0063).
+   */
+  readonly store: QuotaStore;
+  /** Receives `http_last_use_failed` when the store fails. */
+  readonly logger: Logger;
+}
 
 /** What {@link createBearerSignIn} needs. */
 export interface BearerSignInOptions {
@@ -27,9 +45,19 @@ export interface BearerSignInOptions {
   readonly tokensFile: string;
   /** The clock; its UTC day decides whether a token holds. */
   readonly clock: Clock;
+  /**
+   * Where the check notes the day of each sign-in that holds, for the
+   * tenant `default`, the one tenant of the free core. Without it nothing
+   * is noted.
+   */
+  readonly lastUse?: BearerLastUse;
   /** The file functions of the reader, only for tests. */
   readonly fs?: ConfigFileSystem;
 }
+
+// The event of a store that could not note a last use. It carries no
+// field: the name of the token stays out of the log.
+const lastUseFailedEvent = 'http_last_use_failed';
 
 /** Checks the value of the header `Authorization` of one request. */
 export type BearerSignIn = (
@@ -71,56 +99,94 @@ const presentedOf = (
  * `bearer` with the name of its entry as subject and the scopes of its
  * entry.
  *
- * @param options - The file of the tokens, the clock and, for tests, the
- *   file functions.
+ * With `lastUse` the check then notes the day in the store and waits for
+ * it, so that the day stands once the request goes on. A store that fails
+ * never refuses the sign-in: the check writes `http_last_use_failed` and
+ * lets it pass. The file store writes only when the day changes and waits
+ * at most two seconds for the lock of another process (ADR 0063).
+ *
+ * @param options - The file of the tokens, the clock, the store of the
+ *   last use and, for tests, the file functions.
  * @returns The check. Its promise never rejects: a failure of the check
  *   itself is the reason `failed`.
- * @throws {TypeError} When the path is no string or the clock has no
- *   function `now`.
+ * @throws {TypeError} When the path is no string, the clock has no
+ *   function `now`, or `lastUse` lacks its store or its logger.
  * @example
  * ```ts
- * const signIn = createBearerSignIn({ tokensFile, clock: systemClock });
+ * const signIn = createBearerSignIn({ tokensFile, clock: systemClock,
+ *   lastUse: { store, logger } });
  * const result = await signIn(request.headers.get('authorization'));
  * if (!result.ok) refuse(result.reason);
  * ```
  */
 export function createBearerSignIn(options: BearerSignInOptions): BearerSignIn {
-  const { tokensFile, clock, fs } = options;
+  const { tokensFile, clock, fs, lastUse } = options;
   if (
     typeof tokensFile !== 'string' ||
-    typeof (clock as Partial<Clock> | null)?.now !== 'function'
+    typeof (clock as Partial<Clock> | null)?.now !== 'function' ||
+    (lastUse !== undefined &&
+      (typeof (lastUse.store as Partial<QuotaStore> | null)?.noteLastUse !==
+        'function' ||
+        typeof (lastUse.logger as unknown) !== 'object' ||
+        (lastUse.logger as unknown) === null))
   ) {
     throw new TypeError(
       'The check of the sign-in needs the file of the tokens and a clock.',
     );
   }
-  const check = (authorization: unknown): SignInResult => {
+  const tenantId = toTenantId(defaultTenantId);
+  const check = (
+    authorization: unknown,
+  ): { readonly result: SignInResult; readonly today?: IsoDate } => {
     const presented = presentedOf(authorization);
-    if (presented.kind !== 'token') return refuse(presented.kind);
+    if (presented.kind !== 'token') return { result: refuse(presented.kind) };
     const problem = bearerTokenFormProblem(presented.text);
-    if (problem !== undefined) return refuse(problem);
+    if (problem !== undefined) return { result: refuse(problem) };
     // A time that is no date throws here, a day before 1970 in the lookup.
-    const today = new Date(clock.now()).toISOString().slice(0, 10);
+    const today = new Date(clock.now()).toISOString().slice(0, 10) as IsoDate;
     const read = readBearerTokensFile(tokensFile, fs);
-    if (!read.ok) return refuse('tokens_file');
+    if (!read.ok) return { result: refuse('tokens_file') };
     const found = findBearerToken(read.entries, presented.text, today);
-    if (!found.ok) return refuse(found.reason);
-    return Object.freeze({
-      __proto__: null,
-      ok: true,
-      identity: Object.freeze({
+    if (!found.ok) return { result: refuse(found.reason) };
+    return {
+      today,
+      result: Object.freeze({
         __proto__: null,
-        source: 'bearer',
-        subject: found.entry.name,
-        scopes: found.entry.scopes,
+        ok: true,
+        identity: Object.freeze({
+          __proto__: null,
+          source: 'bearer',
+          subject: found.entry.name,
+          scopes: found.entry.scopes,
+        }),
       }),
-    });
+    };
   };
-  return (authorization) => {
+  // Notes the day of a sign-in that holds. Nothing here refuses it.
+  const note = async (name: string, today: IsoDate): Promise<void> => {
+    if (lastUse === undefined) return;
     try {
-      return Promise.resolve(check(authorization));
+      if (tenantId === undefined) throw new TypeError('no tenant');
+      await lastUse.store.noteLastUse(tenantId, bearerLastUseKey(name), today);
     } catch {
-      return Promise.resolve(refuse('failed'));
+      try {
+        lastUse.logger.warn(lastUseFailedEvent);
+      } catch {
+        // The sign-in does not depend on the log.
+      }
     }
+  };
+  return async (authorization) => {
+    let checked: ReturnType<typeof check>;
+    try {
+      checked = check(authorization);
+    } catch {
+      return refuse('failed');
+    }
+    const { result, today } = checked;
+    if (result.ok && today !== undefined) {
+      await note(result.identity.subject, today);
+    }
+    return result;
   };
 }

@@ -52,6 +52,12 @@ import { approvalKeyOf } from '../write/plan-hash.js';
 import { createMemoryPlanStore } from '../write/plan-store.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
+// The last use of a sign-in plays no part in these tests (ADR 0074).
+const noLastUse = Object.freeze({
+  noteLastUse: () => Promise.resolve(),
+  readLastUse: () => Promise.resolve(undefined),
+});
+
 // The queue of approvals in the pipeline (ADR 0031): a write no person can
 // confirm in the client, or that the policy sends there, waits as a sealed
 // entry under the ID of the audit line of its call, and the operator
@@ -763,6 +769,7 @@ describe('a rejection of the operator (ADR 0031)', () => {
     const hanging = setup({
       queue: setupped.keeper,
       quota: {
+        ...noLastUse,
         increment: () => new Promise<number>(() => undefined),
         read: () => Promise.resolve(0),
       },
@@ -1241,6 +1248,7 @@ describe('an approval of the operator (ADR 0029)', () => {
     const blind = setup({
       queue: setupped.keeper,
       quota: {
+        ...noLastUse,
         increment: () => Promise.reject(new Error('disk')),
         read: () => Promise.reject(new Error('disk')),
       },
@@ -1625,6 +1633,7 @@ describe('an approval of the operator (ADR 0029)', () => {
     const hanging = setup({
       queue: setupped.keeper,
       quota: {
+        ...noLastUse,
         increment: () => new Promise<number>(() => undefined),
         read: () => Promise.resolve(0),
       },
