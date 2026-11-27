@@ -21,6 +21,18 @@ const code = (text: string): string => `\`${text}\``;
 
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
 
+// A whole number as the brand writes it, from 1000 up with an apostrophe
+// between thousands, such as 65'535.
+const swiss = (value: number): string => {
+  const digits = String(value);
+  let text = '';
+  for (let index = 0; index < digits.length; index += 1) {
+    if (index > 0 && (digits.length - index) % 3 === 0) text += "'";
+    text += digits.charAt(index);
+  }
+  return text;
+};
+
 // What a value of each kind looks like. The table keeps no range of a
 // number, so each whole number needs its own range here: the renderer
 // refuses another one instead of guessing.
@@ -66,7 +78,7 @@ const valuesOf = (variable: Variable): string => {
       if (range === undefined) {
         throw new TypeError(`no range known for ${variable.name}`);
       }
-      return `ganze Zahl von ${String(range.min)} bis ${String(range.max)}`;
+      return `ganze Zahl von ${swiss(range.min)} bis ${swiss(range.max)}`;
     }
   }
 };

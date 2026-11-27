@@ -40,7 +40,7 @@ Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Be
 | `ECCLIUM_EGRESS_ALLOW_LAN` | Liste aus Name und Port wie `modell.example.org:8443`, mit Komma getrennt | keine | nein | nein | ja |
 | `ECCLIUM_HTTP_TOKENS_FILE` | absoluter Pfad | keine | nein | nein | nein |
 | `ECCLIUM_HTTP_ADDRESS` | IP-Adresse wie `127.0.0.1` oder `::1` | `127.0.0.1` | nein | nein | nein |
-| `ECCLIUM_HTTP_PORT` | ganze Zahl von 1 bis 65535 | `8765` | nein | nein | nein |
+| `ECCLIUM_HTTP_PORT` | ganze Zahl von 1 bis 65'535 | `8765` | nein | nein | nein |
 | `ECCLIUM_ALLOWED_HOSTS` | Liste aus Hosts mit oder ohne Port wie `mcp.example.org:8443`, mit Komma getrennt | keine | nein | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja | nein |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein | ja |

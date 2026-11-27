@@ -45,7 +45,7 @@ ecclium serve-http
 
 Ohne weitere Angaben bindet der Server an `127.0.0.1` und den Port `8765` und nimmt in den Kopfzeilen `Host` und `Origin` nur die Namen von Loopback mit diesem Port an. Die übrigen Variablen, etwa `ECCLIUM_TOOLSETS` und `ECCLIUM_REDACTION`, gelten wie über stdio ([Konfiguration](../configuration.md)).
 
-Bevor der Server einen Port belegt, prüft er die Konfiguration, die Datei der Tokens, die Audit-Datei und den Ordner der Zähler. Jede dieser Prüfungen beendet den Start mit 78 und einem Satz auf Deutsch, der sagt, was fehlt. Ebenso endet der Start mit 78, wenn der Port belegt ist oder das System die Adresse nicht zulässt. Hält die Datei kein Token, das heute gilt, startet der Server trotzdem und sagt, dass jede Anmeldung mit 401 enden wird.
+Bevor der Server einen Port belegt, prüft er die Konfiguration, die Datei der Tokens, die Audit-Datei und den Ordner der Zähler. Jede dieser Prüfungen beendet den Start mit 78 und einem Satz auf Deutsch, der sagt, was fehlt. Ebenso endet der Start mit 78, wenn der Port belegt ist oder das System die Adresse nicht zulässt. Mit `ECCLIUM_EGRESS_PROXY` prüft er zuerst einen Tunnel zu ChurchTools und endet mit 69, wenn der Proxy keinen gibt. Hält die Datei kein Token, das heute gilt, startet der Server trotzdem und sagt, dass jede Anmeldung mit 401 enden wird.
 
 Läuft der Server, schreibt er auf stderr, unter welcher Adresse er Anfragen annimmt. Danach folgen nur noch Zeilen des Logs und die Kopie des Audits, je eine Zeile JSON.
 
