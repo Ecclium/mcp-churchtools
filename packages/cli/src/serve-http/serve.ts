@@ -2,12 +2,13 @@
  * `ecclium serve-http` (ADR 0073, ADR 0074): the server over HTTP with
  * static bearer tokens, as one process that runs until a signal.
  *
- * The start runs in this order, and every check that can end it with 78
- * comes before the port: the configuration over HTTP, which requires the
- * folder of state and the file of the tokens and refuses writes, the
- * catalog of tools, the file of the tokens, the audit file and the folder
- * of the counters, the proxy. Only then come the stderr writer, the
- * pipeline and the binding; an error of the binding ends with 78 as well.
+ * The start runs in this order, and every check comes before the port:
+ * the configuration over HTTP, which requires the folder of state and the
+ * file of the tokens and refuses writes (78), the catalog of tools (70 for
+ * a refusal of the registry or a docs index that cannot be read), the file
+ * of the tokens, the audit file and the folder of the counters (78), the
+ * proxy (69). Only then come the stderr writer, the pipeline and the
+ * binding; an error of the binding ends with 78 as well.
  * The server reads; writing over HTTP comes with a later version.
  *
  * While it runs, the audit file of a new UTC day starts and the files past

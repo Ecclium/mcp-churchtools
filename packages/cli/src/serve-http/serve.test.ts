@@ -35,8 +35,13 @@ import {
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import { exitCodes } from '../exit-codes.js';
+import { problemText, startText } from '../messages/index.js';
 import { createOutput } from '../output/index.js';
-import { runServeHttp, type ServeHttpHost } from './serve.js';
+import {
+  runServeHttp,
+  type ServeHttpHost,
+  type ServeHttpOptions,
+} from './serve.js';
 import {
   bindText,
   listeningText,
@@ -105,6 +110,8 @@ interface Setup {
   readonly tokens?: string;
   readonly listen?: (options: HttpListenOptions) => Promise<never>;
   readonly holdClose?: Promise<void>;
+  readonly state?: string;
+  readonly extra?: Partial<ServeHttpOptions>;
 }
 
 /**
@@ -113,7 +120,7 @@ interface Setup {
  */
 const setup = (options: Setup = {}) => {
   const folder = privateDir('case');
-  const state = privateDir('state');
+  const state = options.state ?? privateDir('state');
   const tokensFile = privateFile(
     join(folder, 'http-tokens.yaml'),
     options.tokens ??
@@ -147,6 +154,8 @@ const setup = (options: Setup = {}) => {
   };
   const output = createOutput({ writeSync });
   const signals = new Map<string, () => void>();
+  const faults: ((kind: 'exception' | 'rejection', value: unknown) => void)[] =
+    [];
   const exit = vi.fn();
   const host: ServeHttpHost = Object.freeze({
     onSignal: (signal: 'SIGINT' | 'SIGTERM', listener: () => void) => {
@@ -155,7 +164,14 @@ const setup = (options: Setup = {}) => {
         signals.delete(signal);
       };
     },
-    onFault: () => () => undefined,
+    onFault: (
+      listener: (kind: 'exception' | 'rejection', value: unknown) => void,
+    ) => {
+      faults.push(listener);
+      return () => {
+        faults.splice(faults.indexOf(listener), 1);
+      };
+    },
     exit,
   });
   let bind: (app: HttpApp) => void = () => undefined;
@@ -165,6 +181,7 @@ const setup = (options: Setup = {}) => {
   const listened: HttpListenOptions[] = [];
   let closes = 0;
   const run = runServeHttp({
+    ...options.extra,
     environment,
     execArgv: [],
     output,
@@ -241,6 +258,9 @@ const setup = (options: Setup = {}) => {
     listened,
     closes: () => closes,
     exit,
+    fault: (kind: 'exception' | 'rejection', value: unknown) => {
+      for (const listener of faults) listener(kind, value);
+    },
     signal: (name: 'SIGINT' | 'SIGTERM') => {
       signals.get(name)?.();
     },
@@ -392,21 +412,48 @@ describe('ecclium serve-http', () => {
   });
 
   it.each([
-    ['without the folder of state', { ECCLIUM_STATE_DIR: undefined }],
-    ['without the file of the tokens', { ECCLIUM_HTTP_TOKENS_FILE: undefined }],
-    ['with writes', { ECCLIUM_READ_ONLY: 'false' }],
+    [
+      'without the folder of state',
+      { ECCLIUM_STATE_DIR: undefined },
+      'http_state_dir_required',
+      'ECCLIUM_STATE_DIR',
+    ],
+    [
+      'without the file of the tokens',
+      { ECCLIUM_HTTP_TOKENS_FILE: undefined },
+      'http_tokens_file_required',
+      'ECCLIUM_HTTP_TOKENS_FILE',
+    ],
+    [
+      'with writes',
+      { ECCLIUM_READ_ONLY: 'false' },
+      'http_writes_unsupported',
+      'ECCLIUM_READ_ONLY',
+    ],
     [
       'with an address beyond loopback and no hosts',
       { ECCLIUM_HTTP_ADDRESS: '0.0.0.0' },
+      'http_address_needs_allowed_hosts',
+      'ECCLIUM_HTTP_ADDRESS',
     ],
-    ['with the subject of stdio', { ECCLIUM_STDIO_SUBJECT: 'local-stdio' }],
-  ])('does not start %s: 78, and binds nothing', async (_, environment) => {
-    const session = setup({ environment });
-    await expect(session.run).resolves.toBe(exitCodes.invalidConfig);
-    expect(session.listened).toEqual([]);
-    expect(session.logLines()).toEqual([]);
-    expect(session.notices().length).toBeGreaterThan(0);
-  });
+    [
+      'with the subject of stdio',
+      { ECCLIUM_STDIO_SUBJECT: 'local-stdio' },
+      'stdio_only',
+      'ECCLIUM_STDIO_SUBJECT',
+    ],
+  ] as const)(
+    'does not start %s: 78 with its problem, and binds nothing',
+    async (_, environment, code, variable) => {
+      const session = setup({ environment });
+      await expect(session.run).resolves.toBe(exitCodes.invalidConfig);
+      expect(session.listened).toEqual([]);
+      expect(session.logLines()).toEqual([]);
+      // The problem comes first; a warning such as the one for writes may
+      // follow it.
+      expect(session.notices()[0]).toBe(problemText({ code, variable }));
+    },
+  );
 
   it('does not start with a file of the tokens that is no valid file, and opens no audit file', async () => {
     const session = setup({ tokens: 'version: [\n' });
@@ -490,6 +537,154 @@ describe('ecclium serve-http', () => {
     );
     session.signal('SIGTERM');
     await expect(session.run).resolves.toBe(exitCodes.terminated);
+  });
+});
+
+describe('ecclium serve-http when a part fails', () => {
+  it('ends with 69 when the proxy gives no tunnel, binds nothing and closes the audit file', async () => {
+    const probe = vi.fn(() =>
+      Promise.resolve({ ok: false as const, reason: 'refused' as const }),
+    );
+    const session = setup({
+      environment: { ECCLIUM_EGRESS_PROXY: 'http://egress.example.org:3128' },
+      extra: { probeProxy: probe },
+    });
+    await expect(session.run).resolves.toBe(exitCodes.unavailable);
+    expect(probe).toHaveBeenCalledWith({
+      proxy: 'http://egress.example.org:3128',
+      origin: doubleOrigin,
+    });
+    expect(session.listened).toEqual([]);
+    // The audit file was opened and closed again: its folder is there and
+    // holds no file of a day, since no line was written.
+    expect(readdirSync(join(session.state, 'audit'))).toEqual([]);
+  });
+
+  it('ends with 78 when the folder of the counters cannot be used, and binds nothing', async () => {
+    const state = privateDir('state');
+    // A folder quota that group and others may read is refused, here by
+    // the check of the folder of state in the loader, before any file.
+    mkdirSync(join(state, 'quota'), { mode: 0o755 });
+    chmodSync(join(state, 'quota'), 0o755);
+    const session = setup({ state });
+    await expect(session.run).resolves.toBe(exitCodes.invalidConfig);
+    expect(session.listened).toEqual([]);
+    expect(readdirSync(state)).toEqual(['quota']);
+  });
+
+  it('ends with 70 when the docs index cannot be read, and says so', async () => {
+    const { DocsIndexError } =
+      await import('@ecclium/mcp-churchtools-docs-index');
+    const session = setup({
+      environment: { ECCLIUM_TOOLSETS: 'docs' },
+      extra: {
+        readDocs: () => {
+          throw new DocsIndexError('missing');
+        },
+      },
+    });
+    await expect(session.run).resolves.toBe(exitCodes.internal);
+    expect(session.listened).toEqual([]);
+    expect(session.notices()).toEqual([startText('docs_index')]);
+  });
+
+  it('writes a fixed line and ends the process with 70 for a fault nothing caught', async () => {
+    const session = setup();
+    await session.bound;
+    session.fault('rejection', new Error(canary.token.value));
+    expect(session.exit).toHaveBeenCalledWith(exitCodes.internal);
+    expect(
+      session
+        .logLines()
+        .filter((line) => line['event'] === 'process_unhandled_rejection'),
+    ).toEqual([expect.objectContaining({ code: 'internal' })]);
+    assertNoCanary(session.text(), [canary.token], 'stderr');
+    session.signal('SIGTERM');
+    await expect(session.run).resolves.toBe(exitCodes.terminated);
+  });
+
+  it('warns and runs on when the days of the last use cannot be removed', async () => {
+    const state = privateDir('state');
+    const { prepareQuotaFolder } =
+      await import('@ecclium/mcp-churchtools-core/composition');
+    expect(prepareQuotaFolder(state).ok).toBe(true);
+    // A file the store did not write: another tenant in it.
+    privateFile(
+      join(state, 'quota', 'default.last-use.json'),
+      JSON.stringify({ v: 1, tenant: 'other-tenant', lastUse: {} }),
+    );
+    const session = setup({ state });
+    await session.bound;
+    expect(
+      session
+        .logLines()
+        .filter((line) => line['event'] === 'http_last_use_not_pruned'),
+    ).toHaveLength(1);
+    session.signal('SIGTERM');
+    await expect(session.run).resolves.toBe(exitCodes.terminated);
+  });
+
+  it('closes at once when a signal came while it bound', async () => {
+    let finish: () => void = () => undefined;
+    const late = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let closed = 0;
+    const session = setup({
+      listen: async (settings) => {
+        await late;
+        return Object.freeze({
+          address: settings.host ?? '127.0.0.1',
+          port: settings.port,
+          close: () => {
+            closed += 1;
+            return Promise.resolve();
+          },
+        }) as never;
+      },
+    });
+    await vi.waitFor(() => {
+      expect(session.notices()).toContain(serveHttpTexts.readOnly);
+    });
+    session.signal('SIGTERM');
+    finish();
+    await expect(session.run).resolves.toBe(exitCodes.terminated);
+    expect(closed).toBe(1);
+  });
+
+  it('removes the days of the last use past 365 days on each new UTC day', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const session = setup();
+      await session.bound;
+      const store = createFileQuotaStore({
+        stateDir: session.state,
+        clock,
+        pid: 4242,
+        host: 'example-host',
+      });
+      const { bearerLastUseKey } =
+        await import('@ecclium/mcp-churchtools-plugin-api');
+      await store.noteLastUse(
+        'default' as Parameters<typeof store.noteLastUse>[0],
+        bearerLastUseKey('reader'),
+        '2025-01-01' as IsoDate,
+      );
+      // The timer looks at least every hour.
+      await vi.advanceTimersByTimeAsync(3_600_000);
+      await vi.waitFor(() => {
+        expect(
+          session
+            .logLines()
+            .filter((line) => line['event'] === 'http_last_use_pruned'),
+        ).toHaveLength(1);
+      });
+      await expect(readBearerLastUse(store, 'reader')).resolves.toBeUndefined();
+      session.signal('SIGTERM');
+      await expect(session.run).resolves.toBe(exitCodes.terminated);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
