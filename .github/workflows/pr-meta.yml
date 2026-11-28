@@ -46,7 +46,7 @@ jobs:
       - name: Install Node.js and gitleaks
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.24
+          version: 2026.11.14
           cache: false
           install_args: node aqua:gitleaks/gitleaks
       - name: Refuse ignore files of gitleaks
@@ -88,7 +88,7 @@ jobs:
       - name: Install Node.js and gitleaks
         uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
         with:
-          version: 2026.10.24
+          version: 2026.11.14
           cache: false
           install_args: node aqua:gitleaks/gitleaks
       - name: Refuse ignore files of gitleaks
