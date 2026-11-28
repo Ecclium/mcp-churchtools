@@ -25,9 +25,13 @@
  */
 import { createServer } from 'node:http';
 
+import {
+  isHttpBindAddress,
+  loopbackBindAddresses,
+} from '@ecclium/mcp-churchtools-core';
+
 import { createHttpApp, type HttpAppOptions } from './app.js';
 import { maxHttpBodyBytes } from './body.js';
-import { parseAllowedHost } from './hosts.js';
 
 /** The most bytes of the headers of a request, 16 KiB (ADR 0073). */
 export const maxHttpHeaderBytes = 16 * 1024;
@@ -144,11 +148,6 @@ const base = 'http://ingress.invalid';
 
 const bodiless: readonly string[] = Object.freeze(['GET', 'HEAD']);
 
-const loopbackAddresses: readonly string[] = Object.freeze([
-  '127.0.0.1',
-  '::1',
-]);
-
 // Headers of one connection, which the bridge sets itself or leaves out.
 const hopByHop: readonly string[] = Object.freeze([
   'connection',
@@ -160,8 +159,6 @@ const hopByHop: readonly string[] = Object.freeze([
   'transfer-encoding',
   'upgrade',
 ]);
-
-const digitsAndDots = /^[0-9.]+$/;
 
 // What Node.js itself answers to a request it cannot parse; the bridge
 // answers the same, after it wrote its own event.
@@ -191,17 +188,6 @@ const malformedSentence =
   'This server takes only requests to a path, with headers it can read.';
 const internalSentence =
   'The server failed. The log of the operator says more.';
-
-// Whether an address to bind to is an IP address written out, IPv4 or
-// IPv6 without brackets, in the form the allowed hosts use.
-const isIpAddress = (host: string): boolean => {
-  if (digitsAndDots.test(host)) {
-    const entry = parseAllowedHost(host);
-    return entry?.name === host && entry.port === undefined;
-  }
-  const entry = parseAllowedHost(`[${host}]`);
-  return entry?.name === `[${host}]` && entry.port === undefined;
-};
 
 const isLimit = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0;
@@ -402,8 +388,13 @@ export async function listenHttp(
 ): Promise<HttpListener> {
   const { logger } = options;
   const host = options.host ?? '127.0.0.1';
-  if (!isIpAddress(host)) throw new HttpBindError('address');
-  if (!loopbackAddresses.includes(host) && options.allowedHosts === undefined) {
+  // The same check of the address as the loader of the configuration
+  // makes, so that a wrong address stops a start before it binds.
+  if (!isHttpBindAddress(host)) throw new HttpBindError('address');
+  if (
+    !loopbackBindAddresses.includes(host) &&
+    options.allowedHosts === undefined
+  ) {
     throw new HttpBindError('allowed-hosts');
   }
   if (

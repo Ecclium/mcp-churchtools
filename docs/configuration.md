@@ -19,13 +19,13 @@ Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Be
 | `ECCLIUM_PSEUDONYM_KEY_FILE` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, `docs`, `api`, mit Komma getrennt, oder `all` für alle ausser `api`, oder `all,api` | leer | nein | nein | ja |
-| `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja | ja |
+| `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_KEYS_DIR` | absoluter Pfad | keine | nein | ja | ja |
 | `ECCLIUM_KILL_SWITCH_DIR` | absoluter Pfad | keine | nein | ja | ja |
 | `ECCLIUM_SNAPSHOTS` | `on`, `off` | `on` | nein | nein | ja |
 | `ECCLIUM_WRITE_CONFIRMATION` | `echo-allowed`, `elicitation-or-queue`, `queue` | `echo-allowed` | nein | nein | ja |
 | `ECCLIUM_TIME_ZONE` | `UTC` oder Name einer Zeitzone wie `Europe/Zurich` | keine | nein | nein | ja |
-| `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja | ja |
+| `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | nein | ja |
 | `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_MARKER_KEY_FILE` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_ROUTINES_DIR` | absoluter Pfad | keine | nein | nein | ja |
@@ -39,6 +39,9 @@ Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Be
 | `ECCLIUM_EGRESS` | `off` | keine | nein | nein | ja |
 | `ECCLIUM_EGRESS_ALLOW_LAN` | Liste aus Name und Port wie `modell.example.org:8443`, mit Komma getrennt | keine | nein | nein | ja |
 | `ECCLIUM_HTTP_TOKENS_FILE` | absoluter Pfad | keine | nein | nein | nein |
+| `ECCLIUM_HTTP_ADDRESS` | IP-Adresse wie `127.0.0.1` oder `::1` | `127.0.0.1` | nein | nein | nein |
+| `ECCLIUM_HTTP_PORT` | ganze Zahl von 1 bis 65'535 | `8765` | nein | nein | nein |
+| `ECCLIUM_ALLOWED_HOSTS` | Liste aus Hosts mit oder ohne Port wie `mcp.example.org:8443`, mit Komma getrennt | keine | nein | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja | nein |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein | ja |
 
@@ -80,7 +83,7 @@ Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrenn
 
 ## `ECCLIUM_STATE_DIR`
 
-Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, diese Unterordner darin schon. Im Unterordner `stop` liegen über stdio die Kill-Switches, wenn `ECCLIUM_KILL_SWITCH_DIR` keinen anderen Ordner nennt: Eine Datei `writes-off` darin hält jedes Schreiben ohne Neustart an. Diesen Unterordner legt Ecclium nicht an, und ohne ihn startet ein Server mit `ECCLIUM_READ_ONLY=false` nicht. Pflicht mit `ECCLIUM_READ_ONLY=false`, für den Runner immer. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Beim Server nur im Betrieb über stdio, dazu für den Runner.
+Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, diese Unterordner darin schon. Im Unterordner `stop` liegen über stdio die Kill-Switches, wenn `ECCLIUM_KILL_SWITCH_DIR` keinen anderen Ordner nennt: Eine Datei `writes-off` darin hält jedes Schreiben ohne Neustart an. Diesen Unterordner legt Ecclium nicht an, und ohne ihn startet ein Server mit `ECCLIUM_READ_ONLY=false` nicht. Über HTTP liegt dort auch der Tag der letzten Verwendung jedes Bearer-Tokens, im Unterordner `quota`. Pflicht mit `ECCLIUM_READ_ONLY=false`, für den Server über HTTP und für den Runner immer. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700.
 
 ## `ECCLIUM_KEYS_DIR`
 
@@ -104,7 +107,7 @@ Die Zeitzone, in der die Rückfrage vor einem Schreibvorgang, `ecclium queue sho
 
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 
-Wie viele Monate die Audit-Dateien bleiben, von 1 bis 120. Danach löscht Ecclium sie beim Start oder beim Wechsel des UTC-Tages, nur im Ordner `audit` und nur Dateien mit dem Namen einer Audit-Datei. Eine Datei bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate nach ihrem Tag liegt. Unter zwölf Monaten warnt jeder Start, weil das Protokoll dann kürzer bleibt als ein Jahr. Ohne `ECCLIUM_STATE_DIR` gibt es keine Audit-Datei, und die Variable bewirkt nichts. Kopien, etwa in Backups, löscht Ecclium nicht. Beim Server nur im Betrieb über stdio, dazu für den Runner.
+Wie viele Monate die Audit-Dateien bleiben, von 1 bis 120. Danach löscht Ecclium sie beim Start oder beim Wechsel des UTC-Tages, nur im Ordner `audit` und nur Dateien mit dem Namen einer Audit-Datei. Eine Datei bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate nach ihrem Tag liegt. Unter zwölf Monaten warnt jeder Start, weil das Protokoll dann kürzer bleibt als ein Jahr. Ohne `ECCLIUM_STATE_DIR` gibt es keine Audit-Datei, und die Variable bewirkt nichts. Kopien, etwa in Backups, löscht Ecclium nicht.
 
 ## `ECCLIUM_POLICY_FILE`
 
@@ -156,7 +159,19 @@ Ziele im lokalen Netz für die Grenze im Netz des Runners, als Liste aus höchst
 
 ## `ECCLIUM_HTTP_TOKENS_FILE`
 
-Absoluter Pfad der Datei mit den Bearer-Tokens, mit denen sich Clients am Server über HTTP anmelden, etwa `/config/http-tokens.yaml`. Die Datei hält je Token nur seinen Namen, den SHA-256 des Tokens, die Scopes `read` oder `read` und `write` und die Tage, an denen es entstand und zuletzt gilt, nie das Token selbst. `ecclium token create`, `rotate` und `revoke` schreiben sie und legen sie mit den Rechten 600 an, `ecclium token list` zeigt, was darin steht. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, weil darin steht, wer den Server benutzen darf. Für den Runner nicht erlaubt.
+Absoluter Pfad der Datei mit den Bearer-Tokens, mit denen sich Clients am Server über HTTP anmelden, etwa `/config/http-tokens.yaml`. Die Datei hält je Token nur seinen Namen, den SHA-256 des Tokens, die Scopes `read` oder `read` und `write` und die Tage, an denen es entstand und zuletzt gilt, nie das Token selbst. `ecclium token create`, `rotate` und `revoke` schreiben sie und legen sie mit den Rechten 600 an, `ecclium token list` zeigt, was darin steht. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, weil darin steht, wer den Server benutzen darf. Pflicht für `ecclium serve-http`, für den Runner nicht erlaubt.
+
+## `ECCLIUM_HTTP_ADDRESS`
+
+Die Adresse, an die `ecclium serve-http` bindet, als ausgeschriebene IP-Adresse, etwa `127.0.0.1`, `0.0.0.0` oder `::1`, nie ein Name wie `localhost` ([ADR 0073](adr/0073-betrieb-ueber-http.md), `docs/betrieb/http.md`). Eine Adresse ausserhalb von Loopback, also nicht `127.0.0.1` oder `::1`, braucht `ECCLIUM_ALLOWED_HOSTS`, sonst bricht der Start ab: Eine fremde Webseite könnte den Server sonst über DNS-Rebinding ansprechen. Für den Runner nicht erlaubt.
+
+## `ECCLIUM_HTTP_PORT`
+
+Der Port von `ecclium serve-http`, von 1 bis 65'535. Ist der Port belegt, bricht der Start mit 78 ab. Für den Runner nicht erlaubt.
+
+## `ECCLIUM_ALLOWED_HOSTS`
+
+Die Hosts, die eine Anfrage an `ecclium serve-http` in den Kopfzeilen `Host` und `Origin` nennen darf, als Liste mit Komma, etwa `mcp.example.org` oder `mcp.example.org:8443, 127.0.0.1:8765` ([ADR 0073](adr/0073-betrieb-ueber-http.md), `docs/betrieb/http.md`). Jeder Eintrag ist ein Name oder eine IP-Adresse in eindeutiger Schreibweise, mit oder ohne Port, ohne Schema und ohne Pfad, eine IPv6-Adresse in Klammern. Ein Eintrag ohne Port erlaubt nur den Namen ohne Port. Gesetzt gelten nur diese Einträge, auch die Namen von Loopback nur, wenn die Liste sie nennt. Pflicht mit einer Adresse ausserhalb von Loopback. Für den Runner nicht erlaubt. Nicht gesetzt: `localhost`, `127.0.0.1` und `[::1]` mit dem Port des Servers.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 
@@ -165,12 +180,6 @@ Das Subjekt, also eine neutrale Bezeichnung dessen, der den Server über stdio n
 ## `ECCLIUM_LOG_LEVEL`
 
 Legt fest, ab welcher Stufe der Server Zeilen des Logs auf stderr schreibt.
-
-## Noch nicht unterstützt
-
-Diese Namen gehören zu späteren Versionen. Ist einer gesetzt, bricht der Start mit einem Hinweis ab, statt die Variable still zu übergehen.
-
-- `ECCLIUM_ALLOWED_HOSTS`
 
 ## Nicht mehr gültig
 

@@ -8,7 +8,6 @@ import {
   runnerTokenCodes,
   tlsVariableName,
   tokenVariableName,
-  unsupportedVariableNames,
   variableNames,
   variables,
 } from '@ecclium/mcp-churchtools-core';
@@ -58,8 +57,6 @@ const variableOf = (code: ConfigProblemCode): string => {
       return 'ECCLIUM_EGRESS_PROXY';
     case 'egress_off_with_proxy':
       return 'ECCLIUM_EGRESS';
-    case 'unsupported_variable':
-      return 'ECCLIUM_TOOLSETS';
     case 'tls_check_disabled':
       return 'NODE_TLS_REJECT_UNAUTHORIZED';
     case 'debug_output_enabled':
@@ -85,12 +82,10 @@ const variableOf = (code: ConfigProblemCode): string => {
 };
 
 // Every name the loader can report with a problem: the known variables,
-// the names of later phases, the variable of TLS, the
-// variable with the options of Node.js and the longest unknown name it
-// shows.
+// the variable of TLS, the variable with the options of Node.js and the
+// longest unknown name it shows.
 const reportedNames: readonly string[] = [
   ...variableNames,
-  ...unsupportedVariableNames,
   tlsVariableName,
   'NODE_OPTIONS',
   `ECCLIUM_${'A'.repeat(64)}`,

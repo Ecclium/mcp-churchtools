@@ -81,6 +81,9 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   egress: 'Grenze im Netz',
   egressAllowLan: 'Lokale Ziele',
   httpTokensFile: 'Bearer-Tokens',
+  httpAddress: 'Adresse über HTTP',
+  httpPort: 'Port über HTTP',
+  allowedHosts: 'Erlaubte Hosts',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -100,6 +103,21 @@ const masked = '[verborgen]';
 const quote = (text: string): string => `‹${text}›`;
 
 const inconsistent = 'The report of the configuration is inconsistent.';
+
+// Addresses that name no machine: loopback and the unspecified ones. Any
+// other address or host can name a machine of the network or an instance,
+// so it is masked like the host of ChurchTools.
+const neutralAddresses: readonly string[] = Object.freeze([
+  '127.0.0.1',
+  '::1',
+  '0.0.0.0',
+  '::',
+]);
+const loopbackHostNames: readonly string[] = Object.freeze([
+  'localhost',
+  '127.0.0.1',
+  '[::1]',
+]);
 
 type Hidden =
   | 'host'
@@ -183,6 +201,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'keine' };
       case 'httpTokensFile':
         return { text: 'keine Datei' };
+      case 'allowedHosts':
+        return { text: 'nur Loopback' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -275,6 +295,25 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
       return isPrintable(shown.value)
         ? { text: quote(shown.value) }
         : { text: 'gesetzt' };
+    case 'address':
+      return showValues || neutralAddresses.includes(shown.value)
+        ? { text: quote(shown.value) }
+        : { text: masked, hides: 'host' };
+    case 'hosts': {
+      // The names of loopback name no machine; the port of an entry names
+      // none either.
+      const visible = (name: string): boolean =>
+        showValues || loopbackHostNames.includes(name);
+      const text = shown.values
+        .map(({ name, port }) => {
+          const shownName = visible(name) ? name : masked;
+          return quote(port === '' ? shownName : `${shownName}:${port}`);
+        })
+        .join(', ');
+      return shown.values.every(({ name }) => visible(name))
+        ? { text }
+        : { text, hides: 'host' };
+    }
     case 'hidden':
       return { text: 'verborgen' };
     case 'none':

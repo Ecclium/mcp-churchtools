@@ -213,7 +213,10 @@ const nodeFileSystem: QuotaFileSystem = Object.freeze({
 export interface FileQuotaStoreOptions {
   /** The checked folder of state, an absolute normalised path. */
   readonly stateDir: string;
-  /** The clock for the age and the wait of a lock. */
+  /**
+   * The clock for the age and the wait of a lock and for the day before
+   * which {@link FileQuotaStore.pruneLastUses} removes the last uses.
+   */
   readonly clock: Clock;
   /** The ID of the process, written into the lock. */
   readonly pid: number;
@@ -223,6 +226,29 @@ export interface FileQuotaStoreOptions {
   readonly fs?: QuotaFileSystem;
   /** Waits between two attempts at a lock, only for tests. */
   readonly sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * The store of quotas of the free core: the port, and for the composition
+ * root the removal of the days of the last use past their retention by
+ * the clock of the store (ADR 0074). The port has no such method, because
+ * a store of another kind keeps its own retention.
+ */
+export interface FileQuotaStore extends QuotaStore {
+  /**
+   * Removes the days of the last use of a tenant that lie more than
+   * `lastUseKeepDays` days before the UTC day of the clock, under the lock
+   * of the file, so that a day stays at most that long also when no later
+   * sign-in notes one. The file goes when no day is left. A file with
+   * nothing to remove costs one read and no lock.
+   *
+   * @param tenantId - The tenant whose file is looked at.
+   * @returns How many days it removed. It rejects with the fixed error
+   *   when the file system fails, the file is not one the store wrote or
+   *   the clock gives no day, and with a `TypeError` for a tenant that
+   *   does not fit.
+   */
+  readonly pruneLastUses: (tenantId: TenantId) => Promise<number>;
 }
 
 // One error for every failure of the file system, so that no path and no
@@ -595,7 +621,7 @@ const parseLastUses = (
  */
 export function createFileQuotaStore(
   options: FileQuotaStoreOptions,
-): QuotaStore {
+): FileQuotaStore {
   const { stateDir, clock, pid, fs = nodeFileSystem } = options;
   if (
     typeof stateDir !== 'string' ||
@@ -1330,6 +1356,62 @@ export function createFileQuotaStore(
     }
   };
 
+  const pruneLastUses = async (tenantId: TenantId): Promise<number> => {
+    if (!isTenantId(tenantId)) throw new TypeError('The tenant is invalid.');
+    let today: string;
+    try {
+      // A time that is no date throws here as well.
+      today = new Date(clock.now()).toISOString().slice(0, 10);
+    } catch {
+      throw unavailable();
+    }
+    // The same day noteLastUse keeps from, reckoned from today.
+    const keptFrom = new Date(Date.parse(today) - lastUseKeepDays * dayMs)
+      .toISOString()
+      .slice(0, 10);
+    const flags = flagsOrFail();
+    const checked = checkFolder(flags.uid);
+    const path = `${folder}/${lastUseStem(tenantId)}.json`;
+    const kept = (days: Record<string, IsoDate>): Record<string, IsoDate> => {
+      const result = Object.create(null) as Record<string, IsoDate>;
+      for (const [key, value] of Object.entries(days)) {
+        if (value >= keptFrom) result[key] = value;
+      }
+      return result;
+    };
+    const before = readLastUses(path, tenantId, flags, checked);
+    if (Object.keys(kept(before)).length === Object.keys(before).length) {
+      return 0;
+    }
+    const mine = await lock(`${path}.lock`, flags, checked);
+    try {
+      const days = readLastUses(path, tenantId, flags, checked);
+      const left = kept(days);
+      const removed = Object.keys(days).length - Object.keys(left).length;
+      if (removed === 0) return 0;
+      if (Object.keys(left).length === 0) {
+        try {
+          sameFolder(checked);
+          fs.unlinkSync(path);
+        } catch {
+          throw unavailable();
+        }
+      } else {
+        replaceFile(
+          path,
+          lastUseStem(tenantId),
+          { v: 1, tenant: tenantId, lastUse: left },
+          flags,
+          checked,
+        );
+      }
+      cleanUpLastUses(tenantId, checked);
+      return removed;
+    } finally {
+      unlock(`${path}.lock`, mine, flags);
+    }
+  };
+
   const readLastUse = (
     tenantId: TenantId,
     key: LastUseKey,
@@ -1364,5 +1446,7 @@ export function createFileQuotaStore(
       serial(() => noteLastUse(tenantId, key, day)),
     readLastUse: (tenantId: TenantId, key: LastUseKey) =>
       Promise.resolve().then(() => readLastUse(tenantId, key)),
+    pruneLastUses: (tenantId: TenantId) =>
+      serial(() => pruneLastUses(tenantId)),
   });
 }

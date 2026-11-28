@@ -343,6 +343,98 @@ describe('the file of the last uses', () => {
     ]);
     await expect(store.readLastUse(tenant, lastUse)).resolves.toBe(day);
   });
+
+  // The days go after 365 days by the clock of the store, also without a
+  // later sign-in that would note a day (ADR 0074).
+  describe('pruneLastUses', () => {
+    const at = (isoDay: string): Clock =>
+      Object.freeze({ now: () => Date.parse(`${isoDay}T12:00:00Z`) });
+    const other = bearerLastUseKey('client-other');
+
+    it('keeps a day of exactly 365 days ago and removes one of 366, under the lock of the file', async () => {
+      const state = freshState();
+      const writer = open(state);
+      await writer.noteLastUse(tenant, lastUse, '2025-11-27' as IsoDate);
+      await writer.noteLastUse(tenant, other, '2025-11-26' as IsoDate);
+      const store = open(state, { clock: at('2026-11-27') });
+      await expect(store.pruneLastUses(tenant)).resolves.toBe(1);
+      await expect(store.readLastUse(tenant, lastUse)).resolves.toBe(
+        '2025-11-27',
+      );
+      await expect(store.readLastUse(tenant, other)).resolves.toBeUndefined();
+      expect(readdirSync(join(state, 'quota'))).toEqual([
+        'demo-tenant.last-use.json',
+      ]);
+      // Counter-check: one day later the other day goes as well, and with
+      // it the file.
+      const later = open(state, { clock: at('2026-11-28') });
+      await expect(later.pruneLastUses(tenant)).resolves.toBe(1);
+      expect(readdirSync(join(state, 'quota'))).toEqual([]);
+      await expect(later.readLastUse(tenant, lastUse)).resolves.toBeUndefined();
+    });
+
+    it('changes nothing and takes no lock when no day is past its time, also without a file', async () => {
+      const state = freshState();
+      let creates = 0;
+      let renames = 0;
+      const counting: QuotaFileSystem = Object.freeze({
+        ...nodeFs,
+        renameSync: (from: string, to: string) => {
+          renames += 1;
+          renameSync(from, to);
+        },
+        openSync: (path: string, flags: number, mode?: number) => {
+          if ((flags & constants.O_CREAT) !== 0) creates += 1;
+          return openSync(path, flags, mode);
+        },
+      });
+      const store = open(state, { clock: at('2026-11-27'), fs: counting });
+      await expect(store.pruneLastUses(tenant)).resolves.toBe(0);
+      await open(state).noteLastUse(tenant, lastUse, '2026-01-01' as IsoDate);
+      await expect(store.pruneLastUses(tenant)).resolves.toBe(0);
+      expect([creates, renames]).toEqual([0, 0]);
+      await expect(store.readLastUse(tenant, lastUse)).resolves.toBe(
+        '2026-01-01',
+      );
+    });
+
+    it('fails with the fixed error when the clock gives no day, a file is foreign or the lock does not clear', async () => {
+      const state = freshState();
+      await open(state).noteLastUse(tenant, lastUse, '2024-01-01' as IsoDate);
+      const broken = open(state, { clock: { now: () => Number.NaN } });
+      await expect(broken.pruneLastUses(tenant)).rejects.toThrow(failure);
+      const foreign = freshState();
+      writeFileSync(
+        lastUseFile(foreign),
+        JSON.stringify({ v: 1, tenant: 'other-tenant', lastUse: {} }),
+        { mode: 0o600 },
+      );
+      await expect(
+        open(foreign, { clock: at('2026-11-27') }).pruneLastUses(tenant),
+      ).rejects.toThrow(failure);
+      // The clock of the lock is the real one, so that the lock is fresh.
+      writeFileSync(`${lastUseFile(state)}.lock`, '{}', { mode: 0o600 });
+      let now = Date.now();
+      const waiting = open(state, {
+        clock: { now: () => now },
+        sleep: () => {
+          now += 500;
+          return Promise.resolve();
+        },
+      });
+      await expect(waiting.pruneLastUses(tenant)).rejects.toThrow(failure);
+      await expect(open(state).readLastUse(tenant, lastUse)).resolves.toBe(
+        '2024-01-01',
+      );
+    });
+
+    it('refuses a tenant that does not fit', async () => {
+      const store = open(freshState());
+      await expect(
+        store.pruneLastUses('../tenant' as TenantId),
+      ).rejects.toThrow(TypeError);
+    });
+  });
 });
 
 describe('the file of quotas', () => {

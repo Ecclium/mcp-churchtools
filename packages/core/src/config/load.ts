@@ -33,6 +33,11 @@ import {
   readProvidersFile,
 } from '../providers/index.js';
 import type { ToolsetName } from '../registry/toolsets.js';
+import {
+  type AllowedHost,
+  loopbackBindAddresses,
+  parseAllowedHosts,
+} from './allowed-hosts.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { readMarkerKeyFile } from './marker-key-file.js';
 import { readPingUrlFile } from './ping-url-file.js';
@@ -71,7 +76,6 @@ import {
   tokenVariableName,
   trustStoreOptions,
   trustStoreVariableNames,
-  unsupportedVariableNames,
   type Variable,
   type VariableName,
   variableNames,
@@ -134,8 +138,8 @@ export interface EccliumConfig {
   readonly keysDir: string | undefined;
   /**
    * The folder of the kill switches (ADR 0029), an absolute normalised
-   * path: the one of `ECCLIUM_KILL_SWITCH_DIR`, else over stdio the folder
-   * `stop` of the folder of state, else undefined. The runner requires the
+   * path: the one of `ECCLIUM_KILL_SWITCH_DIR`, else for a server the
+   * folder `stop` of the folder of state, else undefined. The runner requires the
    * variable (ADR 0036). Every part that looks for a switch takes it from
    * here and builds no path of its own, so that no part looks into another
    * folder than the operator named. The disk is checked at the start only
@@ -273,6 +277,21 @@ export interface EccliumConfig {
    * `ecclium token` read the file.
    */
   readonly httpTokensFile: string | undefined;
+  /**
+   * The address the server over HTTP binds to, an IP address written out,
+   * `127.0.0.1` when the variable is not set (ADR 0073). Over HTTP an
+   * address beyond loopback comes only with {@link EccliumConfig.allowedHosts}.
+   */
+  readonly httpAddress: string;
+  /** The port of the server over HTTP, 1 to 65535, 8765 by default. */
+  readonly httpPort: number;
+  /**
+   * The hosts a request over HTTP may name in `Host` and `Origin`, in the
+   * order given without repeats, or undefined when the variable is not
+   * set: then only the names of loopback with the port of the server
+   * (ADR 0073).
+   */
+  readonly allowedHosts: readonly AllowedHost[] | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -307,6 +326,9 @@ export type SettingKey =
   | 'egress'
   | 'egressAllowLan'
   | 'httpTokensFile'
+  | 'httpAddress'
+  | 'httpPort'
+  | 'allowedHosts'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -335,6 +357,17 @@ export type ShownValue =
       }[];
     }
   | { readonly kind: 'path'; readonly value: string }
+  /** An address the server over HTTP binds to, as checked. */
+  | { readonly kind: 'address'; readonly value: string }
+  | {
+      readonly kind: 'hosts';
+      readonly values: readonly {
+        /** The name in lower case, an IPv6 address in brackets. */
+        readonly name: string;
+        /** The port, or empty for an entry without one. */
+        readonly port: string;
+      }[];
+    }
   | { readonly kind: 'hidden' }
   | { readonly kind: 'none' };
 
@@ -569,16 +602,15 @@ interface Ranked {
 
 // The order of the problems: the variables in table order, then the
 // variables of TLS and of debug output, also of the library for YAML, then
-// the options that log TLS, then the names of later phases and of the
-// replaced switch for the search tools, then unknown names by code unit,
-// then those too odd to name.
+// the options that log TLS, then the name of the replaced switch for the
+// search tools, then unknown names by code unit, then those too odd to
+// name.
 const tlsRank = variableNames.length;
 const debugRank = tlsRank + 1;
 const yamlDebugRank = debugRank + 1;
 const keylogRank = yamlDebugRank + 1;
 const traceRank = keylogRank + 1;
-const unsupportedRank = traceRank + 1;
-const replacedRank = unsupportedRank + unsupportedVariableNames.length;
+const replacedRank = traceRank + 1;
 const unknownRank = replacedRank + 1;
 
 /** What a name with the prefix is: a known variable or a problem. */
@@ -596,9 +628,6 @@ type SortedName =
 // commands for the audit refuse the same names as the start.
 const sortName = (key: string): SortedName => {
   const upper = asciiUpper(key);
-  const unsupported = (unsupportedVariableNames as readonly string[]).indexOf(
-    upper,
-  );
   const known = (variableNames as readonly string[]).indexOf(upper);
   const problem = (
     code: ConfigProblemCode,
@@ -613,13 +642,6 @@ const sortName = (key: string): SortedName => {
       'search_tools_replaced',
       replacedRank,
       searchToolsVariableName,
-    );
-  }
-  if (unsupported >= 0) {
-    return problem(
-      'unsupported_variable',
-      unsupportedRank + unsupported,
-      upper,
     );
   }
   if (known >= 0 && key !== upper) {
@@ -1015,6 +1037,13 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // queue write. It does not wait for a toolset with write tools, so that
   // the operator hears of the switch before any tool uses it.
   if (readOnly?.value === 'false') warnings.add('writes_enabled');
+  // The server over HTTP does not write in this version: the confirmation
+  // of a write at a server over HTTP is not built yet (ADR 0074). Said with
+  // its own problem, so that no text points to the folder of keys, which
+  // HTTP refuses.
+  if (transport === 'http' && readOnly?.value === 'false') {
+    report('http_writes_unsupported', 'ECCLIUM_READ_ONLY');
+  }
 
   // off is allowed over stdio only, with a warning on every start. strict
   // needs the key file and refuses the toolset api, both checked below
@@ -1152,7 +1181,19 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   let stateDir: string | undefined;
   let stateDirValid = true;
   if (stateDirRead.state === 'unset') {
-    setting('stateDir', stateDirName, runner ? 'missing' : 'unset', shownNone);
+    // The server over HTTP needs it like the runner: its audit file, its
+    // counters and the last use of its tokens live there (ADR 0028,
+    // ADR 0074).
+    if (transport === 'http') {
+      report('http_state_dir_required', stateDirName);
+      stateDirValid = false;
+    }
+    setting(
+      'stateDir',
+      stateDirName,
+      runner || transport === 'http' ? 'missing' : 'unset',
+      shownNone,
+    );
   } else if (stateDirRead.state === 'invalid') {
     stateDirValid = false;
     setting('stateDir', stateDirName, 'invalid', shownNone);
@@ -1221,9 +1262,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   let keysDir: string | undefined;
   let keysDirValid = true;
   if (keysDirRead.state === 'unset') {
-    // Over HTTP as well: there the variable is refused, so a server over
-    // HTTP does not write in this version.
-    if (readOnly?.value === 'false') {
+    // Over HTTP a write has its own problem above, and the variable is
+    // refused there, so a server over HTTP does not write in this version.
+    if (readOnly?.value === 'false' && transport !== 'http') {
       report('keys_dir_required', keysDirName);
       keysDirValid = false;
       setting('keysDir', keysDirName, 'missing', shownNone);
@@ -2087,7 +2128,12 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   let httpTokensFile: string | undefined;
   let httpTokensValid = true;
   if (httpTokensRead.state === 'unset') {
-    setting('httpTokensFile', httpTokensName, 'unset', shownNone);
+    setting(
+      'httpTokensFile',
+      httpTokensName,
+      transport === 'http' ? 'missing' : 'unset',
+      shownNone,
+    );
   } else if (
     httpTokensRead.state === 'set' &&
     fitsVariable(httpTokensName, httpTokensRead.value)
@@ -2105,6 +2151,113 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     }
     httpTokensValid = false;
     setting('httpTokensFile', httpTokensName, 'invalid', shownNone);
+  }
+
+  // The server over HTTP needs the file of its tokens: there is no way in
+  // without a sign-in (ADR 0037). `ecclium token` reports it alike.
+  if (transport === 'http' && httpTokensRead.state === 'unset') {
+    report('http_tokens_file_required', httpTokensName);
+    httpTokensValid = false;
+  }
+
+  // The address and port of the server over HTTP and the hosts a request
+  // may name (ADR 0073). Every start checks their form, and only the start
+  // over HTTP whether they fit together: an address beyond loopback
+  // without a list would answer for the names of loopback on a port others
+  // can reach. The runner refuses them through their rows.
+  const addressName = 'ECCLIUM_HTTP_ADDRESS';
+  const addressVariable = row(addressName);
+  const addressRead = read(addressVariable);
+  let httpAddress: Chosen | undefined;
+  if (addressRead.state === 'unset') {
+    httpAddress =
+      addressVariable.defaultValue === undefined
+        ? undefined
+        : { value: addressVariable.defaultValue, origin: 'default' };
+  } else if (addressRead.state === 'set') {
+    if (fitsVariable(addressName, addressRead.value)) {
+      httpAddress = { value: addressRead.value, origin: 'environment' };
+    } else {
+      report('http_address_invalid', addressName);
+    }
+  }
+  setting(
+    'httpAddress',
+    addressName,
+    httpAddress === undefined ? 'invalid' : httpAddress.origin,
+    httpAddress === undefined
+      ? shownNone
+      : record({ kind: 'address', value: httpAddress.value }),
+  );
+
+  const portName = 'ECCLIUM_HTTP_PORT';
+  const portVariable = row(portName);
+  const portRead = read(portVariable);
+  let httpPort:
+    { readonly value: number; readonly origin: ValueOrigin } | undefined;
+  if (portRead.state === 'unset') {
+    httpPort = { value: Number(portVariable.defaultValue), origin: 'default' };
+  } else if (portRead.state === 'set') {
+    if (fitsVariable(portName, portRead.value)) {
+      httpPort = { value: Number(portRead.value), origin: 'environment' };
+    } else {
+      report('http_port_invalid', portName);
+    }
+  }
+  setting(
+    'httpPort',
+    portName,
+    httpPort === undefined ? 'invalid' : httpPort.origin,
+    httpPort === undefined
+      ? shownNone
+      : record({ kind: 'integer', value: httpPort.value }),
+  );
+
+  const hostsName = 'ECCLIUM_ALLOWED_HOSTS';
+  const hostsRead = read(row(hostsName));
+  let allowedHosts: readonly AllowedHost[] | undefined;
+  let hostsValid = hostsRead.state !== 'invalid';
+  if (hostsRead.state === 'unset') {
+    setting('allowedHosts', hostsName, 'unset', shownNone);
+  } else if (hostsRead.state === 'invalid') {
+    setting('allowedHosts', hostsName, 'invalid', shownNone);
+  } else {
+    // The schema asks the same grammar; the result is read here only for
+    // the entries. A problem names no entry, only that the list is wrong.
+    const parsed = fitsVariable(hostsName, hostsRead.value)
+      ? parseAllowedHosts(hostsRead.value)
+      : undefined;
+    if (parsed?.ok === true) {
+      allowedHosts = parsed.hosts;
+      setting(
+        'allowedHosts',
+        hostsName,
+        'environment',
+        record({
+          kind: 'hosts',
+          values: Object.freeze(
+            parsed.hosts.map((host) =>
+              record({
+                name: host.name,
+                port: host.port === undefined ? '' : String(host.port),
+              }),
+            ),
+          ),
+        }),
+      );
+    } else {
+      hostsValid = false;
+      report('allowed_hosts_invalid', hostsName);
+      setting('allowedHosts', hostsName, 'invalid', shownNone);
+    }
+  }
+  if (
+    transport === 'http' &&
+    httpAddress !== undefined &&
+    !loopbackBindAddresses.includes(httpAddress.value) &&
+    hostsRead.state === 'unset'
+  ) {
+    report('http_address_needs_allowed_hosts', addressName);
   }
 
   // The subject must fit the pattern, and the placeholder of the audit is
@@ -2181,6 +2334,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !egressValid ||
     !lanValid ||
     !httpTokensValid ||
+    httpAddress === undefined ||
+    httpPort === undefined ||
+    !hostsValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -2220,6 +2376,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       egressOff,
       egressAllowLan,
       httpTokensFile,
+      httpAddress: httpAddress.value,
+      httpPort: httpPort.value,
+      allowedHosts,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

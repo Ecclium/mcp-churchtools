@@ -37,6 +37,7 @@ import {
   createQueueKeeper,
   createSnapshotKeeper,
   type DayKeys,
+  type FileQuotaStore,
   type QueueKeeper,
   type SnapshotKeeper,
   type StderrLineWriter,
@@ -110,6 +111,13 @@ export interface ComposedPipeline {
    * the start removes those past their retention.
    */
   readonly queue: QueueKeeper | undefined;
+  /**
+   * The store of the counters over the folder of state, or undefined
+   * without it (ADR 0063). The server over HTTP notes the last use of each
+   * token in the same store and removes those days past their retention
+   * (ADR 0074).
+   */
+  readonly quota: FileQuotaStore | undefined;
 }
 
 /**
@@ -214,6 +222,19 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
             clock,
           })
         : undefined;
+    // The counters of the read budget and of the writes, in the folder
+    // the first stage prepared. Without the folder of state there is no
+    // store: no tool with sensitivity special runs (ADR 0063), and no
+    // write that an entry of the policy limits.
+    const quota =
+      config.stateDir === undefined
+        ? undefined
+        : createFileQuotaStore({
+            stateDir: config.stateDir,
+            clock,
+            pid: process.pid,
+            host: hostname(),
+          });
     const pipeline = createToolPipeline({
       catalog,
       audit: createAuditSink({
@@ -233,20 +254,7 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
       // The note on every end of a run of a runner without its proxy
       // (ADR 0035); only the runner ends runs.
       egressOff: config.egressOff,
-      // The counters of the read budget and of the writes, in the folder
-      // the first stage prepared. Without the folder of state there is no
-      // store: no tool with sensitivity special runs (ADR 0063), and no
-      // write that an entry of the policy limits.
-      ...(config.stateDir === undefined
-        ? {}
-        : {
-            quota: createFileQuotaStore({
-              stateDir: config.stateDir,
-              clock,
-              pid: process.pid,
-              host: hostname(),
-            }),
-          }),
+      ...(quota === undefined ? {} : { quota }),
       // The kill switches of writing, in the one folder the loader named
       // (ADR 0029): the folder of ECCLIUM_KILL_SWITCH_DIR or the folder
       // stop of the folder of state. Nothing makes it; without it, writing
@@ -279,7 +287,14 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
         ? {}
         : { writeHalt: options.writeHalt }),
     });
-    return Object.freeze({ pipeline, transport, dayKeys, snapshots, queue });
+    return Object.freeze({
+      pipeline,
+      transport,
+      dayKeys,
+      snapshots,
+      queue,
+      quota,
+    });
   } catch (error) {
     // The caller never got the transport, so it closes here.
     void transport.close().catch(() => undefined);

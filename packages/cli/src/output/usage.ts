@@ -8,12 +8,13 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium doctor [--show-values] | ecclium undo <Kennung> [--overwrite] [--runner] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list [--runner] | ecclium queue show <Kennung> [--runner] | ecclium queue approve <Kennung> [--runner] | ecclium queue reject <Kennung> [--runner] | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner | ecclium token create <Name> [--write] [--days <Tage>] | ecclium token rotate <Name> [--days <Tage>] | ecclium token revoke <Name> | ecclium token list';
+  'Aufruf: ecclium stdio | ecclium serve-http | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium doctor [--show-values] | ecclium undo <Kennung> [--overwrite] [--runner] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list [--runner] | ecclium queue show <Kennung> [--runner] | ecclium queue approve <Kennung> [--runner] | ecclium queue reject <Kennung> [--runner] | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner | ecclium token create <Name> [--write] [--days <Tage>] | ecclium token rotate <Name> [--days <Tage>] | ecclium token revoke <Name> | ecclium token list';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
   usageLine,
   '  stdio                 startet den Server für einen KI-Assistenten über stdio',
+  '  serve-http            startet den Server über HTTP mit Bearer-Tokens, nur lesend, bis ein Signal ihn anhält',
   '  config check          prüft die Konfiguration aus der Umgebung, ohne ChurchTools anzufragen',
   '    --show-values       zeigt bei der Prüfung auch den Host, ein abweichendes Subjekt, den Zustands- und den Schlüsselordner',
   '    --runner            prüft die Konfiguration des Runners und seine Routinen, ohne ChurchTools und die Modelle anzufragen',
@@ -62,7 +63,7 @@ export type UsageProblem = 'command' | 'option' | 'repeated' | 'value';
 export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
   Object.freeze({
     command:
-      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium init egress›, ‹ecclium doctor›, ‹ecclium undo›, ‹ecclium marker adopt› mit ‹--run›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, ‹ecclium runner› und ‹ecclium token›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium serve-http›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium init egress›, ‹ecclium doctor›, ‹ecclium undo›, ‹ecclium marker adopt› mit ‹--run›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, ‹ecclium runner› und ‹ecclium token›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     option:
       'Eine Option ist unbekannt oder gehört zu einem anderen Befehl. Ecclium nennt sie nicht, weil darin ein Token stehen könnte. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     repeated:

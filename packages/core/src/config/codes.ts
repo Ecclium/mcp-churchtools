@@ -24,7 +24,6 @@ import { tokenFileCodes } from './token-file.js';
 export const configProblemCodes = Object.freeze([
   'unknown_variable',
   'miscased_variable',
-  'unsupported_variable',
   'search_tools_replaced',
   'tls_check_disabled',
   'debug_output_enabled',
@@ -50,6 +49,15 @@ export const configProblemCodes = Object.freeze([
   // path has another form, or `ecclium token` runs without it.
   'http_tokens_file_invalid',
   'http_tokens_file_required',
+  // The server over HTTP (ADR 0073, ADR 0074): its address, port and
+  // allowed hosts, an address beyond loopback without that list, the
+  // folder of state it needs and the writes it does not do yet.
+  'http_address_invalid',
+  'http_port_invalid',
+  'allowed_hosts_invalid',
+  'http_address_needs_allowed_hosts',
+  'http_state_dir_required',
+  'http_writes_unsupported',
   // The file with the address of the ping of the runner (ADR 0009).
   ...pingUrlFileCodes,
   // The proxy of outbound connections and the switch for the runner

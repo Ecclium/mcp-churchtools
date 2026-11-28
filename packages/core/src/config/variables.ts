@@ -22,6 +22,11 @@ import {
   toolsetsOfAll,
 } from '../registry/toolsets.js';
 import {
+  isHttpBindAddress,
+  maxAllowedHostsLength,
+  parseAllowedHosts,
+} from './allowed-hosts.js';
+import {
   isNormalizedAbsolutePath,
   maxKeysDirLength,
   maxKillSwitchDirLength,
@@ -62,6 +67,9 @@ export const variableNames = Object.freeze([
   'ECCLIUM_EGRESS',
   'ECCLIUM_EGRESS_ALLOW_LAN',
   'ECCLIUM_HTTP_TOKENS_FILE',
+  'ECCLIUM_HTTP_ADDRESS',
+  'ECCLIUM_HTTP_PORT',
+  'ECCLIUM_ALLOWED_HOSTS',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -87,14 +95,6 @@ export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
     (name): name is PlainVariableName => name !== tokenVariableName,
   ),
 );
-
-/**
- * Names of later phases, frozen. Until their phase, each one stops the
- * start with a message that this version does not support it yet.
- */
-export const unsupportedVariableNames = Object.freeze([
-  'ECCLIUM_ALLOWED_HOSTS',
-] as const);
 
 /**
  * The switch of phase 1 for the two search tools, which `ECCLIUM_TOOLSETS`
@@ -242,7 +242,9 @@ export type VariableKind =
   | 'list'
   | 'targets'
   | 'subject'
-  | 'zone';
+  | 'zone'
+  | 'address'
+  | 'hosts';
 
 /** The range of the requests per minute to ChurchTools (ADR 0057). */
 export const requestsPerMinuteRange = Object.freeze({ min: 1, max: 500 });
@@ -275,6 +277,48 @@ export function isRequestsPerMinute(value: string): boolean {
   return (
     number >= requestsPerMinuteRange.min && number <= requestsPerMinuteRange.max
   );
+}
+
+/** The range of the port of the server over HTTP. */
+export const httpPortRange = Object.freeze({ min: 1, max: 65_535 });
+
+/**
+ * The port of the server over HTTP when the variable is not set. Not 8080,
+ * which a local sign-in service often takes, nor 8787, the one of a
+ * common development server for workers.
+ */
+export const defaultHttpPort = 8765;
+
+/** The address of the server over HTTP when the variable is not set. */
+export const defaultHttpAddress = '127.0.0.1';
+
+/**
+ * Tells whether a value is a port of the server over HTTP: digits only, no
+ * leading zero, 1 to 65535. Port 0, which lets the system pick one, is no
+ * value for an operator: a client could not know where to connect.
+ * Checked sign by sign, like the requests per minute.
+ *
+ * @param value - The value as given.
+ * @returns Whether it fits.
+ * @example
+ * ```ts
+ * isHttpPort('8765'); // true
+ * isHttpPort('0'); // false
+ * isHttpPort('08765'); // false
+ * ```
+ */
+export function isHttpPort(value: string): boolean {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 5) {
+    return false;
+  }
+  let number = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x30 || code > 0x39) return false;
+    if (index === 0 && code === 0x30) return false;
+    number = number * 10 + (code - 0x30);
+  }
+  return number >= httpPortRange.min && number <= httpPortRange.max;
 }
 
 /**
@@ -501,7 +545,10 @@ export interface Variable {
   readonly defaultValue: string | undefined;
   /** Whether the value is a secret. */
   readonly secret: boolean;
-  /** Whether, of the two servers, only a start over stdio may set it. */
+  /**
+   * Whether, of the two servers, only a start over stdio may set it. The
+   * server over HTTP refuses it then.
+   */
   readonly stdioOnly: boolean;
   /**
    * Whether the runner of routines may set it (ADR 0033). It may not set
@@ -617,6 +664,10 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
+  // The folder of state: for the audit file over stdio and for the
+  // runner, and required by the server over HTTP, which keeps its audit
+  // file, its counters and the last use of its tokens there (ADR 0028,
+  // ADR 0074).
   row({
     name: 'ECCLIUM_STATE_DIR',
     kind: 'path',
@@ -624,12 +675,12 @@ export const variables: readonly Variable[] = Object.freeze([
     choices: [],
     defaultValue: undefined,
     secret: false,
-    stdioOnly: true,
+    stdioOnly: false,
     runner: true,
   }),
   // The folder of the day keys (ADR 0031): needed as soon as the server
-  // or the runner writes, of the servers over stdio only, and like the
-  // folder of state it must not lie in.
+  // or the runner writes, of the servers over stdio only, since the server
+  // over HTTP does not write in this version.
   row({
     name: 'ECCLIUM_KEYS_DIR',
     kind: 'path',
@@ -701,7 +752,7 @@ export const variables: readonly Variable[] = Object.freeze([
     choices: [],
     defaultValue: String(recommendedRetentionMonths),
     secret: false,
-    stdioOnly: true,
+    stdioOnly: false,
     runner: true,
   }),
   row({
@@ -869,6 +920,40 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: false,
   }),
+  // Where `ecclium serve-http` binds and which hosts a request may name
+  // (ADR 0073). The address is an IP address written out, loopback unless
+  // the list of hosts is set; the server over stdio checks the form of
+  // each value alone, and the runner never serves over HTTP.
+  row({
+    name: 'ECCLIUM_HTTP_ADDRESS',
+    kind: 'address',
+    maxLength: 45,
+    choices: [],
+    defaultValue: defaultHttpAddress,
+    secret: false,
+    stdioOnly: false,
+    runner: false,
+  }),
+  row({
+    name: 'ECCLIUM_HTTP_PORT',
+    kind: 'integer',
+    maxLength: 5,
+    choices: [],
+    defaultValue: String(defaultHttpPort),
+    secret: false,
+    stdioOnly: false,
+    runner: false,
+  }),
+  row({
+    name: 'ECCLIUM_ALLOWED_HOSTS',
+    kind: 'hosts',
+    maxLength: maxAllowedHostsLength,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: false,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -1030,6 +1115,18 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  ECCLIUM_HTTP_ADDRESS: z
+    .string()
+    .max(45)
+    .refine((value) => isHttpBindAddress(value)),
+  ECCLIUM_HTTP_PORT: z
+    .string()
+    .max(5)
+    .refine((value) => isHttpPort(value)),
+  ECCLIUM_ALLOWED_HOSTS: z
+    .string()
+    .max(maxAllowedHostsLength)
+    .refine((value) => parseAllowedHosts(value).ok),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -1079,6 +1176,9 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_EGRESS: variableSchemas.ECCLIUM_EGRESS.optional(),
   ECCLIUM_EGRESS_ALLOW_LAN: variableSchemas.ECCLIUM_EGRESS_ALLOW_LAN.optional(),
   ECCLIUM_HTTP_TOKENS_FILE: variableSchemas.ECCLIUM_HTTP_TOKENS_FILE.optional(),
+  ECCLIUM_HTTP_ADDRESS: variableSchemas.ECCLIUM_HTTP_ADDRESS.optional(),
+  ECCLIUM_HTTP_PORT: variableSchemas.ECCLIUM_HTTP_PORT.optional(),
+  ECCLIUM_ALLOWED_HOSTS: variableSchemas.ECCLIUM_ALLOWED_HOSTS.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

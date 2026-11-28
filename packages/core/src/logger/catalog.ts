@@ -440,6 +440,14 @@ export const logEvents = Object.freeze({
   // The process of `ecclium stdio` (ADR 0053).
   stdio_start_failed: entry('error', 'code'),
   stdio_closed: entry('info', 'count'),
+  // The process of `ecclium serve-http` (ADR 0073, ADR 0074): a start that
+  // failed after its writer came into being, its end with the count of
+  // lost lines, and the days of the last use of tokens past their
+  // retention.
+  http_start_failed: entry('error', 'code'),
+  http_closed: entry('info', 'count'),
+  http_last_use_pruned: entry('info', 'count'),
+  http_last_use_not_pruned: entry('warn'),
   process_uncaught_exception: entry('error', 'code'),
   process_unhandled_rejection: entry('error', 'code'),
   process_sigterm: entry('info'),

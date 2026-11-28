@@ -8,8 +8,9 @@
  * and `reject` (ADR 0029, ADR 0031), `ecclium run-once` with `--due`, a
  * routine or a routine and `--preview`, and the daemon `ecclium runner`
  * (ADR 0033, ADR 0034), `ecclium init egress` and `ecclium doctor`
- * (ADR 0035), and `ecclium token create`, `rotate`, `revoke` and `list`
- * for the bearer tokens of the server over HTTP (ADR 0074). Wrong calls
+ * (ADR 0035), `ecclium token create`, `rotate`, `revoke` and `list`
+ * for the bearer tokens of the server over HTTP and `ecclium serve-http`,
+ * the server over HTTP itself (ADR 0073, ADR 0074). Wrong calls
  * get fixed German texts on stderr,
  * never an argument, and every exit code comes from `exit-codes.ts`.
  *
@@ -51,6 +52,7 @@ import type { WriteSyncFn } from './send.js';
 import type { QueueOptions } from './queue/queue.js';
 import type { RunnerDaemonOptions } from './runner/daemon.js';
 import type { RunOnceOptions } from './runner/run-once.js';
+import type { ServeHttpOptions } from './serve-http/serve.js';
 import type { TokenOptions } from './token/token.js';
 import type { UndoOptions } from './undo/undo.js';
 
@@ -98,6 +100,14 @@ export interface RunOptions {
   readonly token?: Pick<
     TokenOptions,
     'clock' | 'random' | 'readFiles' | 'writeFiles'
+  >;
+  /**
+   * Replacements for `serve-http`, such as the binding, the process and
+   * the double of ChurchTools.
+   */
+  readonly serveHttp?: Omit<
+    ServeHttpOptions,
+    'environment' | 'execArgv' | 'output'
   >;
 }
 
@@ -149,6 +159,8 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['token', 'rotate'], options: ['days'], argument: true },
     { words: ['token', 'revoke'], options: [], argument: true },
     { words: ['token', 'list'], options: [] },
+    // The server over HTTP with static bearer tokens (ADR 0073, ADR 0074).
+    { words: ['serve-http'], options: [] },
   ].map((entry) =>
     Object.freeze({
       words: Object.freeze(entry.words),
@@ -227,6 +239,7 @@ type Call =
     }
   | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] }
   | { readonly kind: 'daemon' }
+  | { readonly kind: 'serve' }
   | { readonly kind: 'egress' }
   | { readonly kind: 'doctor'; readonly showValues: boolean }
   | {
@@ -396,6 +409,8 @@ const readCall = (args: readonly string[]): Call => {
     }
     case 'runner':
       return { kind: 'daemon' };
+    case 'serve-http':
+      return { kind: 'serve' };
     case 'init egress':
       return { kind: 'egress' };
     case 'doctor':
@@ -433,8 +448,8 @@ const readCall = (args: readonly string[]): Call => {
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
  * @returns The exit code, or for `policy init`, `undo`, `queue`,
- *   `run-once`, `runner`, `init egress`, `doctor` and `token`, a promise
- *   of it.
+ *   `run-once`, `runner`, `init egress`, `doctor`, `token` and
+ *   `serve-http`, a promise of it.
  * @example
  * ```ts
  * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);
@@ -669,6 +684,24 @@ export function run(
               name: call.name,
               write: call.write,
               days: call.days,
+              output: out,
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'serve': {
+        // Loaded only for this command: it loads the server over HTTP, its
+        // SDK and undici, which no other command needs.
+        const out = output;
+        return import('./serve-http/serve.js')
+          .then(({ runServeHttp }) =>
+            runServeHttp({
+              ...runOptions.serveHttp,
+              environment: taken,
+              execArgv,
               output: out,
             }),
           )

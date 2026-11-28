@@ -187,6 +187,12 @@ describe('renderConfigReport', () => {
         'Bearer-Tokens',
         'keine Datei (‹ECCLIUM_HTTP_TOKENS_FILE› ist nicht gesetzt)',
       ),
+      row('Adresse über HTTP', '‹127.0.0.1› (Voreinstellung)'),
+      row('Port über HTTP', "8'765 (Voreinstellung)"),
+      row(
+        'Erlaubte Hosts',
+        'nur Loopback (‹ECCLIUM_ALLOWED_HOSTS› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -433,11 +439,18 @@ describe('renderConfigReport', () => {
   // Over HTTP the default never takes the echo, and the echo set on
   // purpose comes with the warning of the start (ADR 0029).
   it('shows the confirmation over http, with the warning for the echo', () => {
+    // The server over HTTP needs the folder of state and the file of its
+    // tokens.
     const overHttp = (environment: Environment) => {
       const result = loadConfig({
-        environment,
+        environment: {
+          ECCLIUM_STATE_DIR: '/path/to/state',
+          ECCLIUM_HTTP_TOKENS_FILE: '/path/to/http-tokens.yaml',
+          ...environment,
+        },
         transport: 'http',
         tokenFiles: goodFile().files,
+        stateDirFiles: folder(),
       });
       return renderConfigReport(result.report, {
         valid: result.ok,
@@ -1202,6 +1215,65 @@ describe('the proxy in the report', () => {
         'Lokale Ziele',
         '‹example.church.tools:443› (aus ‹ECCLIUM_EGRESS_ALLOW_LAN›)',
       ),
+    );
+  });
+});
+
+// The address and the hosts of the server over HTTP can name a machine of
+// the network or the installation, so they are masked like the host of
+// ChurchTools; loopback and the unspecified addresses name none (ADR 0073).
+describe('the settings of the server over HTTP in the report', () => {
+  it('masks an address and the hosts that name a machine, and shows them on request', () => {
+    const environment = {
+      ...minimal(),
+      ECCLIUM_HTTP_ADDRESS: '10.0.0.1',
+      ECCLIUM_HTTP_PORT: '8443',
+      ECCLIUM_ALLOWED_HOSTS: 'mcp.example.org:8443, localhost:8443, [::1]',
+    };
+    const masked = render(environment);
+    expect(masked).toContain(
+      row('Adresse über HTTP', '[verborgen] (aus ‹ECCLIUM_HTTP_ADDRESS›)'),
+    );
+    expect(masked).toContain(
+      row('Port über HTTP', "8'443 (aus ‹ECCLIUM_HTTP_PORT›)"),
+    );
+    expect(masked).toContain(
+      row(
+        'Erlaubte Hosts',
+        '‹[verborgen]:8443›, ‹localhost:8443›, ‹[::1]› (aus ‹ECCLIUM_ALLOWED_HOSTS›)',
+      ),
+    );
+    expect(masked.join('\n')).not.toContain('10.0.0.1');
+    expect(masked.join('\n')).not.toContain('mcp.example.org');
+    expect(masked).toContain(hostNote);
+    const shown = render(environment, true);
+    expect(shown).toContain(
+      row('Adresse über HTTP', '‹10.0.0.1› (aus ‹ECCLIUM_HTTP_ADDRESS›)'),
+    );
+    expect(shown).toContain(
+      row(
+        'Erlaubte Hosts',
+        '‹mcp.example.org:8443›, ‹localhost:8443›, ‹[::1]› (aus ‹ECCLIUM_ALLOWED_HOSTS›)',
+      ),
+    );
+  });
+
+  it.each(['0.0.0.0', '::', '::1'])(
+    'shows the address %s, which names no machine',
+    (address) => {
+      expect(render({ ...minimal(), ECCLIUM_HTTP_ADDRESS: address })).toContain(
+        row('Adresse über HTTP', `‹${address}› (aus ‹ECCLIUM_HTTP_ADDRESS›)`),
+      );
+    },
+  );
+
+  it('shows hosts of loopback as they are', () => {
+    const lines = render({
+      ...minimal(),
+      ECCLIUM_ALLOWED_HOSTS: 'localhost:8765',
+    });
+    expect(lines).toContain(
+      row('Erlaubte Hosts', '‹localhost:8765› (aus ‹ECCLIUM_ALLOWED_HOSTS›)'),
     );
   });
 });

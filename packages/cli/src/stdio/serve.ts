@@ -52,6 +52,7 @@ import type {
 import type { ErrorCode } from '@ecclium/mcp-churchtools-plugin-api';
 import { startStdioServer } from '@ecclium/mcp-churchtools-server/stdio';
 
+import { untilNextDay } from '../compose/day-timer.js';
 import { composeToolPipeline } from '../compose/pipeline.js';
 import { createRetentionSweep } from '../compose/retention.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -152,22 +153,8 @@ export const closeDeadlineMs = 5000;
 // The highest count a log line takes.
 const maxCount = 1_000_000;
 
-const dayMs = 86_400_000;
-const hourMs = 3_600_000;
-
-/**
- * Milliseconds from a time to the next look of the timer of a long run at
- * the day: one second after the next UTC midnight, but at most an hour.
- * A timer of Node.js does not count the time a computer sleeps, so after
- * a sleep the next look comes within the hour, not a day late.
- *
- * @param now - Milliseconds since the Unix epoch, from the clock.
- * @returns The delay, or an hour when the time is no finite number.
- */
-export const untilNextDay = (now: number): number =>
-  Number.isFinite(now)
-    ? Math.min(dayMs - (((now % dayMs) + dayMs) % dayMs) + 1000, hourMs)
-    : hourMs;
+// Shared with the server over HTTP; exported here as before.
+export { untilNextDay };
 
 // The process itself. Only properties are used: loading node:process
 // would make fd 1 and fd 2 non-blocking (ADR 0054).
