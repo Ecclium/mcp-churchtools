@@ -78,4 +78,4 @@ overrides:
   # Minimatch#match, which 11 keeps. Remove this once ESLint and
   # typescript-eslint ask for minimatch 11.
   # 01.11.2026: security fix for GHSA-g3hv-75wg-m249 (moderate) in minimatch
-  minimatch@10: 11.0.3
+  minimatch@10: 11.0.9
